@@ -520,7 +520,7 @@ class _MapScreenState extends State<MapScreen> {
       case MapTileProvider.mapTiler:
         final key = settings.mapTilerApiKey ?? '';
         final style = settings.mapTilerStyle;
-        return 'https://api.maptiler.com/maps/$style/{z}/{x}/{y}@2x.png?key=$key';
+        return 'https://api.maptiler.com/maps/$style/256/{z}/{x}/{y}.png?key=$key';
       case MapTileProvider.free:
         return _getFreeTileUrl(settings.mapTileStyle);
       case MapTileProvider.vector:
