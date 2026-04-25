@@ -163,13 +163,6 @@ class _MapScreenState extends State<MapScreen> {
               TileLayer(
                 urlTemplate: tileUrl,
                 userAgentPackageName: 'com.gpsalarm.app',
-                maxNativeZoom: 19,
-                maxZoom: 22,
-                keepBuffer: 2,
-                panBuffer: 0,
-                tileDisplay: const TileDisplay.fadeIn(
-                  duration: Duration(milliseconds: 150),
-                ),
               ),
               // Radius circles
               CircleLayer(
