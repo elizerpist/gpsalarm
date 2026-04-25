@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -10,43 +11,85 @@ import 'screens/map_screen.dart';
 import 'services/debug_console.dart';
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await EasyLocalization.ensureInitialized();
-  await Hive.initFlutter();
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
 
-  // SQLite only on native platforms (not web)
-  if (!kIsWeb) {
+    // Catch Flutter framework errors and show on screen
+    FlutterError.onError = (details) {
+      FlutterError.presentError(details);
+      DebugConsole.log('FLUTTER ERROR: ${details.exceptionAsString()}');
+    };
+
     try {
-      // sqflite works natively without extra setup
-      DebugConsole.log('SQLite available (native)');
-    } catch (e) {
-      DebugConsole.log('SQLite init failed: $e');
+      await EasyLocalization.ensureInitialized();
+      await Hive.initFlutter();
+
+      if (!kIsWeb) {
+        DebugConsole.log('Native mode: SQLite + Hive');
+      } else {
+        DebugConsole.log('Web mode: Hive only');
+      }
+
+      final alarmProvider = AlarmProvider();
+      await alarmProvider.init();
+
+      final settingsProvider = SettingsProvider();
+      await settingsProvider.init();
+
+      runApp(
+        EasyLocalization(
+          supportedLocales: const [Locale('hu'), Locale('en')],
+          path: 'assets/l10n',
+          fallbackLocale: const Locale('hu'),
+          child: MultiProvider(
+            providers: [
+              ChangeNotifierProvider.value(value: alarmProvider),
+              ChangeNotifierProvider.value(value: settingsProvider),
+              ChangeNotifierProvider(create: (_) => MapProvider()),
+            ],
+            child: const GpsAlarmApp(),
+          ),
+        ),
+      );
+    } catch (e, stack) {
+      DebugConsole.log('STARTUP CRASH: $e');
+      runApp(CrashApp(error: '$e\n\n$stack'));
     }
-  } else {
-    DebugConsole.log('Web mode: using Hive only');
-  }
+  }, (error, stack) {
+    DebugConsole.log('ZONE ERROR: $error');
+  });
+}
 
-  final alarmProvider = AlarmProvider();
-  await alarmProvider.init();
+/// Shown when the app crashes during startup
+class CrashApp extends StatelessWidget {
+  final String error;
+  const CrashApp({super.key, required this.error});
 
-  final settingsProvider = SettingsProvider();
-  await settingsProvider.init();
-
-  runApp(
-    EasyLocalization(
-      supportedLocales: const [Locale('hu'), Locale('en')],
-      path: 'assets/l10n',
-      fallbackLocale: const Locale('hu'),
-      child: MultiProvider(
-        providers: [
-          ChangeNotifierProvider.value(value: alarmProvider),
-          ChangeNotifierProvider.value(value: settingsProvider),
-          ChangeNotifierProvider(create: (_) => MapProvider()),
-        ],
-        child: const GpsAlarmApp(),
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      home: Scaffold(
+        backgroundColor: const Color(0xFF1a1a2e),
+        appBar: AppBar(
+          title: const Text('GPS Alarm - Crash'),
+          backgroundColor: Colors.red,
+        ),
+        body: Padding(
+          padding: const EdgeInsets.all(16),
+          child: SingleChildScrollView(
+            child: SelectableText(
+              error,
+              style: const TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 12,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class GpsAlarmApp extends StatelessWidget {
