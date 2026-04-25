@@ -140,26 +140,6 @@ class MapSettingsScreen extends StatelessWidget {
 
           const SizedBox(height: 12),
 
-          // Vector tiles (flutter_map + vector_map_tiles — web + natív)
-          _ProviderCard(
-            title: 'Vektor',
-            subtitle: 'Éles szövegek, smooth zoom, ingyenes, web + natív',
-            icon: Icons.auto_awesome,
-            selected: settings.mapProvider == MapTileProvider.vector,
-            onTap: () => settingsProv.updateSettings(
-                settings.copyWith(mapProvider: MapTileProvider.vector)),
-          ),
-          if (settings.mapProvider == MapTileProvider.vector) ...[
-            const SizedBox(height: 8),
-            _VectorStylePicker(
-              current: settings.vectorStyleUrl,
-              onChanged: (url) => settingsProv
-                  .updateSettings(settings.copyWith(vectorStyleUrl: url)),
-            ),
-          ],
-
-          const SizedBox(height: 12),
-
           // Vector native (MapLibre GL — csak natív, GPU renderelés)
           if (!kIsWeb)
             _ProviderCard(
@@ -489,75 +469,6 @@ class _MapTilerStylePicker extends StatelessWidget {
                       color: selected ? Colors.white : Colors.grey[600],
                       fontWeight:
                           selected ? FontWeight.bold : FontWeight.normal,
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// --- Vector Style Picker ---
-
-class _VectorStylePicker extends StatelessWidget {
-  final String current;
-  final void Function(String) onChanged;
-
-  const _VectorStylePicker({
-    required this.current,
-    required this.onChanged,
-  });
-
-  static const styles = {
-    'openfreemap': 'Liberty',
-    'openfreemap_bright': 'Bright',
-    'openfreemap_positron': 'Positron',
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Vektor stílus (ingyenes, API kulcs nélkül)',
-              style: TextStyle(fontSize: 11, color: Colors.grey[600])),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: styles.entries.map((e) {
-              final selected = current == e.key;
-              return GestureDetector(
-                onTap: () => onChanged(e.key),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: selected
-                        ? Theme.of(context).colorScheme.primary
-                        : Colors.transparent,
-                    border: Border.all(
-                      color: selected
-                          ? Theme.of(context).colorScheme.primary
-                          : Colors.grey[400]!,
-                    ),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    e.value,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: selected ? Colors.white : Colors.grey[600],
-                      fontWeight: selected ? FontWeight.bold : FontWeight.normal,
                     ),
                   ),
                 ),

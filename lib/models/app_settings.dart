@@ -3,7 +3,7 @@ import 'alarm_point.dart';
 
 enum GpsPollingMode { continuous, custom }
 enum MapStartView { currentGps, lastPosition, custom }
-enum MapTileProvider { free, googleMaps, mapTiler, vector, vectorNative }
+enum MapTileProvider { free, googleMaps, mapTiler, vectorNative }
 enum MapTileStyle { standard, humanitarian, topo, positron, voyager, darkMatter }
 
 class AppSettings {

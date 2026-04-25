@@ -23,7 +23,6 @@ import '../services/location_service.dart';
 import '../services/alarm_service.dart';
 import 'settings_screen.dart';
 import '../services/debug_console.dart';
-import '../widgets/vector_map_view.dart';
 import '../widgets/maplibre_map_view.dart';
 import '../widgets/offline_indicator.dart';
 import '../services/cached_tile_provider.dart';
@@ -186,15 +185,6 @@ class _MapScreenState extends State<MapScreen> {
   Widget build(BuildContext context) {
     final mapProvider = context.select<SettingsProvider, MapTileProvider>(
         (p) => p.settings.mapProvider);
-
-    // Vector map (flutter_map + vector_map_tiles) — web + native
-    if (mapProvider == MapTileProvider.vector) {
-      return Scaffold(
-        key: _scaffoldKey,
-        body: VectorMapView(scaffoldKey: _scaffoldKey),
-        drawer: const SettingsDrawer(),
-      );
-    }
 
     // Vector native (MapLibre GL) — native only
     if (mapProvider == MapTileProvider.vectorNative && !kIsWeb) {
@@ -664,7 +654,6 @@ class _MapScreenState extends State<MapScreen> {
         return 'https://api.maptiler.com/maps/$style/{z}/{x}/{y}@2x.png?key=$key';
       case MapTileProvider.free:
         return _getFreeTileUrl(settings.mapTileStyle);
-      case MapTileProvider.vector:
       case MapTileProvider.vectorNative:
         return '';
     }
