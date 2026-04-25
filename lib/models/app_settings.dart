@@ -22,6 +22,7 @@ class AppSettings {
   final String? mapTilerApiKey;
   final String mapTilerStyle; // style name for MapTiler
   final String vectorStyleUrl; // MapLibre vector style URL
+  final bool hapticFeedback;
   final ThemeMode themeMode;
   final String locale;
 
@@ -41,6 +42,7 @@ class AppSettings {
     this.mapTilerApiKey,
     this.mapTilerStyle = 'streets-v2',
     this.vectorStyleUrl = 'openfreemap',
+    this.hapticFeedback = true,
     this.themeMode = ThemeMode.system,
     this.locale = 'hu',
   });
@@ -61,6 +63,7 @@ class AppSettings {
         'mapTilerApiKey': mapTilerApiKey,
         'mapTilerStyle': mapTilerStyle,
         'vectorStyleUrl': vectorStyleUrl,
+        'hapticFeedback': hapticFeedback,
         'themeMode': themeMode.index,
         'locale': locale,
       };
@@ -96,6 +99,7 @@ class AppSettings {
       mapTilerApiKey: map['mapTilerApiKey'] as String?,
       mapTilerStyle: map['mapTilerStyle'] as String? ?? defaults.mapTilerStyle,
       vectorStyleUrl: map['vectorStyleUrl'] as String? ?? defaults.vectorStyleUrl,
+      hapticFeedback: map['hapticFeedback'] as bool? ?? defaults.hapticFeedback,
       themeMode: map['themeMode'] != null
           ? ThemeMode.values[map['themeMode'] as int]
           : defaults.themeMode,
@@ -119,6 +123,7 @@ class AppSettings {
     String? mapTilerApiKey,
     String? mapTilerStyle,
     String? vectorStyleUrl,
+    bool? hapticFeedback,
     ThemeMode? themeMode,
     String? locale,
   }) =>
@@ -139,6 +144,7 @@ class AppSettings {
         mapTilerApiKey: mapTilerApiKey ?? this.mapTilerApiKey,
         mapTilerStyle: mapTilerStyle ?? this.mapTilerStyle,
         vectorStyleUrl: vectorStyleUrl ?? this.vectorStyleUrl,
+        hapticFeedback: hapticFeedback ?? this.hapticFeedback,
         themeMode: themeMode ?? this.themeMode,
         locale: locale ?? this.locale,
       );

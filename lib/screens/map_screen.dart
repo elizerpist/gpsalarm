@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'package:vibration/vibration.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -487,6 +488,11 @@ class _MapScreenState extends State<MapScreen> {
           event.localPosition.dx, event.localPosition.dy);
       final latLng = _mapController.camera.pointToLatLng(screenPoint);
       DebugConsole.log('LONG PRESS START at ${latLng.latitude.toStringAsFixed(4)}, ${latLng.longitude.toStringAsFixed(4)}');
+      // Haptic feedback
+      final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
+      if (haptic) {
+        Vibration.vibrate(duration: 30);
+      }
       _handleLongPress(context, latLng, event.position);
     });
   }

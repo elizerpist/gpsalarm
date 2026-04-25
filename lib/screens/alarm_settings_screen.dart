@@ -140,9 +140,19 @@ class _AlarmSettingsScreenState extends State<AlarmSettingsScreen> {
           if (PlatformService.supportsVibration)
             SwitchListTile(
               title: Text(tr('vibration')),
+              subtitle: const Text('Alarm vibráció', style: TextStyle(fontSize: 11)),
               value: settings.vibrationEnabled,
               onChanged: (v) => settingsProv
                   .updateSettings(settings.copyWith(vibrationEnabled: v)),
+            ),
+          // Haptic feedback toggle (mobile only)
+          if (PlatformService.supportsVibration)
+            SwitchListTile(
+              title: const Text('Haptikus visszajelzés'),
+              subtitle: const Text('Long press, fast assign', style: TextStyle(fontSize: 11)),
+              value: settings.hapticFeedback,
+              onChanged: (v) => settingsProv
+                  .updateSettings(settings.copyWith(hapticFeedback: v)),
             ),
           const SizedBox(height: 16),
 

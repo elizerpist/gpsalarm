@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' show Point, cos, pi, pow, sqrt;
 import 'package:flutter/material.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
+import 'package:vibration/vibration.dart';
 import 'package:provider/provider.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:uuid/uuid.dart';
@@ -134,6 +135,8 @@ class _MapLibreMapViewState extends State<MapLibreMapView> {
   }
 
   void _onMapLongClick(Point<double> point, LatLng coordinates) {
+    final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
+    if (haptic) Vibration.vibrate(duration: 30);
     setState(() {
       _isFastAssigning = true;
       _fastAssignCenter = coordinates;
