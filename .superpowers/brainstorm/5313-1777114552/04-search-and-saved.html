@@ -1,0 +1,182 @@
+<h2>Kereses + Mentett helyek lista</h2>
+<p class="subtitle">FAB kereses flow es a mentett alarm pontok kezelese</p>
+
+<div class="split">
+  <!-- Search flow -->
+  <div class="mockup">
+    <div class="mockup-header">Varos kereses - FAB tap utani allapot</div>
+    <div class="mockup-body" style="position:relative;height:520px;background:linear-gradient(135deg,#c8e6c9,#a5d6a7);overflow:hidden;font-family:sans-serif;">
+
+      <!-- Map bg dimmed -->
+      <div style="position:absolute;inset:0;background:rgba(0,0,0,0.15);"></div>
+      <div style="position:absolute;inset:0;opacity:0.15;">
+        <div style="position:absolute;top:80px;left:30px;width:200px;height:2px;background:#666;transform:rotate(10deg);"></div>
+        <div style="position:absolute;top:150px;left:60px;width:180px;height:2px;background:#666;transform:rotate(-5deg);"></div>
+      </div>
+
+      <!-- Search pill - alulrol felcsuszva -->
+      <div style="position:absolute;bottom:90px;left:16px;right:80px;z-index:10;">
+        <div style="background:white;border-radius:14px;box-shadow:0 4px 20px rgba(0,0,0,0.15);padding:4px;">
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 14px;">
+            <div style="font-size:18px;color:#888;">🔍</div>
+            <div style="flex:1;">
+              <div style="font-size:14px;color:#333;font-weight:500;">Buda<span style="border-right:2px solid #1976d2;animation:blink 1s infinite;">|</span></div>
+            </div>
+            <div style="font-size:14px;color:#aaa;">✕</div>
+          </div>
+        </div>
+
+        <!-- Search results dropdown -->
+        <div style="background:white;border-radius:14px;box-shadow:0 4px 20px rgba(0,0,0,0.12);margin-top:6px;overflow:hidden;">
+          <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #f0f0f0;cursor:pointer;">
+            <div style="font-size:16px;">📍</div>
+            <div>
+              <div style="font-size:13px;color:#333;font-weight:500;">Budapest</div>
+              <div style="font-size:11px;color:#999;">Magyarorszag</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #f0f0f0;cursor:pointer;">
+            <div style="font-size:16px;">📍</div>
+            <div>
+              <div style="font-size:13px;color:#333;font-weight:500;">Budaors</div>
+              <div style="font-size:11px;color:#999;">Pest megye, Magyarorszag</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;cursor:pointer;">
+            <div style="font-size:16px;">📍</div>
+            <div>
+              <div style="font-size:13px;color:#333;font-weight:500;">Budakeszi</div>
+              <div style="font-size:11px;color:#999;">Pest megye, Magyarorszag</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FAB active state -->
+      <div style="position:absolute;bottom:24px;right:16px;z-index:10;">
+        <div style="width:56px;height:56px;background:linear-gradient(135deg,#ef5350,#c62828);border-radius:16px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(198,40,40,0.4);color:white;font-size:20px;">✕</div>
+      </div>
+      <div style="position:absolute;bottom:40px;right:80px;font-size:11px;color:white;background:rgba(0,0,0,0.5);padding:2px 8px;border-radius:8px;">FAB = bezaras</div>
+
+      <!-- Flow label -->
+      <div style="position:absolute;top:16px;left:16px;right:16px;background:rgba(25,118,210,0.9);color:white;padding:10px 14px;border-radius:10px;font-size:12px;line-height:1.6;z-index:10;">
+        <strong>Flow:</strong> FAB tap → pill megjelenik → gepeleskor Nominatim/Photon kereses → talalat valasztas → terkep odarepul
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Saved locations list -->
+  <div class="mockup">
+    <div class="mockup-header">Mentett helyek (hamburger menubol)</div>
+    <div class="mockup-body" style="position:relative;height:520px;background:#1a1a2e;overflow:hidden;font-family:sans-serif;">
+
+      <!-- Header -->
+      <div style="display:flex;align-items:center;gap:12px;padding:16px 20px;background:rgba(255,255,255,0.03);border-bottom:1px solid rgba(255,255,255,0.06);">
+        <div style="font-size:18px;color:rgba(255,255,255,0.5);">‹</div>
+        <div style="font-size:16px;font-weight:bold;color:white;flex:1;">Mentett helyek</div>
+        <div style="font-size:12px;color:#64b5f6;">3 aktiv</div>
+      </div>
+
+      <!-- Alarm point 1 - active -->
+      <div style="padding:14px 20px;border-bottom:1px solid rgba(255,255,255,0.06);">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div style="width:40px;height:40px;background:rgba(76,175,80,0.15);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;">📍</div>
+          <div style="flex:1;">
+            <div style="font-size:14px;color:white;font-weight:500;">Munkahely</div>
+            <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:2px;">500m sugar · Tavolsag trigger</div>
+            <div style="font-size:10px;color:rgba(255,255,255,0.3);margin-top:2px;">47.497° N, 19.040° E</div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+            <div style="width:40px;height:22px;background:#4CAF50;border-radius:11px;position:relative;">
+              <div style="position:absolute;right:2px;top:2px;width:18px;height:18px;background:white;border-radius:50%;"></div>
+            </div>
+            <div style="font-size:10px;color:#4CAF50;">AKTIV</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Alarm point 2 - active, time based -->
+      <div style="padding:14px 20px;border-bottom:1px solid rgba(255,255,255,0.06);">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div style="width:40px;height:40px;background:rgba(33,150,243,0.15);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;">📌</div>
+          <div style="flex:1;">
+            <div style="font-size:14px;color:white;font-weight:500;">Keleti palyaudvar</div>
+            <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:2px;">10 perc · Ido trigger</div>
+            <div style="font-size:10px;color:rgba(255,255,255,0.3);margin-top:2px;">47.500° N, 19.084° E</div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+            <div style="width:40px;height:22px;background:#4CAF50;border-radius:11px;position:relative;">
+              <div style="position:absolute;right:2px;top:2px;width:18px;height:18px;background:white;border-radius:50%;"></div>
+            </div>
+            <div style="font-size:10px;color:#4CAF50;">AKTIV</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Alarm point 3 - active, fast assign -->
+      <div style="padding:14px 20px;border-bottom:1px solid rgba(255,255,255,0.06);">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div style="width:40px;height:40px;background:rgba(255,152,0,0.15);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;">📌</div>
+          <div style="flex:1;">
+            <div style="font-size:14px;color:white;font-weight:500;">Nincs nev</div>
+            <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:2px;">350m sugar · Fast assign</div>
+            <div style="font-size:10px;color:rgba(255,255,255,0.3);margin-top:2px;">47.512° N, 19.023° E</div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+            <div style="width:40px;height:22px;background:#4CAF50;border-radius:11px;position:relative;">
+              <div style="position:absolute;right:2px;top:2px;width:18px;height:18px;background:white;border-radius:50%;"></div>
+            </div>
+            <div style="font-size:10px;color:#4CAF50;">AKTIV</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Alarm point 4 - inactive -->
+      <div style="padding:14px 20px;border-bottom:1px solid rgba(255,255,255,0.06);opacity:0.5;">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div style="width:40px;height:40px;background:rgba(255,255,255,0.05);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;">📍</div>
+          <div style="flex:1;">
+            <div style="font-size:14px;color:white;font-weight:500;">Otthon</div>
+            <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:2px;">200m sugar · Tavolsag trigger</div>
+            <div style="font-size:10px;color:rgba(255,255,255,0.3);margin-top:2px;">47.481° N, 19.067° E</div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+            <div style="width:40px;height:22px;background:rgba(255,255,255,0.15);border-radius:11px;position:relative;">
+              <div style="position:absolute;left:2px;top:2px;width:18px;height:18px;background:rgba(255,255,255,0.5);border-radius:50%;"></div>
+            </div>
+            <div style="font-size:10px;color:rgba(255,255,255,0.3);">INAKTIV</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Swipe hint -->
+      <div style="position:absolute;bottom:16px;left:16px;right:16px;text-align:center;">
+        <div style="font-size:11px;color:rgba(255,255,255,0.3);">← Swipe balra a torleshez · Tap a szerkeszteshez →</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div style="margin-top:20px;">
+  <h3>Technikai reszletek</h3>
+  <table style="width:100%;border-collapse:collapse;font-size:14px;">
+    <tr style="border-bottom:1px solid rgba(255,255,255,0.1);">
+      <td style="padding:8px;font-weight:bold;">Kereses API</td>
+      <td style="padding:8px;">Nominatim / Photon (ingyenes, OpenStreetMap alapu geocoding)</td>
+    </tr>
+    <tr style="border-bottom:1px solid rgba(255,255,255,0.1);">
+      <td style="padding:8px;font-weight:bold;">Debounce</td>
+      <td style="padding:8px;">300ms - ne kuldjunk minden billentyu utasra kerest</td>
+    </tr>
+    <tr style="border-bottom:1px solid rgba(255,255,255,0.1);">
+      <td style="padding:8px;font-weight:bold;">Adat tarolas</td>
+      <td style="padding:8px;">Hive (lokalis, gyors, Flutter nativ) - alarm pontok + beallitasok</td>
+    </tr>
+    <tr style="border-bottom:1px solid rgba(255,255,255,0.1);">
+      <td style="padding:8px;font-weight:bold;">Lista muveletek</td>
+      <td style="padding:8px;">Toggle aktiv/inaktiv, swipe torles, tap szerkesztes (popup)</td>
+    </tr>
+  </table>
+</div>

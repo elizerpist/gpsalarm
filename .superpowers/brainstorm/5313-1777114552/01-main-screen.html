@@ -1,0 +1,93 @@
+<h2>GPS Alarm - Fo kepernyo layout</h2>
+<p class="subtitle">A terkep teljesen kitolti a keppernyot, az UI elemek feluszik rajta</p>
+
+<div class="mockup">
+  <div class="mockup-header">MapScreen - Fo nezet</div>
+  <div class="mockup-body" style="position:relative;height:500px;background:linear-gradient(135deg,#c8e6c9,#a5d6a7,#81c784);overflow:hidden;font-family:sans-serif;">
+
+    <!-- Map background texture -->
+    <div style="position:absolute;inset:0;opacity:0.3;">
+      <div style="position:absolute;top:60px;left:30px;width:200px;height:2px;background:#666;transform:rotate(15deg);"></div>
+      <div style="position:absolute;top:120px;left:10px;width:250px;height:2px;background:#666;transform:rotate(-5deg);"></div>
+      <div style="position:absolute;top:200px;left:50px;width:180px;height:2px;background:#666;transform:rotate(25deg);"></div>
+      <div style="position:absolute;top:80px;left:150px;width:2px;height:150px;background:#666;transform:rotate(10deg);"></div>
+      <div style="position:absolute;top:160px;left:80px;width:2px;height:120px;background:#666;transform:rotate(-8deg);"></div>
+      <div style="position:absolute;top:280px;left:20px;width:300px;height:2px;background:#555;"></div>
+      <div style="position:absolute;top:350px;left:60px;width:220px;height:2px;background:#555;transform:rotate(12deg);"></div>
+    </div>
+
+    <!-- Hamburger menu - bal felul -->
+    <div style="position:absolute;top:12px;left:12px;width:44px;height:44px;background:rgba(255,255,255,0.92);border-radius:12px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.15);cursor:pointer;z-index:10;">
+      <div style="display:flex;flex-direction:column;gap:4px;">
+        <div style="width:20px;height:2px;background:#333;border-radius:1px;"></div>
+        <div style="width:20px;height:2px;background:#333;border-radius:1px;"></div>
+        <div style="width:20px;height:2px;background:#333;border-radius:1px;"></div>
+      </div>
+    </div>
+    <div style="position:absolute;top:18px;left:66px;font-size:11px;color:#555;background:rgba(255,255,255,0.7);padding:2px 8px;border-radius:8px;">Hamburger menu (Settings)</div>
+
+    <!-- Alarm pont peldak a terkepen -->
+    <!-- Pin 1 - aktiv, sugarral -->
+    <div style="position:absolute;top:140px;left:120px;z-index:5;">
+      <div style="width:80px;height:80px;border-radius:50%;border:2px solid rgba(244,67,54,0.6);background:rgba(244,67,54,0.12);display:flex;align-items:center;justify-content:center;">
+        <div style="font-size:24px;">📍</div>
+      </div>
+      <div style="text-align:center;font-size:10px;color:#c62828;font-weight:bold;margin-top:2px;">500m</div>
+    </div>
+
+    <!-- Pin 2 - masik alarm pont -->
+    <div style="position:absolute;top:280px;left:200px;z-index:5;">
+      <div style="width:50px;height:50px;border-radius:50%;border:2px solid rgba(33,150,243,0.6);background:rgba(33,150,243,0.12);display:flex;align-items:center;justify-content:center;">
+        <div style="font-size:20px;">📌</div>
+      </div>
+      <div style="text-align:center;font-size:10px;color:#1565c0;font-weight:bold;margin-top:2px;">1km</div>
+    </div>
+
+    <!-- User pozicio -->
+    <div style="position:absolute;top:220px;left:160px;z-index:6;">
+      <div style="width:16px;height:16px;background:#2196F3;border-radius:50%;border:3px solid white;box-shadow:0 0 8px rgba(33,150,243,0.5);"></div>
+    </div>
+
+    <!-- Zoom gombok - jobb oldal, FAB felett -->
+    <div style="position:absolute;bottom:140px;right:16px;display:flex;flex-direction:column;gap:4px;z-index:10;">
+      <div style="width:44px;height:44px;background:rgba(255,255,255,0.92);border-radius:12px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.15);font-size:22px;font-weight:bold;color:#333;">+</div>
+      <div style="width:44px;height:44px;background:rgba(255,255,255,0.92);border-radius:12px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.15);font-size:22px;font-weight:bold;color:#333;">-</div>
+    </div>
+    <div style="position:absolute;bottom:185px;right:68px;font-size:11px;color:#555;background:rgba(255,255,255,0.7);padding:2px 8px;border-radius:8px;">Zoom +/-</div>
+
+    <!-- FAB gomb - jobb alul -->
+    <div style="position:absolute;bottom:24px;right:16px;z-index:10;">
+      <div style="width:56px;height:56px;background:linear-gradient(135deg,#42a5f5,#1976d2);border-radius:16px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(25,118,210,0.4);color:white;font-size:24px;">🔍</div>
+    </div>
+    <div style="position:absolute;bottom:40px;right:80px;font-size:11px;color:#555;background:rgba(255,255,255,0.7);padding:2px 8px;border-radius:8px;">FAB: Varos kereses</div>
+
+    <!-- Interaction hints -->
+    <div style="position:absolute;bottom:12px;left:12px;background:rgba(0,0,0,0.6);color:white;padding:8px 12px;border-radius:10px;font-size:11px;line-height:1.5;z-index:10;">
+      <div><strong>Tap</strong> = gombostű + popup (sugar/ido)</div>
+      <div><strong>Long tap + swipe</strong> = fast assign kor</div>
+    </div>
+
+  </div>
+</div>
+
+<div style="margin-top:20px;">
+  <h3>Elemek osszefoglalo</h3>
+  <table style="width:100%;border-collapse:collapse;font-size:14px;">
+    <tr style="border-bottom:1px solid rgba(255,255,255,0.1);">
+      <td style="padding:8px;font-weight:bold;">Bal felul</td>
+      <td style="padding:8px;">Hamburger menu ikon (Settings, Mentett helyek, Alarm hangok, GPS beallitasok, Nyelv, Tema)</td>
+    </tr>
+    <tr style="border-bottom:1px solid rgba(255,255,255,0.1);">
+      <td style="padding:8px;font-weight:bold;">Jobb oldal kozepen</td>
+      <td style="padding:8px;">+ / - zoom gombok</td>
+    </tr>
+    <tr style="border-bottom:1px solid rgba(255,255,255,0.1);">
+      <td style="padding:8px;font-weight:bold;">Jobb alul</td>
+      <td style="padding:8px;">FAB gomb (kereses ikon) - tapra felugrik a varos kereso pill</td>
+    </tr>
+    <tr style="border-bottom:1px solid rgba(255,255,255,0.1);">
+      <td style="padding:8px;font-weight:bold;">Terkepen</td>
+      <td style="padding:8px;">Alarm pontok gombostukkel + sugar kor vizualizacio + user pozicio (kek pont)</td>
+    </tr>
+  </table>
+</div>
