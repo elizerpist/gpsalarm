@@ -3,7 +3,7 @@ import 'alarm_point.dart';
 
 enum GpsPollingMode { continuous, custom }
 enum MapStartView { currentGps, lastPosition, custom }
-enum MapTileProvider { free, googleMaps, mapTiler }
+enum MapTileProvider { free, googleMaps, mapTiler, vector }
 enum MapTileStyle { standard, humanitarian, topo, positron, voyager, darkMatter }
 
 class AppSettings {
@@ -21,6 +21,7 @@ class AppSettings {
   final String? googleMapsApiKey;
   final String? mapTilerApiKey;
   final String mapTilerStyle; // style name for MapTiler
+  final String vectorStyleUrl; // MapLibre vector style URL
   final ThemeMode themeMode;
   final String locale;
 
@@ -39,6 +40,7 @@ class AppSettings {
     this.googleMapsApiKey,
     this.mapTilerApiKey,
     this.mapTilerStyle = 'streets-v2',
+    this.vectorStyleUrl = 'https://tiles.openfreemap.org/styles/liberty',
     this.themeMode = ThemeMode.system,
     this.locale = 'hu',
   });
@@ -58,6 +60,7 @@ class AppSettings {
         'googleMapsApiKey': googleMapsApiKey,
         'mapTilerApiKey': mapTilerApiKey,
         'mapTilerStyle': mapTilerStyle,
+        'vectorStyleUrl': vectorStyleUrl,
         'themeMode': themeMode.index,
         'locale': locale,
       };
@@ -92,6 +95,7 @@ class AppSettings {
       googleMapsApiKey: map['googleMapsApiKey'] as String?,
       mapTilerApiKey: map['mapTilerApiKey'] as String?,
       mapTilerStyle: map['mapTilerStyle'] as String? ?? defaults.mapTilerStyle,
+      vectorStyleUrl: map['vectorStyleUrl'] as String? ?? defaults.vectorStyleUrl,
       themeMode: map['themeMode'] != null
           ? ThemeMode.values[map['themeMode'] as int]
           : defaults.themeMode,
@@ -114,6 +118,7 @@ class AppSettings {
     String? googleMapsApiKey,
     String? mapTilerApiKey,
     String? mapTilerStyle,
+    String? vectorStyleUrl,
     ThemeMode? themeMode,
     String? locale,
   }) =>
@@ -133,6 +138,7 @@ class AppSettings {
         googleMapsApiKey: googleMapsApiKey ?? this.googleMapsApiKey,
         mapTilerApiKey: mapTilerApiKey ?? this.mapTilerApiKey,
         mapTilerStyle: mapTilerStyle ?? this.mapTilerStyle,
+        vectorStyleUrl: vectorStyleUrl ?? this.vectorStyleUrl,
         themeMode: themeMode ?? this.themeMode,
         locale: locale ?? this.locale,
       );

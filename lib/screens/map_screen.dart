@@ -21,6 +21,7 @@ import '../services/location_service.dart';
 import '../services/alarm_service.dart';
 import 'settings_screen.dart';
 import '../services/debug_console.dart';
+import '../widgets/vector_map_view.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -168,6 +169,18 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isVector = context.select<SettingsProvider, bool>(
+        (p) => p.settings.mapProvider == MapTileProvider.vector);
+
+    // Use vector map (MapLibre) when selected
+    if (isVector) {
+      return Scaffold(
+        key: _scaffoldKey,
+        body: VectorMapView(scaffoldKey: _scaffoldKey),
+        drawer: const SettingsDrawer(),
+      );
+    }
+
     final tileConfig = context.select<SettingsProvider, (String, double)>(
         (p) => _getTileConfig(p.settings));
     final tileUrl = tileConfig.$1;
@@ -178,7 +191,6 @@ class _MapScreenState extends State<MapScreen> {
       key: _scaffoldKey,
       body: Stack(
         children: [
-          // Map - uses read, not watch, for providers accessed via callbacks
           FlutterMap(
             mapController: _mapController,
             options: MapOptions(
