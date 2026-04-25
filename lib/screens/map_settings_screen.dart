@@ -72,6 +72,33 @@ class MapSettingsScreen extends StatelessWidget {
             onTap: () => settingsProv.updateSettings(
                 settings.copyWith(mapTileStyle: MapTileStyle.topo)),
           ),
+          const SizedBox(height: 8),
+          _TileStyleCard(
+            title: 'Positron',
+            subtitle: 'Ultra minimál — csak utcák, szürke-fehér',
+            icon: Icons.grid_on,
+            selected: settings.mapTileStyle == MapTileStyle.positron,
+            onTap: () => settingsProv.updateSettings(
+                settings.copyWith(mapTileStyle: MapTileStyle.positron)),
+          ),
+          const SizedBox(height: 8),
+          _TileStyleCard(
+            title: 'Voyager',
+            subtitle: 'Letisztult, enyhe színek, modern',
+            icon: Icons.explore,
+            selected: settings.mapTileStyle == MapTileStyle.voyager,
+            onTap: () => settingsProv.updateSettings(
+                settings.copyWith(mapTileStyle: MapTileStyle.voyager)),
+          ),
+          const SizedBox(height: 8),
+          _TileStyleCard(
+            title: 'Dark Matter',
+            subtitle: 'Sötét minimál — éjszakai mód',
+            icon: Icons.dark_mode,
+            selected: settings.mapTileStyle == MapTileStyle.darkMatter,
+            onTap: () => settingsProv.updateSettings(
+                settings.copyWith(mapTileStyle: MapTileStyle.darkMatter)),
+          ),
         ],
       ),
     );

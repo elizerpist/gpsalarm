@@ -424,14 +424,17 @@ class _MapScreenState extends State<MapScreen> {
   String _getTileUrl(MapTileStyle style) {
     switch (style) {
       case MapTileStyle.standard:
-        // Clean street map - utcák, épületek, minimális domborzat
         return 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
       case MapTileStyle.humanitarian:
-        // Humanitarian style - világosabb, utca-fókuszú
         return 'https://a.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png';
       case MapTileStyle.topo:
-        // Topográfiai - domborzat, szintvonalak
         return 'https://tile.opentopomap.org/{z}/{x}/{y}.png';
+      case MapTileStyle.positron:
+        return 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png';
+      case MapTileStyle.voyager:
+        return 'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
+      case MapTileStyle.darkMatter:
+        return 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
     }
   }
 
