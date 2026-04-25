@@ -163,6 +163,9 @@ class _MapScreenState extends State<MapScreen> {
               TileLayer(
                 urlTemplate: tileUrl,
                 userAgentPackageName: 'com.gpsalarm.app',
+                keepBuffer: 8,
+                panBuffer: 3,
+                maxZoom: 18,
               ),
               // Radius circles
               CircleLayer(
