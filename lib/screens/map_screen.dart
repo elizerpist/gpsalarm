@@ -182,11 +182,9 @@ class _MapScreenState extends State<MapScreen> {
       );
     }
 
-    final tileConfig = context.select<SettingsProvider, (String, double)>(
-        (p) => _getTileConfig(p.settings));
-    final tileUrl = tileConfig.$1;
-    final tileSize = tileConfig.$2;
-    DebugConsole.log('build() tile=$tileUrl size=$tileSize');
+    final tileUrl = context.select<SettingsProvider, String>(
+        (p) => _getTileUrl(p.settings));
+    DebugConsole.log('build() tile=$tileUrl');
 
     return Scaffold(
       key: _scaffoldKey,
@@ -213,7 +211,6 @@ class _MapScreenState extends State<MapScreen> {
               TileLayer(
                 urlTemplate: tileUrl,
                 userAgentPackageName: 'com.gpsalarm.app',
-                tileSize: tileSize,
               ),
               // Radius circles - only rebuilds when alarms change
               Consumer<AlarmProvider>(
@@ -515,42 +512,36 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  // Returns (tileUrl, tileSize) - @2x tiles are 512px
-  (String, double) _getTileConfig(AppSettings settings) {
+  String _getTileUrl(AppSettings settings) {
     switch (settings.mapProvider) {
       case MapTileProvider.googleMaps:
         final key = settings.googleMapsApiKey ?? '';
-        // Google supports scale=2 for HiDPI
-        return ('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&scale=2&key=$key', 256);
+        return 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&scale=2&key=$key';
       case MapTileProvider.mapTiler:
         final key = settings.mapTilerApiKey ?? '';
         final style = settings.mapTilerStyle;
-        // MapTiler @2x = 512px tiles, sharp on HiDPI
-        return ('https://api.maptiler.com/maps/$style/{z}/{x}/{y}@2x.png?key=$key', 512);
+        return 'https://api.maptiler.com/maps/$style/{z}/{x}/{y}@2x.png?key=$key';
       case MapTileProvider.free:
-        return _getFreeTileConfig(settings.mapTileStyle);
+        return _getFreeTileUrl(settings.mapTileStyle);
       case MapTileProvider.vector:
-        // Vector uses MapLibre, not TileLayer - this won't be called
-        return ('', 256);
+        return '';
     }
   }
 
-  (String, double) _getFreeTileConfig(MapTileStyle style) {
+  String _getFreeTileUrl(MapTileStyle style) {
     switch (style) {
       case MapTileStyle.standard:
-        // OSM standard doesn't support @2x
-        return ('https://tile.openstreetmap.org/{z}/{x}/{y}.png', 256);
+        return 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
       case MapTileStyle.humanitarian:
-        return ('https://a.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', 256);
+        return 'https://a.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png';
       case MapTileStyle.topo:
-        return ('https://tile.opentopomap.org/{z}/{x}/{y}.png', 256);
+        return 'https://tile.opentopomap.org/{z}/{x}/{y}.png';
       case MapTileStyle.positron:
-        // CartoDB supports @2x
-        return ('https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png', 512);
+        return 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png';
       case MapTileStyle.voyager:
-        return ('https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png', 512);
+        return 'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png';
       case MapTileStyle.darkMatter:
-        return ('https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png', 512);
+        return 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png';
     }
   }
 }
