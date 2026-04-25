@@ -157,7 +157,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
         MapLibreMap(
           options: MapOptions(
             initStyle: _getStyleUrl(),
-            initCenter: const Position(19.0402, 47.4979),
+            initCenter: Position(19.0402, 47.4979),
             initZoom: 13,
           ),
           onMapCreated: _onMapCreated,
