@@ -55,7 +55,74 @@ class _MapScreenState extends State<MapScreen> {
         mapProv.setCenter(_userPosition!);
         _mapController.move(_userPosition!, mapProv.zoom);
       }
+      // Start continuous GPS tracking for alarm monitoring
+      _locationService.startTracking(onPosition: (position) {
+        if (!mounted) return;
+        setState(() {
+          _userPosition = LatLng(position.latitude, position.longitude);
+        });
+        _checkAlarms(position.latitude, position.longitude);
+      });
     }
+  }
+
+  void _checkAlarms(double userLat, double userLng) {
+    final alarmProv = context.read<AlarmProvider>();
+    final activePoints =
+        alarmProv.alarmPoints.where((p) => p.isActive).toList();
+
+    for (final point in activePoints) {
+      bool shouldTrigger = false;
+
+      if (point.triggerType == TriggerType.distance) {
+        shouldTrigger = AlarmService.isWithinRadius(
+          userLat: userLat,
+          userLng: userLng,
+          pointLat: point.latitude,
+          pointLng: point.longitude,
+          radiusMeters: point.radiusMeters,
+        );
+      } else if (point.triggerType == TriggerType.time &&
+          point.timeTrigger != null) {
+        final dist = AlarmService.distanceMeters(
+            userLat, userLng, point.latitude, point.longitude);
+        final eta = AlarmService.calculateEtaMinutes(
+          distanceMeters: dist,
+          speedKmh: _locationService.averageSpeedKmh,
+        );
+        if (eta != null && eta <= point.timeTrigger!.inMinutes) {
+          shouldTrigger = true;
+        }
+      }
+
+      if (shouldTrigger) {
+        // Deactivate alarm
+        alarmProv.toggleActive(point.id);
+        // Show alarm notification
+        _showAlarmTriggered(point);
+      }
+    }
+  }
+
+  void _showAlarmTriggered(AlarmPoint point) {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        icon: const Icon(Icons.alarm, color: Colors.red, size: 48),
+        title: Text(point.name ?? tr('no_name')),
+        content: Text(point.triggerType == TriggerType.distance
+            ? '${point.radiusMeters.round()}m'
+            : '${point.timeTrigger?.inMinutes ?? 0} min'),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(tr('dismiss')),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
