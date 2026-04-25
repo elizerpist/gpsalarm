@@ -153,6 +153,25 @@ class _RadiusPopupState extends State<RadiusPopup> {
               ),
             ],
             const SizedBox(height: 20),
+            // Delete button (only in edit mode)
+            if (widget.existingPoint != null) ...[
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => _delete(context),
+                  icon: const Icon(Icons.delete, color: Colors.red, size: 18),
+                  label: Text(tr('delete'),
+                      style: const TextStyle(color: Colors.red)),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.red),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
             Row(
               children: [
                 Expanded(
@@ -213,6 +232,13 @@ class _RadiusPopupState extends State<RadiusPopup> {
     } else {
       alarmProv.addAlarmPoint(point);
     }
+    Navigator.pop(context);
+  }
+
+  void _delete(BuildContext context) {
+    if (widget.existingPoint == null) return;
+    final alarmProv = context.read<AlarmProvider>();
+    alarmProv.removeAlarmPoint(widget.existingPoint!.id);
     Navigator.pop(context);
   }
 }

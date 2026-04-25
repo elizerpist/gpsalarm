@@ -18,6 +18,7 @@ Marker buildPinMarker({
     width: 60,
     height: 60,
     child: GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
