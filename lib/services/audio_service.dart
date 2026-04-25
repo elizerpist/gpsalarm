@@ -21,9 +21,9 @@ class AudioService {
   };
 
   static const Map<String, String> assetSounds = {
-    'classic_bell': 'sounds/classic_bell.mp3',
-    'radar_ping': 'sounds/radar_ping.mp3',
-    'gentle_wake': 'sounds/gentle_wake.mp3',
+    'classic_bell': 'sounds/classic_bell.wav',
+    'radar_ping': 'sounds/radar_ping.wav',
+    'gentle_wake': 'sounds/gentle_wake.wav',
   };
 
   Future<void> playAlarm(String soundName, {double volume = 0.7, bool loop = true}) async {
