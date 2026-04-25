@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -169,10 +170,10 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isVector = context.select<SettingsProvider, bool>(
+    final isVector = !kIsWeb && context.select<SettingsProvider, bool>(
         (p) => p.settings.mapProvider == MapTileProvider.vector);
 
-    // Use vector map (MapLibre) when selected
+    // Use vector map (MapLibre) when selected - native only
     if (isVector) {
       return Scaffold(
         key: _scaffoldKey,

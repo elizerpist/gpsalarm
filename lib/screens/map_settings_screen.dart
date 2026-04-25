@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -118,8 +119,8 @@ class MapSettingsScreen extends StatelessWidget {
 
           const SizedBox(height: 12),
 
-          // Vector (MapLibre)
-          _ProviderCard(
+          // Vector (MapLibre) - native only
+          if (!kIsWeb) _ProviderCard(
             title: 'Vektor (MapLibre)',
             subtitle: 'Éles szövegek, smooth zoom, 60fps, ingyenes',
             icon: Icons.auto_awesome,
@@ -127,7 +128,7 @@ class MapSettingsScreen extends StatelessWidget {
             onTap: () => settingsProv.updateSettings(
                 settings.copyWith(mapProvider: MapTileProvider.vector)),
           ),
-          if (settings.mapProvider == MapTileProvider.vector) ...[
+          if (!kIsWeb && settings.mapProvider == MapTileProvider.vector) ...[
             const SizedBox(height: 8),
             _VectorStylePicker(
               current: settings.vectorStyleUrl,
