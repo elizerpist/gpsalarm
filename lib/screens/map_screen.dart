@@ -281,6 +281,7 @@ class _MapScreenState extends State<MapScreen> {
                 },
                 onSearchTap: () =>
                     context.read<MapProvider>().toggleSearch(),
+                onMyLocation: _goToMyLocation,
                 searchActive: searchActive,
               ),
             ),
@@ -407,6 +408,14 @@ class _MapScreenState extends State<MapScreen> {
         ),
       ),
     );
+  }
+
+  void _goToMyLocation() {
+    final pos = _userPosition.value;
+    if (pos != null) {
+      _mapController.move(pos, 15);
+      DebugConsole.log('Jump to my location: ${pos.latitude.toStringAsFixed(4)}, ${pos.longitude.toStringAsFixed(4)}');
+    }
   }
 
   void _handleTap(BuildContext context, LatLng point) {

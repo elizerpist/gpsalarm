@@ -5,6 +5,7 @@ class MapControls extends StatelessWidget {
   final VoidCallback onZoomIn;
   final VoidCallback onZoomOut;
   final VoidCallback onSearchTap;
+  final VoidCallback onMyLocation;
   final bool searchActive;
 
   const MapControls({
@@ -13,6 +14,7 @@ class MapControls extends StatelessWidget {
     required this.onZoomIn,
     required this.onZoomOut,
     required this.onSearchTap,
+    required this.onMyLocation,
     required this.searchActive,
   });
 
@@ -54,6 +56,16 @@ class MapControls extends StatelessWidget {
                 child: Icon(Icons.remove, color: iconColor, size: 24),
               ),
             ],
+          ),
+        ),
+        // My location button
+        Positioned(
+          bottom: 92,
+          right: 16,
+          child: _ControlButton(
+            onTap: onMyLocation,
+            bgColor: bgColor,
+            child: Icon(Icons.my_location, color: iconColor, size: 22),
           ),
         ),
         // FAB - bottom right
