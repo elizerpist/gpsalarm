@@ -1,10 +1,10 @@
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
 /// Tile provider that caches tiles to disk automatically.
-/// Once downloaded, tiles are available offline.
 /// Only used on native platforms (not web).
 class CachedTileProvider extends TileProvider {
   static final _cacheManager = CacheManager(
@@ -20,7 +20,7 @@ class CachedTileProvider extends TileProvider {
   @override
   ImageProvider getImage(TileCoordinates coordinates, TileLayer options) {
     final url = getTileUrl(coordinates, options);
-    return _CachedTileImageProvider(url, _cacheManager);
+    return _CachedTileImage(url, _cacheManager);
   }
 
   static Future<void> clearCache() async {
@@ -28,20 +28,20 @@ class CachedTileProvider extends TileProvider {
   }
 }
 
-class _CachedTileImageProvider extends ImageProvider<_CachedTileImageProvider> {
+class _CachedTileImage extends ImageProvider<_CachedTileImage> {
   final String url;
-  final CacheManager cacheManager;
+  final CacheManager cache;
 
-  _CachedTileImageProvider(this.url, this.cacheManager);
+  _CachedTileImage(this.url, this.cache);
 
   @override
-  Future<_CachedTileImageProvider> obtainKey(ImageConfiguration configuration) {
+  Future<_CachedTileImage> obtainKey(ImageConfiguration configuration) {
     return SynchronousFuture(this);
   }
 
   @override
   ImageStreamCompleter loadImage(
-      _CachedTileImageProvider key, ImageDecoderCallback decode) {
+      _CachedTileImage key, ImageDecoderCallback decode) {
     return MultiFrameImageStreamCompleter(
       codec: _load(decode),
       scale: 1.0,
@@ -49,7 +49,7 @@ class _CachedTileImageProvider extends ImageProvider<_CachedTileImageProvider> {
   }
 
   Future<ui.Codec> _load(ImageDecoderCallback decode) async {
-    final file = await cacheManager.getSingleFile(url);
+    final file = await cache.getSingleFile(url);
     final bytes = await file.readAsBytes();
     final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
     return decode(buffer);
@@ -57,7 +57,7 @@ class _CachedTileImageProvider extends ImageProvider<_CachedTileImageProvider> {
 
   @override
   bool operator ==(Object other) =>
-      other is _CachedTileImageProvider && other.url == url;
+      other is _CachedTileImage && other.url == url;
 
   @override
   int get hashCode => url.hashCode;
