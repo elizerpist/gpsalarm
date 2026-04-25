@@ -208,7 +208,7 @@ class _MapScreenState extends State<MapScreen> {
         (p) => p.settings.mapProvider);
 
     // Vector (maplibre) — native only
-    if (mapProvider == MapTileProvider.vectorMaplibre && !kIsWeb) {
+    if (mapProvider == MapTileProvider.vector && !kIsWeb) {
       return Scaffold(
         key: _scaffoldKey,
         body: MaplibreNewView(scaffoldKey: _scaffoldKey),
@@ -680,7 +680,7 @@ class _MapScreenState extends State<MapScreen> {
         return 'https://api.maptiler.com/maps/$style/{z}/{x}/{y}@2x.png?key=$key';
       case MapTileProvider.free:
         return _getFreeTileUrl(settings.mapTileStyle);
-      case MapTileProvider.vectorMaplibre:
+      case MapTileProvider.vector:
         return '';
     }
   }

@@ -29,6 +29,7 @@ dependencies:
   path: ^1.9.0
   shared_preferences: ^2.3.5
   maplibre_gl: ^0.26.0
+  # maplibre: nem használható maplibre_gl-lel együtt (duplicate libmaplibre.so)
   connectivity_plus: ^6.1.2
   cached_network_image: ^3.4.1
   flutter_cache_manager: ^3.4.1

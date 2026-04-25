@@ -146,11 +146,11 @@ class MapSettingsScreen extends StatelessWidget {
               title: 'Vektor (MapLibre)',
               subtitle: 'GPU renderelés, 60fps, offline, csak Android/iOS',
               icon: Icons.rocket_launch,
-              selected: settings.mapProvider == MapTileProvider.vectorMaplibre,
+              selected: settings.mapProvider == MapTileProvider.vector,
               onTap: () => settingsProv.updateSettings(
-                  settings.copyWith(mapProvider: MapTileProvider.vectorMaplibre)),
+                  settings.copyWith(mapProvider: MapTileProvider.vector)),
             ),
-          if (!kIsWeb && settings.mapProvider == MapTileProvider.vectorMaplibre) ...[
+          if (!kIsWeb && settings.mapProvider == MapTileProvider.vector) ...[
             const SizedBox(height: 8),
             _VectorNativeStylePicker(
               current: settings.vectorStyleUrl,
