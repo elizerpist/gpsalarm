@@ -210,27 +210,34 @@ class _VectorMapViewState extends State<VectorMapView> {
 
   // --- Build vector tile layer ---
 
-  VectorTileLayer _buildVectorLayer(String styleKey) {
-    if (styleKey == 'versatiles') {
-      return VectorTileLayer(
-        tileProviders: TileProviders({
-          'versatiles': NetworkVectorTileProvider(
-            urlTemplate: 'https://tiles.versatiles.org/tiles/osm/{z}/{x}/{y}',
-            maximumZoom: 14,
-          ),
-        }),
-        theme: ProvidedThemes.versatiles(),
-      );
+  Future<Style>? _styleFuture;
+  String? _lastStyleKey;
+
+  Future<Style> _loadStyle(String styleKey) async {
+    final styleUrl = styleKey == 'versatiles'
+        ? 'https://tiles.versatiles.org/assets/styles/colorful.json'
+        : 'https://tiles.openfreemap.org/styles/liberty';
+    return StyleReader(uri: styleUrl, logger: null).read();
+  }
+
+  Widget _buildVectorLayer(String styleKey) {
+    if (_lastStyleKey != styleKey) {
+      _styleFuture = _loadStyle(styleKey);
+      _lastStyleKey = styleKey;
     }
-    // Default: OpenFreeMap
-    return VectorTileLayer(
-      tileProviders: TileProviders({
-        'openmaptiles': NetworkVectorTileProvider(
-          urlTemplate: 'https://tiles.openfreemap.org/planet/{z}/{x}/{y}.pbf',
-          maximumZoom: 14,
-        ),
-      }),
-      theme: ProvidedThemes.openStreetMap(),
+    return FutureBuilder<Style>(
+      future: _styleFuture,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final style = snapshot.data!;
+        return VectorTileLayer(
+          tileProviders: style.providers,
+          theme: style.theme,
+          sprites: style.sprites,
+        );
+      },
     );
   }
 
