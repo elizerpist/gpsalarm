@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -48,6 +49,10 @@ class _MapScreenState extends State<MapScreen> {
   double _fastAssignRadiusMeters = 500;
   bool _isFastAssigning = false;
   Offset? _fastAssignStartOffset; // screen position of long press
+  // Long press timer for custom detection
+  Timer? _longPressTimer;
+  Offset? _pointerDownPos;
+  bool _longPressTriggered = false;
 
   // Frame timing
   int _frameCount = 0;
@@ -172,6 +177,7 @@ class _MapScreenState extends State<MapScreen> {
   void dispose() {
     _locationService.dispose();
     _userPosition.dispose();
+    _cancelLongPressTimer();
     super.dispose();
   }
 
@@ -197,23 +203,34 @@ class _MapScreenState extends State<MapScreen> {
       key: _scaffoldKey,
       body: Stack(
         children: [
-          FlutterMap(
-            mapController: _mapController,
-            options: MapOptions(
-              initialCenter: context.read<MapProvider>().center,
-              initialZoom: context.read<MapProvider>().zoom,
-              interactionOptions: InteractionOptions(
-                flags: _isFastAssigning
-                    ? InteractiveFlag.none
-                    : InteractiveFlag.all & ~InteractiveFlag.rotate,
+          // Long press gesture layer on top of map
+          Listener(
+            behavior: _isFastAssigning
+                ? HitTestBehavior.opaque
+                : HitTestBehavior.translucent,
+            onPointerDown: _onPointerDown,
+            onPointerMove: _onPointerMove,
+            onPointerUp: _onPointerUp,
+            onPointerCancel: (_) => _cancelLongPressTimer(),
+            child: FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: context.read<MapProvider>().center,
+                initialZoom: context.read<MapProvider>().zoom,
+                interactionOptions: InteractionOptions(
+                  flags: _isFastAssigning
+                      ? InteractiveFlag.none
+                      : InteractiveFlag.all & ~InteractiveFlag.rotate,
+                ),
+                onTap: _isFastAssigning
+                    ? null
+                    : (tapPosition, point) => _handleTap(context, point),
+                onPositionChanged: (position, hasGesture) {
+                  if (hasGesture) {
+                    _cancelLongPressTimer();
+                  }
+                },
               ),
-              onTap: (tapPosition, point) => _handleTap(context, point),
-              onPositionChanged: (position, hasGesture) {
-                if (hasGesture) {
-                  // DON'T update providers on every pan/zoom frame - causes rebuilds
-                }
-              },
-            ),
             children: [
               TileLayer(
                 urlTemplate: tileUrl,
@@ -279,44 +296,8 @@ class _MapScreenState extends State<MapScreen> {
               ),
             ],
           ),
-          // Long press + swipe overlay for fast assign
-          if (!_isFastAssigning)
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onLongPressStart: (details) {
-                  final screenPoint = Point<double>(
-                      details.localPosition.dx, details.localPosition.dy);
-                  final latLng = _mapController.camera
-                      .pointToLatLng(screenPoint);
-                  _handleLongPress(context, latLng, details.globalPosition);
-                },
-                onLongPressMoveUpdate: (details) {
-                  if (!_isFastAssigning || _fastAssignStartOffset == null) return;
-                  final dx = details.globalPosition.dx - _fastAssignStartOffset!.dx;
-                  final dy = details.globalPosition.dy - _fastAssignStartOffset!.dy;
-                  final pixelDist = sqrt(dx * dx + dy * dy);
-                  final meters = _pixelsToMeters(pixelDist).clamp(100.0, 5000.0);
-                  setState(() => _fastAssignRadiusMeters = meters);
-                },
-                onLongPressEnd: (details) {
-                  if (_isFastAssigning) {
-                    // Don't auto-save on release — let user adjust with slider or confirm
-                  }
-                },
-                child: const SizedBox.expand(),
-              ),
-            ),
-          // Swipe overlay during fast assign (after long press released)
-          if (_isFastAssigning)
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onPanUpdate: _onFastAssignPan,
-                onPanEnd: _onFastAssignRelease,
-                child: const SizedBox.expand(),
-              ),
-            ),
+          ), // close Listener
+          // (swipe handled by Listener above)
           // Offline indicator
           const OfflineIndicator(),
           // Debug button - top right
@@ -482,6 +463,56 @@ class _MapScreenState extends State<MapScreen> {
         ),
       ),
     );
+  }
+
+  void _onPointerDown(PointerDownEvent event) {
+    if (_isFastAssigning) return;
+    _pointerDownPos = event.position;
+    _longPressTriggered = false;
+    _longPressTimer = Timer(const Duration(milliseconds: 500), () {
+      if (_pointerDownPos == null) return;
+      _longPressTriggered = true;
+      final screenPoint = Point<double>(
+          event.localPosition.dx, event.localPosition.dy);
+      final latLng = _mapController.camera.pointToLatLng(screenPoint);
+      DebugConsole.log('LONG PRESS START at ${latLng.latitude.toStringAsFixed(4)}, ${latLng.longitude.toStringAsFixed(4)}');
+      _handleLongPress(context, latLng, event.position);
+    });
+  }
+
+  void _onPointerMove(PointerMoveEvent event) {
+    // If long press not yet triggered, check if moved too far (cancel)
+    if (!_longPressTriggered && _pointerDownPos != null) {
+      final dist = (event.position - _pointerDownPos!).distance;
+      if (dist > 20) {
+        _cancelLongPressTimer();
+      }
+      return;
+    }
+    // Long press active — update radius based on swipe distance
+    if (_isFastAssigning && _fastAssignStartOffset != null) {
+      final dx = event.position.dx - _fastAssignStartOffset!.dx;
+      final dy = event.position.dy - _fastAssignStartOffset!.dy;
+      final pixelDist = sqrt(dx * dx + dy * dy);
+      final meters = _pixelsToMeters(pixelDist).clamp(100.0, 5000.0);
+      setState(() => _fastAssignRadiusMeters = meters);
+      DebugConsole.log('SWIPE radius: ${meters.round()}m (${pixelDist.round()}px)');
+    }
+  }
+
+  void _onPointerUp(PointerUpEvent event) {
+    _cancelLongPressTimer();
+    if (_longPressTriggered && _isFastAssigning) {
+      DebugConsole.log('LONG PRESS RELEASED — radius: ${_fastAssignRadiusMeters.round()}m');
+      // Keep the panel open for confirmation/fine-tuning
+    }
+    _longPressTriggered = false;
+    _pointerDownPos = null;
+  }
+
+  void _cancelLongPressTimer() {
+    _longPressTimer?.cancel();
+    _longPressTimer = null;
   }
 
   double _pixelsToMeters(double pixels) {
