@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:easy_localization/easy_localization.dart';
 import '../models/alarm_point.dart';
 import '../providers/settings_provider.dart';
+import 'package:file_picker/file_picker.dart';
 import '../services/audio_service.dart';
 import '../services/platform_service.dart';
 
@@ -21,6 +22,17 @@ class _AlarmSettingsScreenState extends State<AlarmSettingsScreen> {
   void dispose() {
     _audioService.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickCustomSound(SettingsProvider settingsProv) async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.audio,
+    );
+    if (result != null && result.files.single.path != null) {
+      final path = result.files.single.path!;
+      settingsProv.updateSettings(
+          settingsProv.settings.copyWith(defaultAlarmSound: path));
+    }
   }
 
   void _togglePreview(String soundKey) async {
@@ -133,6 +145,19 @@ class _AlarmSettingsScreenState extends State<AlarmSettingsScreen> {
               onPreview: () => _togglePreview(key),
             );
           }),
+
+          // Custom file picker (mobile only)
+          if (PlatformService.supportsFilePicker)
+            _SoundTile(
+              name: tr('custom_file'),
+              icon: Icons.folder_open,
+              selected: settings.defaultAlarmSound.startsWith('/'),
+              playing: _playingSound != null && _playingSound!.startsWith('/'),
+              onTap: () => _pickCustomSound(settingsProv),
+              onPreview: settings.defaultAlarmSound.startsWith('/')
+                  ? () => _togglePreview(settings.defaultAlarmSound)
+                  : () {},
+            ),
 
           const SizedBox(height: 24),
 

@@ -1,6 +1,7 @@
 import 'dart:async';
+import 'dart:math' show Point, cos, pi, pow, sqrt;
 import 'package:flutter/material.dart';
-import 'package:maplibre/maplibre.dart';
+import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:provider/provider.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:uuid/uuid.dart';
@@ -25,13 +26,13 @@ class MaplibreNewView extends StatefulWidget {
 }
 
 class _MaplibreNewViewState extends State<MaplibreNewView> {
-  MapController? _controller;
+  MapLibreMapController? _controller;
   final LocationService _locationService = LocationService();
+  LatLng? _userPosition;
   bool _isFastAssigning = false;
-  double _fastAssignLat = 0;
-  double _fastAssignLng = 0;
+  LatLng? _fastAssignCenter;
   double _fastAssignRadiusMeters = 500;
-  double _currentZoom = 13;
+  String? _currentStyleUrl;
 
   static const _styleUrls = {
     'liberty': 'https://tiles.openfreemap.org/styles/liberty',
@@ -50,13 +51,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     if (hasPermission) {
       final pos = await _locationService.getCurrentPosition();
       if (pos != null && mounted) {
-        _controller?.moveCamera(
-          center: Position(pos.longitude, pos.latitude),
-          zoom: 14,
-        );
+        _userPosition = LatLng(pos.latitude, pos.longitude);
+        _controller?.animateCamera(CameraUpdate.newLatLngZoom(_userPosition!, 14));
       }
       _locationService.startTracking(onPosition: (position) {
         if (!mounted) return;
+        _userPosition = LatLng(position.latitude, position.longitude);
         _checkAlarms(position.latitude, position.longitude);
       });
     }
@@ -92,57 +92,40 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     super.dispose();
   }
 
-  void _onMapCreated(MapController controller) {
+  void _onMapCreated(MapLibreMapController controller) {
     _controller = controller;
-    DebugConsole.log('MapLibre (new) map created');
+    DebugConsole.log('MapLibre vector map created');
+    if (_userPosition != null) {
+      controller.animateCamera(CameraUpdate.newLatLngZoom(_userPosition!, 14));
+    }
   }
 
-  void _onTap(double lat, double lng) {
+  void _onMapClick(Point<double> point, LatLng coordinates) {
     if (_isFastAssigning) return;
     final alarmProv = context.read<AlarmProvider>();
-    final existing = alarmProv.findNearby(lat, lng);
+    final existing = alarmProv.findNearby(coordinates.latitude, coordinates.longitude);
     if (existing != null) {
       showModalBottomSheet(
         context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
-        builder: (_) => RadiusPopup(latitude: existing.latitude, longitude: existing.longitude, existingPoint: existing),
+        builder: (_) => RadiusPopup(
+          latitude: existing.latitude, longitude: existing.longitude, existingPoint: existing),
       );
     } else {
       showModalBottomSheet(
         context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
-        builder: (_) => RadiusPopup(latitude: lat, longitude: lng),
+        builder: (_) => RadiusPopup(latitude: coordinates.latitude, longitude: coordinates.longitude),
       );
     }
   }
 
-  void _onLongPress(double lat, double lng) {
+  void _onMapLongClick(Point<double> point, LatLng coordinates) {
     final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
     if (haptic) Vibration.vibrate(duration: 30);
     setState(() {
       _isFastAssigning = true;
-      _fastAssignLat = lat;
-      _fastAssignLng = lng;
+      _fastAssignCenter = coordinates;
       _fastAssignRadiusMeters = 500;
     });
-  }
-
-  void _cancelFastAssign() {
-    setState(() {
-      _isFastAssigning = false;
-    });
-  }
-
-  void _confirmFastAssign() {
-    final alarmProv = context.read<AlarmProvider>();
-    if (alarmProv.canAddAlarm) {
-      alarmProv.addAlarmPoint(AlarmPoint(
-        id: const Uuid().v4(),
-        latitude: _fastAssignLat,
-        longitude: _fastAssignLng,
-        radiusMeters: _fastAssignRadiusMeters,
-        triggerType: TriggerType.distance,
-      ));
-    }
-    _cancelFastAssign();
   }
 
   String _getStyleUrl() {
@@ -152,39 +135,42 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
 
   @override
   Widget build(BuildContext context) {
+    final styleUrl = context.select<SettingsProvider, String>(
+        (p) => _styleUrls[p.settings.vectorStyleUrl] ?? _styleUrls['liberty']!);
+
+    // Rebuild map widget when style changes
+    if (_currentStyleUrl != null && _currentStyleUrl != styleUrl) {
+      _currentStyleUrl = styleUrl;
+      // Force rebuild by using key
+    }
+    _currentStyleUrl = styleUrl;
+
     return Stack(
       children: [
         MapLibreMap(
-          options: MapOptions(
-            initStyle: _getStyleUrl(),
-            initCenter: Position(19.0402, 47.4979),
-            initZoom: 13,
+          key: ValueKey(styleUrl), // Forces rebuild on style change
+          styleString: styleUrl,
+          initialCameraPosition: CameraPosition(
+            target: _userPosition ?? const LatLng(47.4979, 19.0402),
+            zoom: 13,
           ),
           onMapCreated: _onMapCreated,
-          onEvent: (event) {
-            if (event is MapEventClick) {
-              _onTap(event.point.lat.toDouble(), event.point.lng.toDouble());
-            } else if (event is MapEventLongClick) {
-              _onLongPress(event.point.lat.toDouble(), event.point.lng.toDouble());
-            } else if (event is MapEventCameraIdle) {
-              _currentZoom = _controller?.camera?.zoom ?? _currentZoom;
-            }
-          },
+          onMapClick: _onMapClick,
+          onMapLongClick: _onMapLongClick,
+          rotateGesturesEnabled: false,
+          myLocationEnabled: true,
+          myLocationTrackingMode: MyLocationTrackingMode.none,
         ),
         const OfflineIndicator(),
         if (!_isFastAssigning)
           MapControls(
             onMenuTap: () => widget.scaffoldKey.currentState?.openDrawer(),
-            onZoomIn: () => _controller?.moveCamera(zoom: _currentZoom + 1),
-            onZoomOut: () => _controller?.moveCamera(zoom: _currentZoom - 1),
+            onZoomIn: () => _controller?.animateCamera(CameraUpdate.zoomIn()),
+            onZoomOut: () => _controller?.animateCamera(CameraUpdate.zoomOut()),
             onSearchTap: () => context.read<MapProvider>().toggleSearch(),
-            onMyLocation: () async {
-              final pos = await _locationService.getCurrentPosition();
-              if (pos != null) {
-                _controller?.moveCamera(
-                  center: Position(pos.longitude, pos.latitude),
-                  zoom: 15,
-                );
+            onMyLocation: () {
+              if (_userPosition != null) {
+                _controller?.animateCamera(CameraUpdate.newLatLngZoom(_userPosition!, 15));
               }
             },
             searchActive: false,
@@ -195,7 +181,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             child: Container(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
               decoration: BoxDecoration(
-                color: Theme.of(context).brightness == Brightness.dark ? const Color(0xFF1a1a2e) : Colors.white,
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? const Color(0xFF1a1a2e) : Colors.white,
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
                 boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 20)],
               ),
@@ -203,19 +190,36 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                 Row(children: [
                   const Icon(Icons.location_on, color: Colors.orange, size: 28),
                   const SizedBox(width: 8),
-                  const Expanded(child: Text('Fast Assign', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+                  const Expanded(child: Text('Fast Assign',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
                   Text('${_fastAssignRadiusMeters.round()}m',
                       style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.orange[700])),
                 ]),
                 const SizedBox(height: 12),
-                Slider(value: _fastAssignRadiusMeters, min: 100, max: 5000, divisions: 49, activeColor: Colors.orange,
+                Slider(value: _fastAssignRadiusMeters, min: 100, max: 5000,
+                  divisions: 49, activeColor: Colors.orange,
                   onChanged: (v) => setState(() => _fastAssignRadiusMeters = v)),
                 const SizedBox(height: 16),
                 Row(children: [
-                  Expanded(child: OutlinedButton(onPressed: _cancelFastAssign, child: Text(tr('cancel')))),
+                  Expanded(child: OutlinedButton(
+                    onPressed: () => setState(() { _isFastAssigning = false; _fastAssignCenter = null; }),
+                    child: Text(tr('cancel')))),
                   const SizedBox(width: 8),
-                  Expanded(child: FilledButton(onPressed: _confirmFastAssign,
-                    style: FilledButton.styleFrom(backgroundColor: Colors.orange), child: Text(tr('save')))),
+                  Expanded(child: FilledButton(
+                    onPressed: () {
+                      if (_fastAssignCenter != null) {
+                        context.read<AlarmProvider>().addAlarmPoint(AlarmPoint(
+                          id: const Uuid().v4(),
+                          latitude: _fastAssignCenter!.latitude,
+                          longitude: _fastAssignCenter!.longitude,
+                          radiusMeters: _fastAssignRadiusMeters,
+                          triggerType: TriggerType.distance,
+                        ));
+                      }
+                      setState(() { _isFastAssigning = false; _fastAssignCenter = null; });
+                    },
+                    style: FilledButton.styleFrom(backgroundColor: Colors.orange),
+                    child: Text(tr('save')))),
                 ]),
               ]),
             ),

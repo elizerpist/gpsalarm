@@ -81,14 +81,14 @@ class MapControls extends StatelessWidget {
                 gradient: LinearGradient(
                   colors: searchActive
                       ? [Colors.red[400]!, Colors.red[800]!]
-                      : [Colors.blue[400]!, Colors.blue[800]!],
+                      : [const Color(0xFF26A69A), const Color(0xFF00796B)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [
                   BoxShadow(
-                    color: (searchActive ? Colors.red : Colors.blue)
+                    color: (searchActive ? Colors.red : const Color(0xFF009688))
                         .withOpacity(0.4),
                     blurRadius: 12,
                     offset: const Offset(0, 4),

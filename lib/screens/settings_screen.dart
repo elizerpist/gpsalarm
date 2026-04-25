@@ -31,7 +31,7 @@ class SettingsDrawer extends StatelessWidget {
               padding: const EdgeInsets.all(20),
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [Color(0xFF1976D2), Color(0xFF1565C0)],
+                  colors: [Color(0xFF009688), Color(0xFF00796B)],
                 ),
               ),
               child: Column(
