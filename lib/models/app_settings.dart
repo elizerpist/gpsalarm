@@ -4,7 +4,7 @@ import 'alarm_point.dart';
 enum GpsPollingMode { continuous, custom }
 enum MapStartView { currentGps, lastPosition, custom }
 enum MapProvider { free, googleMaps, mapTiler }
-enum MapTileStyle { standard, humanitarian, topo, positron, voyager, darkMatter }
+enum MapTileStyle { standard, humanitarian, topo, positron, voyager, darkMatter, wikimedia, openfreemap }
 
 class AppSettings {
   final AlarmType defaultAlarmType;

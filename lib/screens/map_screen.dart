@@ -449,6 +449,10 @@ class _MapScreenState extends State<MapScreen> {
         return 'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
       case MapTileStyle.darkMatter:
         return 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
+      case MapTileStyle.wikimedia:
+        return 'https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}.png';
+      case MapTileStyle.openfreemap:
+        return 'https://tiles.openfreemap.org/natural_earth/ne2sr/{z}/{x}/{y}.png';
     }
   }
 

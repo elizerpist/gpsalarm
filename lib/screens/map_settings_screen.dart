@@ -53,7 +53,7 @@ class MapSettingsScreen extends StatelessWidget {
           // Free OSM
           _ProviderCard(
             title: 'Ingyenes (OpenStreetMap)',
-            subtitle: 'Korlátlan, API kulcs nélkül, 6 stílus',
+            subtitle: 'Korlátlan, API kulcs nélkül, 8 stílus',
             icon: Icons.public,
             selected: settings.mapProvider == MapProvider.free,
             onTap: () => settingsProv
@@ -323,6 +323,8 @@ class _FreeTileStylePicker extends StatelessWidget {
           _styleChip('Positron', MapTileStyle.positron),
           _styleChip('Voyager', MapTileStyle.voyager),
           _styleChip('Dark', MapTileStyle.darkMatter),
+          _styleChip('Wikimedia', MapTileStyle.wikimedia),
+          _styleChip('OpenFreeMap', MapTileStyle.openfreemap),
         ],
       ),
     );
