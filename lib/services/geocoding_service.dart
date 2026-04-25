@@ -19,8 +19,9 @@ class GeocodingResult {
 }
 
 class GeocodingService {
-  static const String _baseUrl = 'https://photon.komoot.io/api/';
-  static const Duration _debounce = Duration(milliseconds: 300);
+  static const String _nominatimUrl =
+      'https://nominatim.openstreetmap.org/search';
+  static const Duration _debounce = Duration(milliseconds: 400);
 
   Timer? _debounceTimer;
 
@@ -34,22 +35,19 @@ class GeocodingService {
     _debounceTimer = Timer(_debounce, () async {
       try {
         final uri = Uri.parse(
-            '$_baseUrl?q=${Uri.encodeComponent(query)}&limit=5&lang=hu');
-        final response = await http.get(uri, headers: {
-          'User-Agent': 'GPSAlarmApp/1.0',
-        });
+            '$_nominatimUrl?q=${Uri.encodeComponent(query)}&format=json&limit=5&accept-language=hu');
+        final response = await http.get(uri);
         if (response.statusCode == 200) {
-          final data = json.decode(response.body);
-          final features = data['features'] as List;
-          final results = features.map((f) {
-            final props = f['properties'];
-            final coords = f['geometry']['coordinates'];
+          final data = json.decode(response.body) as List;
+          final results = data.map((item) {
+            final displayName = item['display_name'] as String;
+            final parts = displayName.split(', ');
             return GeocodingResult(
-              displayName: props['name'] ?? '',
-              city: props['city'] as String?,
-              country: props['country'] as String?,
-              latitude: (coords[1] as num).toDouble(),
-              longitude: (coords[0] as num).toDouble(),
+              displayName: parts.first,
+              city: parts.length > 1 ? parts[1] : null,
+              country: parts.length > 2 ? parts.last : null,
+              latitude: double.parse(item['lat'] as String),
+              longitude: double.parse(item['lon'] as String),
             );
           }).toList();
           onResults(results);
