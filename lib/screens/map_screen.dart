@@ -58,9 +58,7 @@ class _MapScreenState extends State<MapScreen> {
         setState(() {
           _userPosition = LatLng(pos.latitude, pos.longitude);
         });
-        final mapProv = context.read<MapProvider>();
-        mapProv.setCenter(_userPosition!);
-        _mapController.move(_userPosition!, mapProv.zoom);
+        _mapController.move(_userPosition!, _mapController.camera.zoom);
       }
       DebugConsole.log('Starting GPS tracking');
       _locationService.startTracking(onPosition: (position) {
@@ -144,9 +142,10 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    DebugConsole.log('MapScreen.build()');
+    final sw = Stopwatch()..start();
     final tileUrl = context.select<SettingsProvider, String>(
         (p) => _getTileUrl(p.settings));
+    DebugConsole.log('build() tile=$tileUrl');
 
     return Scaffold(
       key: _scaffoldKey,
@@ -166,9 +165,7 @@ class _MapScreenState extends State<MapScreen> {
                   _handleLongPress(context, point),
               onPositionChanged: (position, hasGesture) {
                 if (hasGesture) {
-                  final mapProv = context.read<MapProvider>();
-                  mapProv.setCenter(position.center);
-                  mapProv.setZoom(position.zoom);
+                  // DON'T update providers on every pan/zoom frame - causes rebuilds
                 }
               },
             ),
@@ -245,14 +242,12 @@ class _MapScreenState extends State<MapScreen> {
               builder: (_, searchActive, __) => MapControls(
                 onMenuTap: () => _scaffoldKey.currentState?.openDrawer(),
                 onZoomIn: () {
-                  final mapProv = context.read<MapProvider>();
-                  mapProv.zoomIn();
-                  _mapController.move(mapProv.center, mapProv.zoom);
+                  final cam = _mapController.camera;
+                  _mapController.move(cam.center, (cam.zoom + 1).clamp(3, 18));
                 },
                 onZoomOut: () {
-                  final mapProv = context.read<MapProvider>();
-                  mapProv.zoomOut();
-                  _mapController.move(mapProv.center, mapProv.zoom);
+                  final cam = _mapController.camera;
+                  _mapController.move(cam.center, (cam.zoom - 1).clamp(3, 18));
                 },
                 onSearchTap: () =>
                     context.read<MapProvider>().toggleSearch(),
@@ -266,8 +261,7 @@ class _MapScreenState extends State<MapScreen> {
               builder: (_, searchActive, __) => searchActive
                   ? SearchPill(
                       onResultSelected: (result) {
-                        final mapProv = context.read<MapProvider>();
-                        mapProv.goToSearchResult(result);
+                        context.read<MapProvider>().goToSearchResult(result);
                         _mapController.move(
                           LatLng(result.latitude, result.longitude),
                           14.0,
