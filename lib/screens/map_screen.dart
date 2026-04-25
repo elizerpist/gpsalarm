@@ -40,6 +40,9 @@ class _MapScreenState extends State<MapScreen> {
   final ValueNotifier<LatLng?> _userPosition = ValueNotifier(null);
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
+  // Pending tap pin (shown while create popup is open)
+  LatLng? _pendingTapPoint;
+
   // Fast assign state
   LatLng? _fastAssignCenter;
   double _fastAssignRadiusMeters = 500;
@@ -251,6 +254,16 @@ class _MapScreenState extends State<MapScreen> {
                           )),
                       if (userPos != null)
                         buildUserLocationMarker(userPos),
+                      // Pending tap pin (red, pulsing while popup open)
+                      if (_pendingTapPoint != null)
+                        Marker(
+                          point: _pendingTapPoint!,
+                          width: 40,
+                          height: 50,
+                          child: const Icon(Icons.location_on,
+                              color: Colors.red, size: 36),
+                        ),
+                      // Fast assign pin (orange)
                       if (_isFastAssigning && _fastAssignCenter != null)
                         Marker(
                           point: _fastAssignCenter!,
@@ -447,6 +460,8 @@ class _MapScreenState extends State<MapScreen> {
     if (existing != null) {
       _showEditPopup(context, existing);
     } else {
+      // Show pending pin on map
+      setState(() => _pendingTapPoint = point);
       _showCreatePopup(context, point);
     }
   }
@@ -506,7 +521,10 @@ class _MapScreenState extends State<MapScreen> {
         latitude: point.latitude,
         longitude: point.longitude,
       ),
-    );
+    ).whenComplete(() {
+      // Clear pending pin when popup closes (saved or cancelled)
+      if (mounted) setState(() => _pendingTapPoint = null);
+    });
   }
 
   void _showEditPopup(BuildContext context, AlarmPoint alarmPoint) {
