@@ -62,29 +62,41 @@ class AppSettings {
         'locale': locale,
       };
 
-  factory AppSettings.fromMap(Map<String, dynamic> map) => AppSettings(
-        defaultAlarmType: AlarmType.values[map['defaultAlarmType'] as int],
-        defaultAlarmSound: map['defaultAlarmSound'] as String,
-        vibrationEnabled: map['vibrationEnabled'] as bool,
-        volume: (map['volume'] as num).toDouble(),
-        gpsPollingMode: GpsPollingMode.values[map['gpsPollingMode'] as int],
-        customPollingInterval:
-            Duration(seconds: map['customPollingIntervalSeconds'] as int),
-        mapStartView: MapStartView.values[map['mapStartView'] as int],
-        customStartLat: (map['customStartLat'] as num?)?.toDouble(),
-        customStartLng: (map['customStartLng'] as num?)?.toDouble(),
-        mapProvider: map['mapProvider'] != null
-            ? MapTileProvider.values[map['mapProvider'] as int]
-            : MapTileProvider.free,
-        mapTileStyle: map['mapTileStyle'] != null
-            ? MapTileStyle.values[map['mapTileStyle'] as int]
-            : MapTileStyle.standard,
-        googleMapsApiKey: map['googleMapsApiKey'] as String?,
-        mapTilerApiKey: map['mapTilerApiKey'] as String?,
-        mapTilerStyle: map['mapTilerStyle'] as String? ?? 'streets-v2',
-        themeMode: ThemeMode.values[map['themeMode'] as int],
-        locale: map['locale'] as String,
-      );
+  factory AppSettings.fromMap(Map<String, dynamic> map) {
+    final defaults = AppSettings();
+    return AppSettings(
+      defaultAlarmType: map['defaultAlarmType'] != null
+          ? AlarmType.values[map['defaultAlarmType'] as int]
+          : defaults.defaultAlarmType,
+      defaultAlarmSound: map['defaultAlarmSound'] as String? ?? defaults.defaultAlarmSound,
+      vibrationEnabled: map['vibrationEnabled'] as bool? ?? defaults.vibrationEnabled,
+      volume: (map['volume'] as num?)?.toDouble() ?? defaults.volume,
+      gpsPollingMode: map['gpsPollingMode'] != null
+          ? GpsPollingMode.values[map['gpsPollingMode'] as int]
+          : defaults.gpsPollingMode,
+      customPollingInterval: map['customPollingIntervalSeconds'] != null
+          ? Duration(seconds: map['customPollingIntervalSeconds'] as int)
+          : defaults.customPollingInterval,
+      mapStartView: map['mapStartView'] != null
+          ? MapStartView.values[map['mapStartView'] as int]
+          : defaults.mapStartView,
+      customStartLat: (map['customStartLat'] as num?)?.toDouble(),
+      customStartLng: (map['customStartLng'] as num?)?.toDouble(),
+      mapProvider: map['mapProvider'] != null
+          ? MapTileProvider.values[map['mapProvider'] as int]
+          : defaults.mapProvider,
+      mapTileStyle: map['mapTileStyle'] != null
+          ? MapTileStyle.values[map['mapTileStyle'] as int]
+          : defaults.mapTileStyle,
+      googleMapsApiKey: map['googleMapsApiKey'] as String?,
+      mapTilerApiKey: map['mapTilerApiKey'] as String?,
+      mapTilerStyle: map['mapTilerStyle'] as String? ?? defaults.mapTilerStyle,
+      themeMode: map['themeMode'] != null
+          ? ThemeMode.values[map['themeMode'] as int]
+          : defaults.themeMode,
+      locale: map['locale'] as String? ?? defaults.locale,
+    );
+  }
 
   AppSettings copyWith({
     AlarmType? defaultAlarmType,
