@@ -211,6 +211,10 @@ class _MapScreenState extends State<MapScreen> {
               TileLayer(
                 urlTemplate: tileUrl,
                 userAgentPackageName: 'com.gpsalarm.app',
+                fallbackUrl: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                errorTileCallback: (tile, error, stackTrace) {
+                  DebugConsole.log('Tile error z=${tile.coordinates.z} x=${tile.coordinates.x} y=${tile.coordinates.y}: $error');
+                },
               ),
               // Radius circles - only rebuilds when alarms change
               Consumer<AlarmProvider>(
@@ -520,7 +524,7 @@ class _MapScreenState extends State<MapScreen> {
       case MapTileProvider.mapTiler:
         final key = settings.mapTilerApiKey ?? '';
         final style = settings.mapTilerStyle;
-        return 'https://api.maptiler.com/maps/$style/256/{z}/{x}/{y}.png?key=$key';
+        return 'https://api.maptiler.com/maps/$style/{z}/{x}/{y}@2x.png?key=$key';
       case MapTileProvider.free:
         return _getFreeTileUrl(settings.mapTileStyle);
       case MapTileProvider.vector:
