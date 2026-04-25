@@ -535,10 +535,13 @@ class _MapScreenState extends State<MapScreen> {
   String _getFreeTileUrl(MapTileStyle style) {
     switch (style) {
       case MapTileStyle.standard:
-        return 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+        // OSM standard nem támogat @2x, CartoDB Voyager az OSM-hez legközelebbi @2x
+        return 'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png';
       case MapTileStyle.humanitarian:
-        return 'https://a.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png';
+        // HOT stílus nem támogat @2x, CartoDB light az ehhez legközelebbi
+        return 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png';
       case MapTileStyle.topo:
+        // OpenTopoMap nem támogat @2x — marad eredeti
         return 'https://tile.opentopomap.org/{z}/{x}/{y}.png';
       case MapTileStyle.positron:
         return 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png';
