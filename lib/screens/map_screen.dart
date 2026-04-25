@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
@@ -39,13 +40,39 @@ class _MapScreenState extends State<MapScreen> {
   double _fastAssignRadiusMeters = 500;
   bool _isFastAssigning = false;
 
-  // Cache tile URL to avoid rebuilds
-  String? _cachedTileUrl;
+  // Frame timing
+  int _frameCount = 0;
+  int _slowFrames = 0;
+  DateTime _lastFrameReport = DateTime.now();
 
   @override
   void initState() {
     super.initState();
+    DebugConsole.log('initState()');
     _initLocation();
+    _startFrameMonitor();
+  }
+
+  void _startFrameMonitor() {
+    SchedulerBinding.instance.addTimingsCallback((timings) {
+      for (final t in timings) {
+        _frameCount++;
+        final totalMs = t.totalSpan.inMilliseconds;
+        if (totalMs > 16) _slowFrames++;
+        if (totalMs > 50) {
+          DebugConsole.log('SLOW FRAME: build=${t.buildDuration.inMilliseconds}ms raster=${t.rasterDuration.inMilliseconds}ms total=${totalMs}ms');
+        }
+      }
+      final now = DateTime.now();
+      if (now.difference(_lastFrameReport).inSeconds >= 5) {
+        final secs = now.difference(_lastFrameReport).inMilliseconds / 1000;
+        final fps = _frameCount / secs;
+        DebugConsole.log('FPS: ${fps.toStringAsFixed(1)} | total=$_frameCount slow=$_slowFrames');
+        _frameCount = 0;
+        _slowFrames = 0;
+        _lastFrameReport = now;
+      }
+    });
   }
 
   Future<void> _initLocation() async {
