@@ -6,8 +6,32 @@ import '../providers/settings_provider.dart';
 import '../services/audio_service.dart';
 import '../services/platform_service.dart';
 
-class AlarmSettingsScreen extends StatelessWidget {
+class AlarmSettingsScreen extends StatefulWidget {
   const AlarmSettingsScreen({super.key});
+
+  @override
+  State<AlarmSettingsScreen> createState() => _AlarmSettingsScreenState();
+}
+
+class _AlarmSettingsScreenState extends State<AlarmSettingsScreen> {
+  final AudioService _audioService = AudioService();
+  String? _playingSound;
+
+  @override
+  void dispose() {
+    _audioService.dispose();
+    super.dispose();
+  }
+
+  void _togglePreview(String soundKey) async {
+    if (_playingSound == soundKey) {
+      await _audioService.stop();
+      setState(() => _playingSound = null);
+    } else {
+      await _audioService.playPreview(soundKey);
+      setState(() => _playingSound = soundKey);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -49,6 +73,7 @@ class AlarmSettingsScreen extends StatelessWidget {
                   settings.copyWith(defaultAlarmType: v)),
             ),
           const SizedBox(height: 24),
+
           // Alarm sound
           Text(tr('alarm_sound'),
               style: TextStyle(
@@ -56,16 +81,61 @@ class AlarmSettingsScreen extends StatelessWidget {
                   color: Colors.grey[600],
                   fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
-          ...AudioService.hardcodedSounds.keys.map((name) {
-            final displayName = name.replaceAll('_', ' ');
-            return _SoundTile(
-              name: displayName[0].toUpperCase() + displayName.substring(1),
-              selected: settings.defaultAlarmSound == name,
+
+          // System sounds (mobile only)
+          if (PlatformService.isMobile) ...[
+            Text('Rendszer hangok',
+                style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+            const SizedBox(height: 4),
+            _SoundTile(
+              name: 'Rendszer alarm',
+              icon: Icons.alarm,
+              selected: settings.defaultAlarmSound == AudioService.systemAlarmKey,
+              playing: _playingSound == AudioService.systemAlarmKey,
               onTap: () => settingsProv.updateSettings(
-                  settings.copyWith(defaultAlarmSound: name)),
+                  settings.copyWith(defaultAlarmSound: AudioService.systemAlarmKey)),
+              onPreview: () => _togglePreview(AudioService.systemAlarmKey),
+            ),
+            _SoundTile(
+              name: 'Rendszer értesítés',
+              icon: Icons.notifications,
+              selected: settings.defaultAlarmSound == AudioService.systemNotificationKey,
+              playing: _playingSound == AudioService.systemNotificationKey,
+              onTap: () => settingsProv.updateSettings(
+                  settings.copyWith(defaultAlarmSound: AudioService.systemNotificationKey)),
+              onPreview: () => _togglePreview(AudioService.systemNotificationKey),
+            ),
+            _SoundTile(
+              name: 'Rendszer csengőhang',
+              icon: Icons.ring_volume,
+              selected: settings.defaultAlarmSound == AudioService.systemRingtoneKey,
+              playing: _playingSound == AudioService.systemRingtoneKey,
+              onTap: () => settingsProv.updateSettings(
+                  settings.copyWith(defaultAlarmSound: AudioService.systemRingtoneKey)),
+              onPreview: () => _togglePreview(AudioService.systemRingtoneKey),
+            ),
+            const SizedBox(height: 12),
+            Text('Beépített hangok',
+                style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+            const SizedBox(height: 4),
+          ],
+
+          // Built-in asset sounds
+          ...AudioService.assetSounds.keys.map((key) {
+            final name = AudioService.hardcodedSounds[key] ?? key;
+            return _SoundTile(
+              name: name,
+              icon: Icons.music_note,
+              selected: settings.defaultAlarmSound == key,
+              playing: _playingSound == key,
+              onTap: () => settingsProv
+                  .updateSettings(settings.copyWith(defaultAlarmSound: key)),
+              onPreview: () => _togglePreview(key),
             );
           }),
+
           const SizedBox(height: 24),
+
           // Vibration toggle (mobile only)
           if (PlatformService.supportsVibration)
             SwitchListTile(
@@ -75,6 +145,7 @@ class AlarmSettingsScreen extends StatelessWidget {
                   .updateSettings(settings.copyWith(vibrationEnabled: v)),
             ),
           const SizedBox(height: 16),
+
           // Volume slider
           Text(tr('volume'),
               style: TextStyle(
@@ -123,26 +194,44 @@ class _AlarmTypeRadio extends StatelessWidget {
 
 class _SoundTile extends StatelessWidget {
   final String name;
+  final IconData icon;
   final bool selected;
+  final bool playing;
   final VoidCallback onTap;
+  final VoidCallback onPreview;
 
   const _SoundTile({
     required this.name,
+    required this.icon,
     required this.selected,
+    required this.playing,
     required this.onTap,
+    required this.onPreview,
   });
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: Icon(Icons.volume_up,
+      leading: Icon(icon,
           color: selected
               ? Theme.of(context).colorScheme.primary
-              : Colors.grey),
+              : Colors.grey,
+          size: 20),
       title: Text(name,
           style: TextStyle(
-              fontWeight: selected ? FontWeight.bold : FontWeight.normal)),
+            fontSize: 14,
+            fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+          )),
       selected: selected,
+      trailing: IconButton(
+        icon: Icon(
+          playing ? Icons.stop_circle : Icons.play_circle,
+          color: playing
+              ? Colors.red
+              : Theme.of(context).colorScheme.primary,
+        ),
+        onPressed: onPreview,
+      ),
       onTap: onTap,
       dense: true,
     );
