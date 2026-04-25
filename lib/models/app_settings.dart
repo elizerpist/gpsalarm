@@ -3,7 +3,7 @@ import 'alarm_point.dart';
 
 enum GpsPollingMode { continuous, custom }
 enum MapStartView { currentGps, lastPosition, custom }
-enum MapProvider { free, googleMaps, mapTiler }
+enum MapTileProvider { free, googleMaps, mapTiler }
 enum MapTileStyle { standard, humanitarian, topo, positron, voyager, darkMatter, wikimedia, openfreemap }
 
 class AppSettings {
@@ -16,7 +16,7 @@ class AppSettings {
   final MapStartView mapStartView;
   final double? customStartLat;
   final double? customStartLng;
-  final MapProvider mapProvider;
+  final MapTileProvider mapProvider;
   final MapTileStyle mapTileStyle;
   final String? googleMapsApiKey;
   final String? mapTilerApiKey;
@@ -34,7 +34,7 @@ class AppSettings {
     this.mapStartView = MapStartView.currentGps,
     this.customStartLat,
     this.customStartLng,
-    this.mapProvider = MapProvider.free,
+    this.mapProvider = MapTileProvider.free,
     this.mapTileStyle = MapTileStyle.standard,
     this.googleMapsApiKey,
     this.mapTilerApiKey,
@@ -74,8 +74,8 @@ class AppSettings {
         customStartLat: (map['customStartLat'] as num?)?.toDouble(),
         customStartLng: (map['customStartLng'] as num?)?.toDouble(),
         mapProvider: map['mapProvider'] != null
-            ? MapProvider.values[map['mapProvider'] as int]
-            : MapProvider.free,
+            ? MapTileProvider.values[map['mapProvider'] as int]
+            : MapTileProvider.free,
         mapTileStyle: map['mapTileStyle'] != null
             ? MapTileStyle.values[map['mapTileStyle'] as int]
             : MapTileStyle.standard,
@@ -96,7 +96,7 @@ class AppSettings {
     MapStartView? mapStartView,
     double? customStartLat,
     double? customStartLng,
-    MapProvider? mapProvider,
+    MapTileProvider? mapProvider,
     MapTileStyle? mapTileStyle,
     String? googleMapsApiKey,
     String? mapTilerApiKey,

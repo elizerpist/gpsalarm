@@ -55,11 +55,11 @@ class MapSettingsScreen extends StatelessWidget {
             title: 'Ingyenes (OpenStreetMap)',
             subtitle: 'Korlátlan, API kulcs nélkül, 8 stílus',
             icon: Icons.public,
-            selected: settings.mapProvider == MapProvider.free,
+            selected: settings.mapProvider == MapTileProvider.free,
             onTap: () => settingsProv
-                .updateSettings(settings.copyWith(mapProvider: MapProvider.free)),
+                .updateSettings(settings.copyWith(mapProvider: MapTileProvider.free)),
           ),
-          if (settings.mapProvider == MapProvider.free) ...[
+          if (settings.mapProvider == MapTileProvider.free) ...[
             const SizedBox(height: 8),
             _FreeTileStylePicker(
               current: settings.mapTileStyle,
@@ -75,11 +75,11 @@ class MapSettingsScreen extends StatelessWidget {
             title: 'Google Maps',
             subtitle: 'Havi \$200 kredit ingyenes, API kulcs szükséges',
             icon: Icons.map,
-            selected: settings.mapProvider == MapProvider.googleMaps,
+            selected: settings.mapProvider == MapTileProvider.googleMaps,
             onTap: () => settingsProv.updateSettings(
-                settings.copyWith(mapProvider: MapProvider.googleMaps)),
+                settings.copyWith(mapProvider: MapTileProvider.googleMaps)),
           ),
-          if (settings.mapProvider == MapProvider.googleMaps) ...[
+          if (settings.mapProvider == MapTileProvider.googleMaps) ...[
             const SizedBox(height: 8),
             _ApiKeyInput(
               label: 'Google Maps API Key',
@@ -96,11 +96,11 @@ class MapSettingsScreen extends StatelessWidget {
             title: 'MapTiler',
             subtitle: '100k betöltés/hó ingyenes, testreszabható stílusok',
             icon: Icons.layers,
-            selected: settings.mapProvider == MapProvider.mapTiler,
+            selected: settings.mapProvider == MapTileProvider.mapTiler,
             onTap: () => settingsProv.updateSettings(
-                settings.copyWith(mapProvider: MapProvider.mapTiler)),
+                settings.copyWith(mapProvider: MapTileProvider.mapTiler)),
           ),
-          if (settings.mapProvider == MapProvider.mapTiler) ...[
+          if (settings.mapProvider == MapTileProvider.mapTiler) ...[
             const SizedBox(height: 8),
             _ApiKeyInput(
               label: 'MapTiler API Key',

@@ -423,14 +423,14 @@ class _MapScreenState extends State<MapScreen> {
 
   String _getTileUrl(AppSettings settings) {
     switch (settings.mapProvider) {
-      case MapProvider.googleMaps:
+      case MapTileProvider.googleMaps:
         final key = settings.googleMapsApiKey ?? '';
         return 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&key=$key';
-      case MapProvider.mapTiler:
+      case MapTileProvider.mapTiler:
         final key = settings.mapTilerApiKey ?? '';
         final style = settings.mapTilerStyle;
         return 'https://api.maptiler.com/maps/$style/{z}/{x}/{y}.png?key=$key';
-      case MapProvider.free:
+      case MapTileProvider.free:
         return _getFreeTileUrl(settings.mapTileStyle);
     }
   }
