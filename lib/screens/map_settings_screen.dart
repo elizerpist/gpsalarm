@@ -140,8 +140,8 @@ class MapSettingsScreen extends StatelessWidget {
 
           const SizedBox(height: 12),
 
-          // Vector (MapLibre) - native only
-          if (!kIsWeb) _ProviderCard(
+          // Vector tiles
+          _ProviderCard(
             title: 'Vektor (MapLibre)',
             subtitle: 'Éles szövegek, smooth zoom, 60fps, ingyenes',
             icon: Icons.auto_awesome,
@@ -149,7 +149,7 @@ class MapSettingsScreen extends StatelessWidget {
             onTap: () => settingsProv.updateSettings(
                 settings.copyWith(mapProvider: MapTileProvider.vector)),
           ),
-          if (!kIsWeb && settings.mapProvider == MapTileProvider.vector) ...[
+          if (settings.mapProvider == MapTileProvider.vector) ...[
             const SizedBox(height: 8),
             _VectorStylePicker(
               current: settings.vectorStyleUrl,
@@ -492,10 +492,8 @@ class _VectorStylePicker extends StatelessWidget {
   });
 
   static const styles = {
-    'https://tiles.openfreemap.org/styles/liberty': 'Liberty',
-    'https://tiles.openfreemap.org/styles/bright': 'Bright',
-    'https://tiles.openfreemap.org/styles/positron': 'Positron',
-    'https://demotiles.maplibre.org/style.json': 'MapLibre Demo',
+    'openfreemap': 'OpenFreeMap',
+    'versatiles': 'Versatiles',
   };
 
   @override

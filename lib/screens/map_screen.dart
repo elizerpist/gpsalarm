@@ -183,7 +183,7 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isVector = !kIsWeb && context.select<SettingsProvider, bool>(
+    final isVector = context.select<SettingsProvider, bool>(
         (p) => p.settings.mapProvider == MapTileProvider.vector);
 
     // Use vector map (MapLibre) when selected - native only

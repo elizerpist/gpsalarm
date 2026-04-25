@@ -40,7 +40,7 @@ class AppSettings {
     this.googleMapsApiKey,
     this.mapTilerApiKey,
     this.mapTilerStyle = 'streets-v2',
-    this.vectorStyleUrl = 'https://tiles.openfreemap.org/styles/liberty',
+    this.vectorStyleUrl = 'openfreemap',
     this.themeMode = ThemeMode.system,
     this.locale = 'hu',
   });
