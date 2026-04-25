@@ -140,32 +140,11 @@ class MapSettingsScreen extends StatelessWidget {
 
           const SizedBox(height: 12),
 
-          // Vector native (MapLibre GL — csak natív, GPU renderelés)
+          // Vector (MapLibre) — native only
           if (!kIsWeb)
             _ProviderCard(
-              title: 'Vektor Natív (MapLibre GL)',
-              subtitle: 'GPU renderelés, 60fps, csak Android/iOS',
-              icon: Icons.speed,
-              selected: settings.mapProvider == MapTileProvider.vectorNative,
-              onTap: () => settingsProv.updateSettings(
-                  settings.copyWith(mapProvider: MapTileProvider.vectorNative)),
-            ),
-          if (!kIsWeb && settings.mapProvider == MapTileProvider.vectorNative) ...[
-            const SizedBox(height: 8),
-            _VectorNativeStylePicker(
-              current: settings.vectorStyleUrl,
-              onChanged: (url) => settingsProv
-                  .updateSettings(settings.copyWith(vectorStyleUrl: url)),
-            ),
-          ],
-
-          const SizedBox(height: 12),
-
-          // MapLibre (new package) — native only
-          if (!kIsWeb)
-            _ProviderCard(
-              title: 'Vektor (MapLibre új)',
-              subtitle: 'Hatékonyabb bridge, offline letöltés, 60fps',
+              title: 'Vektor (MapLibre)',
+              subtitle: 'GPU renderelés, 60fps, offline, csak Android/iOS',
               icon: Icons.rocket_launch,
               selected: settings.mapProvider == MapTileProvider.vectorMaplibre,
               onTap: () => settingsProv.updateSettings(
