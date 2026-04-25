@@ -4,6 +4,7 @@ import 'package:easy_localization/easy_localization.dart';
 import '../models/alarm_point.dart';
 import '../providers/settings_provider.dart';
 import '../services/audio_service.dart';
+import '../services/platform_service.dart';
 
 class AlarmSettingsScreen extends StatelessWidget {
   const AlarmSettingsScreen({super.key});
@@ -39,13 +40,14 @@ class AlarmSettingsScreen extends StatelessWidget {
             onChanged: (v) => settingsProv.updateSettings(
                 settings.copyWith(defaultAlarmType: v)),
           ),
-          _AlarmTypeRadio(
-            label: tr('full_screen_alarm'),
-            value: AlarmType.fullScreenAlarm,
-            groupValue: settings.defaultAlarmType,
-            onChanged: (v) => settingsProv.updateSettings(
-                settings.copyWith(defaultAlarmType: v)),
-          ),
+          if (PlatformService.supportsFullScreenAlarm)
+            _AlarmTypeRadio(
+              label: tr('full_screen_alarm'),
+              value: AlarmType.fullScreenAlarm,
+              groupValue: settings.defaultAlarmType,
+              onChanged: (v) => settingsProv.updateSettings(
+                  settings.copyWith(defaultAlarmType: v)),
+            ),
           const SizedBox(height: 24),
           // Alarm sound
           Text(tr('alarm_sound'),
@@ -64,13 +66,14 @@ class AlarmSettingsScreen extends StatelessWidget {
             );
           }),
           const SizedBox(height: 24),
-          // Vibration toggle
-          SwitchListTile(
-            title: Text(tr('vibration')),
-            value: settings.vibrationEnabled,
-            onChanged: (v) => settingsProv
-                .updateSettings(settings.copyWith(vibrationEnabled: v)),
-          ),
+          // Vibration toggle (mobile only)
+          if (PlatformService.supportsVibration)
+            SwitchListTile(
+              title: Text(tr('vibration')),
+              value: settings.vibrationEnabled,
+              onChanged: (v) => settingsProv
+                  .updateSettings(settings.copyWith(vibrationEnabled: v)),
+            ),
           const SizedBox(height: 16),
           // Volume slider
           Text(tr('volume'),
