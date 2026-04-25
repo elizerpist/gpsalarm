@@ -8,6 +8,8 @@ class DatabaseService {
   static const _dbName = 'gpsalarm.db';
   static const _version = 1;
 
+  static bool get _isAvailable => !kIsWeb;
+
   static Future<Database> get database async {
     if (_db != null) return _db!;
     _db = await _initDb();
@@ -56,6 +58,7 @@ class DatabaseService {
   // ─── Settings ──────────────────────────────────────────────
 
   static Future<void> saveSetting(String key, String value) async {
+    if (!_isAvailable) return;
     final db = await database;
     await db.insert(
       'settings',
@@ -65,6 +68,7 @@ class DatabaseService {
   }
 
   static Future<String?> getSetting(String key) async {
+    if (!_isAvailable) return null;
     final db = await database;
     final rows = await db.query('settings', where: 'key = ?', whereArgs: [key]);
     if (rows.isEmpty) return null;
@@ -72,12 +76,14 @@ class DatabaseService {
   }
 
   static Future<Map<String, String>> getAllSettings() async {
+    if (!_isAvailable) return {};
     final db = await database;
     final rows = await db.query('settings');
     return {for (final r in rows) r['key'] as String: r['value'] as String};
   }
 
   static Future<void> saveAllSettings(Map<String, String> settings) async {
+    if (!_isAvailable) return;
     final db = await database;
     final batch = db.batch();
     for (final e in settings.entries) {
@@ -93,29 +99,34 @@ class DatabaseService {
   // ─── Alarm Points ─────────────────────────────────────────
 
   static Future<List<Map<String, dynamic>>> getAllAlarmPoints() async {
+    if (!_isAvailable) return [];
     final db = await database;
     return db.query('alarm_points', orderBy: 'created_at DESC');
   }
 
   static Future<void> insertAlarmPoint(Map<String, dynamic> point) async {
+    if (!_isAvailable) return;
     final db = await database;
     await db.insert('alarm_points', _toDbRow(point),
         conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   static Future<void> updateAlarmPoint(Map<String, dynamic> point) async {
+    if (!_isAvailable) return;
     final db = await database;
     await db.update('alarm_points', _toDbRow(point),
         where: 'id = ?', whereArgs: [point['id']]);
   }
 
   static Future<void> deleteAlarmPoint(String id) async {
+    if (!_isAvailable) return;
     final db = await database;
     await db.delete('alarm_points', where: 'id = ?', whereArgs: [id]);
   }
 
   static Future<void> replaceAllAlarmPoints(
       List<Map<String, dynamic>> points) async {
+    if (!_isAvailable) return;
     final db = await database;
     final batch = db.batch();
     batch.delete('alarm_points');

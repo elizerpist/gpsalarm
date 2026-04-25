@@ -3,21 +3,27 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:easy_localization/easy_localization.dart';
-import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
-import 'package:sqflite/sqflite.dart';
 import 'providers/alarm_provider.dart';
 import 'providers/settings_provider.dart';
 import 'providers/map_provider.dart';
 import 'screens/map_screen.dart';
+import 'services/debug_console.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await EasyLocalization.ensureInitialized();
   await Hive.initFlutter();
 
-  // Initialize sqflite for web
-  if (kIsWeb) {
-    databaseFactory = databaseFactoryFfiWeb;
+  // SQLite only on native platforms (not web)
+  if (!kIsWeb) {
+    try {
+      // sqflite works natively without extra setup
+      DebugConsole.log('SQLite available (native)');
+    } catch (e) {
+      DebugConsole.log('SQLite init failed: $e');
+    }
+  } else {
+    DebugConsole.log('Web mode: using Hive only');
   }
 
   final alarmProvider = AlarmProvider();
