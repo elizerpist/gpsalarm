@@ -16,6 +16,7 @@ import '../widgets/radius_popup.dart';
 import '../widgets/user_location_marker.dart';
 import '../services/location_service.dart';
 import '../services/alarm_service.dart';
+import 'settings_screen.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -293,12 +294,6 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Widget _buildDrawer(BuildContext context) {
-    return const Drawer(
-      child: SafeArea(
-        child: Center(
-          child: Text('Settings - TODO'),
-        ),
-      ),
-    );
+    return const SettingsDrawer();
   }
 }
