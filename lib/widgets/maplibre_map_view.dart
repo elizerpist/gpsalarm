@@ -14,6 +14,7 @@ import '../widgets/radius_popup.dart';
 import '../services/location_service.dart';
 import '../services/alarm_service.dart';
 import '../services/debug_console.dart';
+import '../widgets/offline_indicator.dart';
 
 class MapLibreMapView extends StatefulWidget {
   final GlobalKey<ScaffoldState> scaffoldKey;
@@ -163,6 +164,7 @@ class _MapLibreMapViewState extends State<MapLibreMapView> {
           myLocationEnabled: true,
           myLocationTrackingMode: MyLocationTrackingMode.none,
         ),
+        const OfflineIndicator(),
         if (!_isFastAssigning)
           MapControls(
             onMenuTap: () => widget.scaffoldKey.currentState?.openDrawer(),
