@@ -134,7 +134,7 @@ class _MapScreenState extends State<MapScreen> {
     final mapProv = context.watch<MapProvider>();
     final alarmProv = context.watch<AlarmProvider>();
     final settingsProv = context.watch<SettingsProvider>();
-    final tileUrl = _getTileUrl(settingsProv.settings.mapTileStyle);
+    final tileUrl = _getTileUrl(settingsProv.settings);
 
     return Scaffold(
       key: _scaffoldKey,
@@ -421,7 +421,21 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  String _getTileUrl(MapTileStyle style) {
+  String _getTileUrl(AppSettings settings) {
+    switch (settings.mapProvider) {
+      case MapProvider.googleMaps:
+        final key = settings.googleMapsApiKey ?? '';
+        return 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&key=$key';
+      case MapProvider.mapTiler:
+        final key = settings.mapTilerApiKey ?? '';
+        final style = settings.mapTilerStyle;
+        return 'https://api.maptiler.com/maps/$style/{z}/{x}/{y}.png?key=$key';
+      case MapProvider.free:
+        return _getFreeTileUrl(settings.mapTileStyle);
+    }
+  }
+
+  String _getFreeTileUrl(MapTileStyle style) {
     switch (style) {
       case MapTileStyle.standard:
         return 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';

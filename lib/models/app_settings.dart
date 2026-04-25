@@ -3,6 +3,7 @@ import 'alarm_point.dart';
 
 enum GpsPollingMode { continuous, custom }
 enum MapStartView { currentGps, lastPosition, custom }
+enum MapProvider { free, googleMaps, mapTiler }
 enum MapTileStyle { standard, humanitarian, topo, positron, voyager, darkMatter }
 
 class AppSettings {
@@ -15,7 +16,11 @@ class AppSettings {
   final MapStartView mapStartView;
   final double? customStartLat;
   final double? customStartLng;
+  final MapProvider mapProvider;
   final MapTileStyle mapTileStyle;
+  final String? googleMapsApiKey;
+  final String? mapTilerApiKey;
+  final String mapTilerStyle; // style name for MapTiler
   final ThemeMode themeMode;
   final String locale;
 
@@ -29,7 +34,11 @@ class AppSettings {
     this.mapStartView = MapStartView.currentGps,
     this.customStartLat,
     this.customStartLng,
+    this.mapProvider = MapProvider.free,
     this.mapTileStyle = MapTileStyle.standard,
+    this.googleMapsApiKey,
+    this.mapTilerApiKey,
+    this.mapTilerStyle = 'streets-v2',
     this.themeMode = ThemeMode.system,
     this.locale = 'hu',
   });
@@ -44,7 +53,11 @@ class AppSettings {
         'mapStartView': mapStartView.index,
         'customStartLat': customStartLat,
         'customStartLng': customStartLng,
+        'mapProvider': mapProvider.index,
         'mapTileStyle': mapTileStyle.index,
+        'googleMapsApiKey': googleMapsApiKey,
+        'mapTilerApiKey': mapTilerApiKey,
+        'mapTilerStyle': mapTilerStyle,
         'themeMode': themeMode.index,
         'locale': locale,
       };
@@ -60,9 +73,15 @@ class AppSettings {
         mapStartView: MapStartView.values[map['mapStartView'] as int],
         customStartLat: (map['customStartLat'] as num?)?.toDouble(),
         customStartLng: (map['customStartLng'] as num?)?.toDouble(),
+        mapProvider: map['mapProvider'] != null
+            ? MapProvider.values[map['mapProvider'] as int]
+            : MapProvider.free,
         mapTileStyle: map['mapTileStyle'] != null
             ? MapTileStyle.values[map['mapTileStyle'] as int]
             : MapTileStyle.standard,
+        googleMapsApiKey: map['googleMapsApiKey'] as String?,
+        mapTilerApiKey: map['mapTilerApiKey'] as String?,
+        mapTilerStyle: map['mapTilerStyle'] as String? ?? 'streets-v2',
         themeMode: ThemeMode.values[map['themeMode'] as int],
         locale: map['locale'] as String,
       );
@@ -77,7 +96,11 @@ class AppSettings {
     MapStartView? mapStartView,
     double? customStartLat,
     double? customStartLng,
+    MapProvider? mapProvider,
     MapTileStyle? mapTileStyle,
+    String? googleMapsApiKey,
+    String? mapTilerApiKey,
+    String? mapTilerStyle,
     ThemeMode? themeMode,
     String? locale,
   }) =>
@@ -92,7 +115,11 @@ class AppSettings {
         mapStartView: mapStartView ?? this.mapStartView,
         customStartLat: customStartLat ?? this.customStartLat,
         customStartLng: customStartLng ?? this.customStartLng,
+        mapProvider: mapProvider ?? this.mapProvider,
         mapTileStyle: mapTileStyle ?? this.mapTileStyle,
+        googleMapsApiKey: googleMapsApiKey ?? this.googleMapsApiKey,
+        mapTilerApiKey: mapTilerApiKey ?? this.mapTilerApiKey,
+        mapTilerStyle: mapTilerStyle ?? this.mapTilerStyle,
         themeMode: themeMode ?? this.themeMode,
         locale: locale ?? this.locale,
       );
