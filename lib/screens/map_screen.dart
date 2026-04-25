@@ -528,6 +528,9 @@ class _MapScreenState extends State<MapScreen> {
         return ('https://api.maptiler.com/maps/$style/{z}/{x}/{y}@2x.png?key=$key', 512);
       case MapTileProvider.free:
         return _getFreeTileConfig(settings.mapTileStyle);
+      case MapTileProvider.vector:
+        // Vector uses MapLibre, not TileLayer - this won't be called
+        return ('', 256);
     }
   }
 
