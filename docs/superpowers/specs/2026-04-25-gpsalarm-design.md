@@ -37,9 +37,9 @@ lib/
 | `provider` | State management |
 | `audioplayers` | Alarm sound playback |
 | `flutter_local_notifications` | Push notifications when app is in background |
-| `vibration` | Vibration control |
+| `vibration` | Vibration control (mobile only, no-op on web) |
 | `file_picker` | Custom alarm sound file selection |
-| `flutter_localization` | i18n (Hungarian + English) |
+| `easy_localization` | i18n (Hungarian + English, JSON-based) |
 
 ## Data Models
 
@@ -54,7 +54,6 @@ class AlarmPoint {
   double radiusMeters;         // distance trigger radius
   Duration? timeTrigger;       // time-based trigger (e.g. 30 min)
   TriggerType triggerType;     // distance | time
-  AssignMode assignMode;       // tap (detailed) | fastAssign (long tap+swipe)
   bool isActive;
   String? customAlarmSound;    // null = use global default
   AlarmType? customAlarmType;  // null = use global default
@@ -62,7 +61,6 @@ class AlarmPoint {
 }
 
 enum TriggerType { distance, time }
-enum AssignMode { tap, fastAssign }
 enum AlarmType { soundAndVibration, notificationOnly, fullScreenAlarm }
 ```
 
@@ -112,7 +110,7 @@ Full-screen OpenStreetMap filling the entire viewport. UI elements float on top:
    - Time mode: minutes input (number field + slider, 5–120 min)
    - Cancel / Save buttons
 
-2. **Long tap + swipe (fast assign)** → orange pin (📌) appears at touch point → circle grows as finger swipes outward → radius = swipe distance → release = alarm saved with default distance trigger. A bottom toast confirms: "Fast alarm - 350m". Tap the pin later to edit details.
+2. **Long tap + swipe (fast assign)** → orange pin (📌) appears at touch point → circle grows as finger swipes outward → radius is calculated from swipe pixel distance converted to meters using the current map zoom level (pixels × meters-per-pixel at zoom) → release = alarm saved with default distance trigger. A bottom toast confirms: "Fast alarm - 350m". Tap the pin later to edit details.
 
 **Pin visualization:**
 - Tap pins: red (📍) with green circle border
@@ -163,20 +161,25 @@ List of all alarm points:
 When an alarm triggers:
 - **Sound+Vibration:** audio plays + device vibrates, notification with dismiss button
 - **Notification only:** standard push notification with alarm name and distance
-- **Full screen alarm:** lock-screen overlay, large alarm name + distance, slide to dismiss
+- **Full screen alarm:** lock-screen overlay, large alarm name + distance, slide to dismiss (Android: requires `USE_FULL_SCREEN_INTENT` permission; iOS: uses notification with critical alert)
+
+**After dismissal:** the alarm point automatically deactivates (isActive = false). User must manually re-enable it from the list or map pin. No snooze — this is a location alarm, not a recurring alarm.
+
+**Maximum alarm points:** 50 active alarms. Beyond that, user must deactivate existing ones. This prevents excessive battery drain from monitoring too many geofences.
 
 ## GPS & Battery Management
 
 - **Polling modes:** Continuous (real-time GPS stream) or custom interval (10s, 30s, 1min, 5min)
 - User configures in GPS settings
-- Background execution via platform-specific foreground service (Android) / background location (iOS)
-- Web: uses browser Geolocation API with watchPosition
+- **Android background:** foreground service with persistent notification ("GPS Alarm is monitoring X locations")
+- **iOS background:** `allowBackgroundLocationUpdates` with significant location changes for battery efficiency
+- **Web:** browser Geolocation API with watchPosition (foreground only, no background support — shows warning)
 
 **Time-based trigger calculation:**
-- Track GPS speed over last N readings (moving average)
+- Track GPS speed over last 5 readings (moving average window = 5)
 - Calculate ETA: distance_to_point / average_speed
 - Trigger when ETA <= configured time threshold
-- Fall back to distance trigger if speed is 0 or unreliable
+- Fall back to distance trigger if speed is 0 or unreliable (< 1 km/h for > 30 seconds)
 
 ## Map Provider
 
@@ -204,3 +207,30 @@ When an alarm triggers:
 - Dark mode: dark backgrounds (#1a1a2e), lighter text, same blue accent
 - System mode: follows device setting
 - Map controls: semi-transparent white/glass background in light mode, dark in dark mode
+
+## Permissions
+
+App requests permissions progressively (not all at once on first launch):
+
+- **Location (foreground):** requested on first app open, required for map "my location" and alarm monitoring
+- **Location (background):** requested when user creates first alarm point — explained with rationale dialog ("GPS Alarm needs background location to alert you when you're near your saved locations")
+- **Notifications:** requested when user creates first alarm — needed for alarm delivery
+- **File access:** requested only when user taps "Custom file" in alarm sound settings
+
+**Permission denied handling:** show inline banner explaining why the permission is needed, with "Open Settings" button. App remains usable without background location (alarms only work in foreground) and without notifications (only in-app alarm).
+
+## Platform-Specific Limitations (Web)
+
+Web (Chrome) is for development/testing. Known limitations:
+- No background GPS monitoring — alarms only work while tab is active
+- No vibration API on desktop browsers
+- No file picker for custom alarm sounds (use hardcoded only)
+- No full-screen alarm overlay
+- No push notifications without service worker setup
+- These features gracefully degrade: unavailable options are hidden or shown as disabled with tooltip
+
+## Error Handling
+
+- **Geocoding failure:** show "No results found" or "Connection error, try again" in search dropdown
+- **GPS unavailable:** show banner on map "GPS not available" with retry button
+- **Duplicate pin prevention:** if user taps within 50m of existing pin, show existing pin's popup instead of creating new one
