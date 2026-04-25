@@ -24,6 +24,7 @@ import '../services/alarm_service.dart';
 import 'settings_screen.dart';
 import '../services/debug_console.dart';
 import '../widgets/vector_map_view.dart';
+import '../widgets/maplibre_map_view.dart';
 import '../widgets/offline_indicator.dart';
 import '../services/cached_tile_provider.dart';
 
@@ -183,14 +184,23 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isVector = context.select<SettingsProvider, bool>(
-        (p) => p.settings.mapProvider == MapTileProvider.vector);
+    final mapProvider = context.select<SettingsProvider, MapTileProvider>(
+        (p) => p.settings.mapProvider);
 
-    // Use vector map (MapLibre) when selected - native only
-    if (isVector) {
+    // Vector map (flutter_map + vector_map_tiles) — web + native
+    if (mapProvider == MapTileProvider.vector) {
       return Scaffold(
         key: _scaffoldKey,
         body: VectorMapView(scaffoldKey: _scaffoldKey),
+        drawer: const SettingsDrawer(),
+      );
+    }
+
+    // Vector native (MapLibre GL) — native only
+    if (mapProvider == MapTileProvider.vectorNative && !kIsWeb) {
+      return Scaffold(
+        key: _scaffoldKey,
+        body: MapLibreMapView(scaffoldKey: _scaffoldKey),
         drawer: const SettingsDrawer(),
       );
     }
@@ -644,6 +654,7 @@ class _MapScreenState extends State<MapScreen> {
       case MapTileProvider.free:
         return _getFreeTileUrl(settings.mapTileStyle);
       case MapTileProvider.vector:
+      case MapTileProvider.vectorNative:
         return '';
     }
   }

@@ -29,6 +29,7 @@ dependencies:
   path: ^1.9.0
   shared_preferences: ^2.3.5
   vector_map_tiles: ^7.3.1
+  maplibre_gl: ^0.20.0
   connectivity_plus: ^6.1.2
   cached_network_image: ^3.4.1
   flutter_cache_manager: ^3.4.1
