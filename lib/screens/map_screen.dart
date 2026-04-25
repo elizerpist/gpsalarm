@@ -67,6 +67,9 @@ class _MapScreenState extends State<MapScreen> {
             options: MapOptions(
               initialCenter: mapProv.center,
               initialZoom: mapProv.zoom,
+              interactionOptions: const InteractionOptions(
+                flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+              ),
               onTap: (tapPosition, point) => _handleTap(context, point),
               onLongPress: (tapPosition, point) =>
                   _handleLongPress(context, point),
