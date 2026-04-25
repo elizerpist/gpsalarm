@@ -23,7 +23,6 @@ import '../services/debug_console.dart';
 
 class VectorMapView extends StatefulWidget {
   final GlobalKey<ScaffoldState> scaffoldKey;
-
   const VectorMapView({super.key, required this.scaffoldKey});
 
   @override
@@ -35,7 +34,6 @@ class _VectorMapViewState extends State<VectorMapView> {
   final LocationService _locationService = LocationService();
   final ValueNotifier<LatLng?> _userPosition = ValueNotifier(null);
 
-  // Fast assign
   bool _isFastAssigning = false;
   LatLng? _fastAssignCenter;
   double _fastAssignRadiusMeters = 500;
@@ -65,9 +63,7 @@ class _VectorMapViewState extends State<VectorMapView> {
             AlarmService.distanceMeters(
                     _userPosition.value!.latitude,
                     _userPosition.value!.longitude,
-                    newPos.latitude,
-                    newPos.longitude) >
-                5) {
+                    newPos.latitude, newPos.longitude) > 5) {
           _userPosition.value = newPos;
         }
         _checkAlarms(position.latitude, position.longitude);
@@ -81,46 +77,26 @@ class _VectorMapViewState extends State<VectorMapView> {
       bool shouldTrigger = false;
       if (point.triggerType == TriggerType.distance) {
         shouldTrigger = AlarmService.isWithinRadius(
-          userLat: userLat,
-          userLng: userLng,
-          pointLat: point.latitude,
-          pointLng: point.longitude,
+          userLat: userLat, userLng: userLng,
+          pointLat: point.latitude, pointLng: point.longitude,
           radiusMeters: point.radiusMeters,
         );
-      } else if (point.triggerType == TriggerType.time &&
-          point.timeTrigger != null) {
-        final dist = AlarmService.distanceMeters(
-            userLat, userLng, point.latitude, point.longitude);
-        final eta = AlarmService.calculateEtaMinutes(
-            distanceMeters: dist,
-            speedKmh: _locationService.averageSpeedKmh);
-        if (eta != null && eta <= point.timeTrigger!.inMinutes) {
-          shouldTrigger = true;
-        }
+      } else if (point.triggerType == TriggerType.time && point.timeTrigger != null) {
+        final dist = AlarmService.distanceMeters(userLat, userLng, point.latitude, point.longitude);
+        final eta = AlarmService.calculateEtaMinutes(distanceMeters: dist, speedKmh: _locationService.averageSpeedKmh);
+        if (eta != null && eta <= point.timeTrigger!.inMinutes) shouldTrigger = true;
       }
       if (shouldTrigger) {
         alarmProv.toggleActive(point.id);
-        _showAlarmTriggered(point);
+        if (mounted) {
+          showDialog(context: context, barrierDismissible: false, builder: (_) => AlertDialog(
+            icon: const Icon(Icons.alarm, color: Colors.red, size: 48),
+            title: Text(point.name ?? tr('no_name')),
+            actions: [FilledButton(onPressed: () => Navigator.pop(context), child: Text(tr('dismiss')))],
+          ));
+        }
       }
     }
-  }
-
-  void _showAlarmTriggered(AlarmPoint point) {
-    if (!mounted) return;
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        icon: const Icon(Icons.alarm, color: Colors.red, size: 48),
-        title: Text(point.name ?? tr('no_name')),
-        actions: [
-          FilledButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(tr('dismiss')),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -131,17 +107,17 @@ class _VectorMapViewState extends State<VectorMapView> {
     super.dispose();
   }
 
-  // --- Long press + swipe ---
+  // --- Pointer handlers for long press + swipe ---
 
   void _onPointerDown(PointerDownEvent event) {
     if (_isFastAssigning) return;
     _pointerDownPos = event.position;
     _longPressTriggered = false;
+    final localPos = event.localPosition;
     _longPressTimer = Timer(const Duration(milliseconds: 500), () {
       if (_pointerDownPos == null) return;
       _longPressTriggered = true;
-      final screenPoint = Point<double>(
-          event.localPosition.dx, event.localPosition.dy);
+      final screenPoint = Point<double>(localPos.dx, localPos.dy);
       final latLng = _mapController.camera.pointToLatLng(screenPoint);
       setState(() {
         _isFastAssigning = true;
@@ -165,10 +141,8 @@ class _VectorMapViewState extends State<VectorMapView> {
       final pixelDist = sqrt(dx * dx + dy * dy);
       final zoom = _mapController.camera.zoom;
       final metersPerPixel = 156543.03392 *
-          cos(_mapController.camera.center.latitude * pi / 180) /
-          pow(2, zoom);
-      final meters = (pixelDist * metersPerPixel).clamp(100.0, 5000.0);
-      setState(() => _fastAssignRadiusMeters = meters);
+          cos(_mapController.camera.center.latitude * pi / 180) / pow(2, zoom);
+      setState(() => _fastAssignRadiusMeters = (pixelDist * metersPerPixel).clamp(100.0, 5000.0));
     }
   }
 
@@ -198,9 +172,7 @@ class _VectorMapViewState extends State<VectorMapView> {
         triggerType: TriggerType.distance,
       ));
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(tr('fast_alarm',
-                args: [_fastAssignRadiusMeters.round().toString()]))),
+        SnackBar(content: Text(tr('fast_alarm', args: [_fastAssignRadiusMeters.round().toString()]))),
       );
     }
     _cancelFastAssign();
@@ -209,8 +181,7 @@ class _VectorMapViewState extends State<VectorMapView> {
   void _handleTap(BuildContext context, LatLng point) {
     if (_isFastAssigning) return;
     final alarmProv = context.read<AlarmProvider>();
-    final existing =
-        alarmProv.findNearby(point.latitude, point.longitude);
+    final existing = alarmProv.findNearby(point.latitude, point.longitude);
     if (existing != null) {
       _showEditPopup(existing);
     } else {
@@ -220,24 +191,15 @@ class _VectorMapViewState extends State<VectorMapView> {
 
   void _showCreatePopup(LatLng point) {
     showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) =>
-          RadiusPopup(latitude: point.latitude, longitude: point.longitude),
+      context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
+      builder: (_) => RadiusPopup(latitude: point.latitude, longitude: point.longitude),
     );
   }
 
   void _showEditPopup(AlarmPoint alarmPoint) {
     showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => RadiusPopup(
-        latitude: alarmPoint.latitude,
-        longitude: alarmPoint.longitude,
-        existingPoint: alarmPoint,
-      ),
+      context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
+      builder: (_) => RadiusPopup(latitude: alarmPoint.latitude, longitude: alarmPoint.longitude, existingPoint: alarmPoint),
     );
   }
 
@@ -246,47 +208,41 @@ class _VectorMapViewState extends State<VectorMapView> {
     if (pos != null) _mapController.move(pos, 15);
   }
 
-  // --- Vector tile style ---
+  // --- Build vector tile layer ---
 
-  Style _getVectorStyle(String styleUrl) {
-    // OpenFreeMap and Versatiles use standard MVT
-    if (styleUrl.contains('versatiles')) {
-      return Style(
-        theme: ProvidedThemes.versatiles(),
-        sources: {
-          'versatiles': VectorTileProvider(
-            urlTemplate:
-                'https://tiles.versatiles.org/tiles/osm/{z}/{x}/{y}',
+  VectorTileLayer _buildVectorLayer(String styleKey) {
+    if (styleKey == 'versatiles') {
+      return VectorTileLayer(
+        tileProviders: TileProviders({
+          'versatiles': NetworkVectorTileProvider(
+            urlTemplate: 'https://tiles.versatiles.org/tiles/osm/{z}/{x}/{y}',
             maximumZoom: 14,
           ),
-        },
+        }),
+        theme: ProvidedThemes.versatiles(),
       );
     }
-    // Default: OpenFreeMap liberty style via style URL
-    return Style(
-      theme: ProvidedThemes.openStreetMap(),
-      sources: {
-        'openmaptiles': VectorTileProvider(
-          urlTemplate:
-              'https://tiles.openfreemap.org/planet/{z}/{x}/{y}.pbf',
+    // Default: OpenFreeMap
+    return VectorTileLayer(
+      tileProviders: TileProviders({
+        'openmaptiles': NetworkVectorTileProvider(
+          urlTemplate: 'https://tiles.openfreemap.org/planet/{z}/{x}/{y}.pbf',
           maximumZoom: 14,
         ),
-      },
+      }),
+      theme: ProvidedThemes.openStreetMap(),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final styleUrl = context.select<SettingsProvider, String>(
-        (p) => p.settings.vectorStyleUrl);
+    final styleKey = context.select<SettingsProvider, String>((p) => p.settings.vectorStyleUrl);
     final alarmProv = context.watch<AlarmProvider>();
 
     return Stack(
       children: [
         Listener(
-          behavior: _isFastAssigning
-              ? HitTestBehavior.opaque
-              : HitTestBehavior.translucent,
+          behavior: _isFastAssigning ? HitTestBehavior.opaque : HitTestBehavior.translucent,
           onPointerDown: _onPointerDown,
           onPointerMove: _onPointerMove,
           onPointerUp: _onPointerUp,
@@ -301,142 +257,71 @@ class _VectorMapViewState extends State<VectorMapView> {
                     ? InteractiveFlag.none
                     : InteractiveFlag.all & ~InteractiveFlag.rotate,
               ),
-              onTap: _isFastAssigning
-                  ? null
-                  : (tapPosition, point) => _handleTap(context, point),
+              onTap: _isFastAssigning ? null : (tapPos, point) => _handleTap(context, point),
             ),
             children: [
-              VectorTileLayer(
-                tileProviders:
-                    _getVectorStyle(styleUrl).sources.cast(),
-                theme: _getVectorStyle(styleUrl).theme,
-              ),
-              CircleLayer(
-                circles: [
-                  ...alarmProv.alarmPoints
-                      .map((p) => buildRadiusCircle(p)),
-                  if (_isFastAssigning && _fastAssignCenter != null)
-                    CircleMarker(
-                      point: _fastAssignCenter!,
-                      radius: _fastAssignRadiusMeters,
-                      useRadiusInMeter: true,
-                      color: Colors.orange.withOpacity(0.15),
-                      borderColor: Colors.orange.withOpacity(0.7),
-                      borderStrokeWidth: 3,
-                    ),
-                ],
-              ),
+              _buildVectorLayer(styleKey),
+              CircleLayer(circles: [
+                ...alarmProv.alarmPoints.map((p) => buildRadiusCircle(p)),
+                if (_isFastAssigning && _fastAssignCenter != null)
+                  CircleMarker(
+                    point: _fastAssignCenter!, radius: _fastAssignRadiusMeters,
+                    useRadiusInMeter: true, color: Colors.orange.withOpacity(0.15),
+                    borderColor: Colors.orange.withOpacity(0.7), borderStrokeWidth: 3,
+                  ),
+              ]),
               Consumer<AlarmProvider>(
                 builder: (_, ap, __) => ValueListenableBuilder<LatLng?>(
                   valueListenable: _userPosition,
-                  builder: (_, userPos, __) => MarkerLayer(
-                    markers: [
-                      ...ap.alarmPoints.map((p) => buildPinMarker(
-                            point: p,
-                            onTap: () => _showEditPopup(p),
-                          )),
-                      if (userPos != null)
-                        buildUserLocationMarker(userPos),
-                      if (_isFastAssigning && _fastAssignCenter != null)
-                        Marker(
-                          point: _fastAssignCenter!,
-                          width: 40,
-                          height: 40,
-                          child: const Icon(Icons.location_on,
-                              color: Colors.orange, size: 32),
-                        ),
-                    ],
-                  ),
+                  builder: (_, userPos, __) => MarkerLayer(markers: [
+                    ...ap.alarmPoints.map((p) => buildPinMarker(point: p, onTap: () => _showEditPopup(p))),
+                    if (userPos != null) buildUserLocationMarker(userPos),
+                    if (_isFastAssigning && _fastAssignCenter != null)
+                      Marker(point: _fastAssignCenter!, width: 40, height: 40,
+                        child: const Icon(Icons.location_on, color: Colors.orange, size: 32)),
+                  ]),
                 ),
               ),
             ],
           ),
         ),
-        // Controls
         if (!_isFastAssigning)
           MapControls(
-            onMenuTap: () =>
-                widget.scaffoldKey.currentState?.openDrawer(),
-            onZoomIn: () {
-              final cam = _mapController.camera;
-              _mapController.move(
-                  cam.center, (cam.zoom + 1).clamp(3, 18));
-            },
-            onZoomOut: () {
-              final cam = _mapController.camera;
-              _mapController.move(
-                  cam.center, (cam.zoom - 1).clamp(3, 18));
-            },
-            onSearchTap: () =>
-                context.read<MapProvider>().toggleSearch(),
+            onMenuTap: () => widget.scaffoldKey.currentState?.openDrawer(),
+            onZoomIn: () { final cam = _mapController.camera; _mapController.move(cam.center, (cam.zoom + 1).clamp(3, 18)); },
+            onZoomOut: () { final cam = _mapController.camera; _mapController.move(cam.center, (cam.zoom - 1).clamp(3, 18)); },
+            onSearchTap: () => context.read<MapProvider>().toggleSearch(),
             onMyLocation: _goToMyLocation,
             searchActive: false,
           ),
-        // Fast assign panel
         if (_isFastAssigning)
           Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
+            bottom: 0, left: 0, right: 0,
             child: Container(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
               decoration: BoxDecoration(
-                color: Theme.of(context).brightness == Brightness.dark
-                    ? const Color(0xFF1a1a2e)
-                    : Colors.white,
-                borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(20)),
-                boxShadow: [
-                  BoxShadow(
-                      color: Colors.black.withOpacity(0.2),
-                      blurRadius: 20,
-                      offset: const Offset(0, -4))
-                ],
+                color: Theme.of(context).brightness == Brightness.dark ? const Color(0xFF1a1a2e) : Colors.white,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 20, offset: const Offset(0, -4))],
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(children: [
-                    const Icon(Icons.location_on,
-                        color: Colors.orange, size: 28),
-                    const SizedBox(width: 8),
-                    const Expanded(
-                        child: Text('Fast Assign',
-                            style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold))),
-                    Text('${_fastAssignRadiusMeters.round()}m',
-                        style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.orange[700])),
-                  ]),
-                  const SizedBox(height: 12),
-                  Slider(
-                    value: _fastAssignRadiusMeters,
-                    min: 100,
-                    max: 5000,
-                    divisions: 49,
-                    activeColor: Colors.orange,
-                    onChanged: (v) =>
-                        setState(() => _fastAssignRadiusMeters = v),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(children: [
-                    Expanded(
-                        child: OutlinedButton(
-                            onPressed: _cancelFastAssign,
-                            child: Text(tr('cancel')))),
-                    const SizedBox(width: 8),
-                    Expanded(
-                        child: FilledButton(
-                            onPressed: _confirmFastAssign,
-                            style: FilledButton.styleFrom(
-                                backgroundColor: Colors.orange),
-                            child: Text(tr('save')))),
-                  ]),
-                ],
-              ),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Row(children: [
+                  const Icon(Icons.location_on, color: Colors.orange, size: 28),
+                  const SizedBox(width: 8),
+                  const Expanded(child: Text('Fast Assign', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+                  Text('${_fastAssignRadiusMeters.round()}m', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.orange[700])),
+                ]),
+                const SizedBox(height: 12),
+                Slider(value: _fastAssignRadiusMeters, min: 100, max: 5000, divisions: 49, activeColor: Colors.orange,
+                  onChanged: (v) => setState(() => _fastAssignRadiusMeters = v)),
+                const SizedBox(height: 16),
+                Row(children: [
+                  Expanded(child: OutlinedButton(onPressed: _cancelFastAssign, child: Text(tr('cancel')))),
+                  const SizedBox(width: 8),
+                  Expanded(child: FilledButton(onPressed: _confirmFastAssign,
+                    style: FilledButton.styleFrom(backgroundColor: Colors.orange), child: Text(tr('save')))),
+                ]),
+              ]),
             ),
           ),
       ],
