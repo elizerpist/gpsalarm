@@ -7,13 +7,50 @@ Marker buildPinMarker({
   required AlarmPoint point,
   required VoidCallback onTap,
 }) {
+  final isActive = point.isActive;
+  final color = isActive ? Colors.red : Colors.grey;
+  final label = point.triggerType == TriggerType.distance
+      ? _formatDistance(point.radiusMeters)
+      : '${point.timeTrigger?.inMinutes ?? 0}min';
+
   return Marker(
     point: LatLng(point.latitude, point.longitude),
-    width: 40,
-    height: 40,
+    width: 60,
+    height: 60,
     child: GestureDetector(
       onTap: onTap,
-      child: const Icon(Icons.location_on, color: Colors.red, size: 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.location_on,
+            color: isActive ? color : Colors.grey[400],
+            size: 32,
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+            decoration: BoxDecoration(
+              color: (isActive ? color : Colors.grey).withOpacity(0.8),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 9,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
     ),
   );
+}
+
+String _formatDistance(double meters) {
+  if (meters >= 1000) {
+    return '${(meters / 1000).toStringAsFixed(1)}km';
+  }
+  return '${meters.round()}m';
 }
