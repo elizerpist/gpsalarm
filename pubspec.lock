@@ -493,14 +493,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.1"
-  js:
-    dependency: transitive
-    description:
-      name: js
-      sha256: "53385261521cc4a0c4658fd0ad07a7d14591cf8fc33abbceae306ddb974888dc"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.7.2"
   latlong2:
     dependency: "direct main"
     description:
@@ -569,26 +561,26 @@ packages:
     dependency: "direct main"
     description:
       name: maplibre_gl
-      sha256: ea2fa443e7d5dc18db7f37a0f6f5af40642888c56b81a14441aeddea077adaea
+      sha256: c97f32353b7c4d15e77c167cc444424556c0be7746dc73fd3deac5f32f858ed4
       url: "https://pub.dev"
     source: hosted
-    version: "0.20.0"
+    version: "0.26.0"
   maplibre_gl_platform_interface:
     dependency: transitive
     description:
       name: maplibre_gl_platform_interface
-      sha256: "718c3503f36936fbf35c34d6ddf8bf770474c5ba1e6cb1d8caece44efae424af"
+      sha256: "60ee6ab5671de09dcf7fcb512aedb940024ed03dfcca04a4487dfdd76c906391"
       url: "https://pub.dev"
     source: hosted
-    version: "0.20.0"
+    version: "0.26.0"
   maplibre_gl_web:
     dependency: transitive
     description:
       name: maplibre_gl_web
-      sha256: e7d71b08f24dca70e9c9cf841b096704a677e6239447d87220ec071355768149
+      sha256: "63988f302809a46667a40d8ae97882c13a2e0aa1f86808ba47a5e6f311471b59"
       url: "https://pub.dev"
     source: hosted
-    version: "0.20.0"
+    version: "0.26.0"
   matcher:
     dependency: transitive
     description:

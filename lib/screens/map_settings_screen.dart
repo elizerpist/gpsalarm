@@ -513,8 +513,9 @@ class _VectorStylePicker extends StatelessWidget {
   });
 
   static const styles = {
-    'openfreemap': 'OpenFreeMap',
-    'versatiles': 'Versatiles',
+    'openfreemap': 'Liberty',
+    'openfreemap_bright': 'Bright',
+    'openfreemap_positron': 'Positron',
   };
 
   @override

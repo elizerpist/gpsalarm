@@ -34,6 +34,7 @@ class _VectorMapViewState extends State<VectorMapView> {
   final LocationService _locationService = LocationService();
   final ValueNotifier<LatLng?> _userPosition = ValueNotifier(null);
 
+  LatLng? _pendingTapPoint;
   bool _isFastAssigning = false;
   LatLng? _fastAssignCenter;
   double _fastAssignRadiusMeters = 500;
@@ -193,6 +194,7 @@ class _VectorMapViewState extends State<VectorMapView> {
     if (existing != null) {
       _showEditPopup(existing);
     } else {
+      setState(() => _pendingTapPoint = point);
       _showCreatePopup(point);
     }
   }
@@ -201,7 +203,9 @@ class _VectorMapViewState extends State<VectorMapView> {
     showModalBottomSheet(
       context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
       builder: (_) => RadiusPopup(latitude: point.latitude, longitude: point.longitude),
-    );
+    ).whenComplete(() {
+      if (mounted) setState(() => _pendingTapPoint = null);
+    });
   }
 
   void _showEditPopup(AlarmPoint alarmPoint) {
@@ -222,11 +226,16 @@ class _VectorMapViewState extends State<VectorMapView> {
   String? _lastStyleKey;
 
   Future<Style> _loadStyle(String styleKey) async {
-    final styleUrl = styleKey == 'versatiles'
-        ? 'https://tiles.versatiles.org/assets/styles/colorful.json'
-        : 'https://tiles.openfreemap.org/styles/liberty';
+    final styleUrl = _styleUrls[styleKey] ?? _styleUrls['openfreemap']!;
+    DebugConsole.log('Loading vector style: $styleUrl');
     return StyleReader(uri: styleUrl, logger: null).read();
   }
+
+  static const _styleUrls = {
+    'openfreemap': 'https://tiles.openfreemap.org/styles/liberty',
+    'openfreemap_bright': 'https://tiles.openfreemap.org/styles/bright',
+    'openfreemap_positron': 'https://tiles.openfreemap.org/styles/positron',
+  };
 
   Widget _buildVectorLayer(String styleKey) {
     if (_lastStyleKey != styleKey) {
@@ -291,6 +300,9 @@ class _VectorMapViewState extends State<VectorMapView> {
                   builder: (_, userPos, __) => MarkerLayer(markers: [
                     ...ap.alarmPoints.map((p) => buildPinMarker(point: p, onTap: () => _showEditPopup(p))),
                     if (userPos != null) buildUserLocationMarker(userPos),
+                    if (_pendingTapPoint != null)
+                      Marker(point: _pendingTapPoint!, width: 40, height: 50,
+                        child: const Icon(Icons.location_on, color: Colors.red, size: 36)),
                     if (_isFastAssigning && _fastAssignCenter != null)
                       Marker(point: _fastAssignCenter!, width: 40, height: 40,
                         child: const Icon(Icons.location_on, color: Colors.orange, size: 32)),
