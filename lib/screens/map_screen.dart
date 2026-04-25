@@ -19,6 +19,7 @@ import '../widgets/user_location_marker.dart';
 import '../services/location_service.dart';
 import '../services/alarm_service.dart';
 import 'settings_screen.dart';
+import '../services/debug_console.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -48,7 +49,9 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> _initLocation() async {
+    DebugConsole.log('Requesting location permission...');
     final hasPermission = await _locationService.requestPermission();
+    DebugConsole.log('Permission: $hasPermission');
     if (hasPermission) {
       final pos = await _locationService.getCurrentPosition();
       if (pos != null && mounted) {
@@ -59,15 +62,16 @@ class _MapScreenState extends State<MapScreen> {
         mapProv.setCenter(_userPosition!);
         _mapController.move(_userPosition!, mapProv.zoom);
       }
+      DebugConsole.log('Starting GPS tracking');
       _locationService.startTracking(onPosition: (position) {
         if (!mounted) return;
         final newPos = LatLng(position.latitude, position.longitude);
-        // Only rebuild if position changed significantly (>5m)
         if (_userPosition == null ||
             AlarmService.distanceMeters(
                     _userPosition!.latitude, _userPosition!.longitude,
                     newPos.latitude, newPos.longitude) > 5) {
           setState(() => _userPosition = newPos);
+          DebugConsole.log('GPS: ${newPos.latitude.toStringAsFixed(4)}, ${newPos.longitude.toStringAsFixed(4)}');
         }
         _checkAlarms(position.latitude, position.longitude);
       });
@@ -104,6 +108,7 @@ class _MapScreenState extends State<MapScreen> {
       }
 
       if (shouldTrigger) {
+        DebugConsole.log('ALARM TRIGGERED: ${point.name ?? point.id}');
         alarmProv.toggleActive(point.id);
         _showAlarmTriggered(point);
       }
@@ -139,7 +144,7 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Only read settings once per build, use Selector for tile URL changes
+    DebugConsole.log('MapScreen.build()');
     final tileUrl = context.select<SettingsProvider, String>(
         (p) => _getTileUrl(p.settings));
 
@@ -212,6 +217,26 @@ class _MapScreenState extends State<MapScreen> {
                 ),
               ),
             ],
+          ),
+          // Debug button - top right
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 12,
+            right: 12,
+            child: GestureDetector(
+              onTap: () => showDialog(
+                context: context,
+                builder: (_) => const DebugConsoleDialog(),
+              ),
+              child: Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.5),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.terminal, color: Color(0xFF2ECDC4), size: 18),
+              ),
+            ),
           ),
           // Controls - only rebuilds when search state changes
           if (!_isFastAssigning)
