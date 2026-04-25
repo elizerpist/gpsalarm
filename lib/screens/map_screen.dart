@@ -208,8 +208,6 @@ class _MapScreenState extends State<MapScreen> {
                     : InteractiveFlag.all & ~InteractiveFlag.rotate,
               ),
               onTap: (tapPosition, point) => _handleTap(context, point),
-              onLongPress: (tapPosition, point) =>
-                  _handleLongPress(context, point, tapPosition.global),
               onPositionChanged: (position, hasGesture) {
                 if (hasGesture) {
                   // DON'T update providers on every pan/zoom frame - causes rebuilds
@@ -281,7 +279,35 @@ class _MapScreenState extends State<MapScreen> {
               ),
             ],
           ),
-          // Fast assign swipe overlay — captures pan gestures over the map
+          // Long press + swipe overlay for fast assign
+          if (!_isFastAssigning)
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onLongPressStart: (details) {
+                  final screenPoint = Point<double>(
+                      details.localPosition.dx, details.localPosition.dy);
+                  final latLng = _mapController.camera
+                      .pointToLatLng(screenPoint);
+                  _handleLongPress(context, latLng, details.globalPosition);
+                },
+                onLongPressMoveUpdate: (details) {
+                  if (!_isFastAssigning || _fastAssignStartOffset == null) return;
+                  final dx = details.globalPosition.dx - _fastAssignStartOffset!.dx;
+                  final dy = details.globalPosition.dy - _fastAssignStartOffset!.dy;
+                  final pixelDist = sqrt(dx * dx + dy * dy);
+                  final meters = _pixelsToMeters(pixelDist).clamp(100.0, 5000.0);
+                  setState(() => _fastAssignRadiusMeters = meters);
+                },
+                onLongPressEnd: (details) {
+                  if (_isFastAssigning) {
+                    // Don't auto-save on release — let user adjust with slider or confirm
+                  }
+                },
+                child: const SizedBox.expand(),
+              ),
+            ),
+          // Swipe overlay during fast assign (after long press released)
           if (_isFastAssigning)
             Positioned.fill(
               child: GestureDetector(
