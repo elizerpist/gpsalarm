@@ -23,6 +23,8 @@ import '../services/alarm_service.dart';
 import 'settings_screen.dart';
 import '../services/debug_console.dart';
 import '../widgets/vector_map_view.dart';
+import '../widgets/offline_indicator.dart';
+import '../services/cached_tile_provider.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -34,6 +36,7 @@ class MapScreen extends StatefulWidget {
 class _MapScreenState extends State<MapScreen> {
   final MapController _mapController = MapController();
   final LocationService _locationService = LocationService();
+  final CachedTileProvider _cachedTileProvider = CachedTileProvider();
   final ValueNotifier<LatLng?> _userPosition = ValueNotifier(null);
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
@@ -211,6 +214,7 @@ class _MapScreenState extends State<MapScreen> {
               TileLayer(
                 urlTemplate: tileUrl,
                 userAgentPackageName: 'com.gpsalarm.app',
+                tileProvider: kIsWeb ? null : _cachedTileProvider,
                 fallbackUrl: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 errorTileCallback: (tile, error, stackTrace) {
                   DebugConsole.log('Tile error z=${tile.coordinates.z} x=${tile.coordinates.x} y=${tile.coordinates.y}: $error');
@@ -261,6 +265,8 @@ class _MapScreenState extends State<MapScreen> {
               ),
             ],
           ),
+          // Offline indicator
+          const OfflineIndicator(),
           // Debug button - top right
           Positioned(
             top: MediaQuery.of(context).padding.top + 12,

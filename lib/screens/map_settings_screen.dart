@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:easy_localization/easy_localization.dart';
 import '../models/app_settings.dart';
 import '../providers/settings_provider.dart';
+import '../services/cached_tile_provider.dart';
 
 class MapSettingsScreen extends StatelessWidget {
   const MapSettingsScreen({super.key});
@@ -39,7 +40,27 @@ class MapSettingsScreen extends StatelessWidget {
             onChanged: (v) => settingsProv
                 .updateSettings(settings.copyWith(mapStartView: v)),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
+          // Offline cache
+          if (!kIsWeb)
+            ListTile(
+              leading: const Icon(Icons.cloud_off, size: 20),
+              title: const Text('Offline tile cache', style: TextStyle(fontSize: 14)),
+              subtitle: const Text('Megtekintett területek automatikusan mentve',
+                  style: TextStyle(fontSize: 11)),
+              trailing: TextButton(
+                onPressed: () async {
+                  await CachedTileProvider.clearCache();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Cache törölve')),
+                    );
+                  }
+                },
+                child: const Text('Törlés', style: TextStyle(color: Colors.red, fontSize: 12)),
+              ),
+            ),
+          const SizedBox(height: 8),
           const Divider(),
           const SizedBox(height: 16),
 
