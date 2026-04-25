@@ -221,7 +221,10 @@ class _MapScreenState extends State<MapScreen> {
             onPointerDown: _onPointerDown,
             onPointerMove: _onPointerMove,
             onPointerUp: _onPointerUp,
-            onPointerCancel: (_) => _cancelLongPressTimer(),
+            onPointerCancel: (_) {
+              _activePointers = (_activePointers - 1).clamp(0, 99);
+              _cancelLongPressTimer();
+            },
             child: FlutterMap(
               mapController: _mapController,
               options: MapOptions(
@@ -475,7 +478,15 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  int _activePointers = 0;
+
   void _onPointerDown(PointerDownEvent event) {
+    _activePointers++;
+    // Multi-touch (pinch zoom) — cancel long press
+    if (_activePointers > 1) {
+      _cancelLongPressTimer();
+      return;
+    }
     if (_isFastAssigning) return;
     _pointerDownPos = event.position;
     _longPressTriggered = false;
@@ -511,10 +522,10 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   void _onPointerUp(PointerUpEvent event) {
+    _activePointers = (_activePointers - 1).clamp(0, 99);
     _cancelLongPressTimer();
     if (_longPressTriggered && _isFastAssigning) {
       DebugConsole.log('LONG PRESS RELEASED — radius: ${_fastAssignRadiusMeters.round()}m');
-      // Keep the panel open for confirmation/fine-tuning
     }
     _longPressTriggered = false;
     _pointerDownPos = null;

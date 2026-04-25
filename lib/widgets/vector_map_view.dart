@@ -109,7 +109,14 @@ class _VectorMapViewState extends State<VectorMapView> {
 
   // --- Pointer handlers for long press + swipe ---
 
+  int _activePointers = 0;
+
   void _onPointerDown(PointerDownEvent event) {
+    _activePointers++;
+    if (_activePointers > 1) {
+      _longPressTimer?.cancel();
+      return;
+    }
     if (_isFastAssigning) return;
     _pointerDownPos = event.position;
     _longPressTriggered = false;
@@ -147,6 +154,7 @@ class _VectorMapViewState extends State<VectorMapView> {
   }
 
   void _onPointerUp(PointerUpEvent event) {
+    _activePointers = (_activePointers - 1).clamp(0, 99);
     _longPressTimer?.cancel();
     _longPressTriggered = false;
     _pointerDownPos = null;
