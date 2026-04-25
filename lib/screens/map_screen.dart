@@ -47,6 +47,7 @@ class _MapScreenState extends State<MapScreen> {
   LatLng? _fastAssignCenter;
   double _fastAssignRadiusMeters = 500;
   bool _isFastAssigning = false;
+  Offset? _fastAssignStartOffset; // screen position of long press
 
   // Frame timing
   int _frameCount = 0;
@@ -201,12 +202,14 @@ class _MapScreenState extends State<MapScreen> {
             options: MapOptions(
               initialCenter: context.read<MapProvider>().center,
               initialZoom: context.read<MapProvider>().zoom,
-              interactionOptions: const InteractionOptions(
-                flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+              interactionOptions: InteractionOptions(
+                flags: _isFastAssigning
+                    ? InteractiveFlag.none
+                    : InteractiveFlag.all & ~InteractiveFlag.rotate,
               ),
               onTap: (tapPosition, point) => _handleTap(context, point),
               onLongPress: (tapPosition, point) =>
-                  _handleLongPress(context, point),
+                  _handleLongPress(context, point, tapPosition.global),
               onPositionChanged: (position, hasGesture) {
                 if (hasGesture) {
                   // DON'T update providers on every pan/zoom frame - causes rebuilds
@@ -278,6 +281,16 @@ class _MapScreenState extends State<MapScreen> {
               ),
             ],
           ),
+          // Fast assign swipe overlay — captures pan gestures over the map
+          if (_isFastAssigning)
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onPanUpdate: _onFastAssignPan,
+                onPanEnd: _onFastAssignRelease,
+                child: const SizedBox.expand(),
+              ),
+            ),
           // Offline indicator
           const OfflineIndicator(),
           // Debug button - top right
@@ -445,6 +458,25 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  double _pixelsToMeters(double pixels) {
+    final zoom = _mapController.camera.zoom;
+    final metersPerPixel = 156543.03392 * cos(_mapController.camera.center.latitude * pi / 180) / pow(2, zoom);
+    return pixels * metersPerPixel;
+  }
+
+  void _onFastAssignPan(DragUpdateDetails details) {
+    if (_fastAssignStartOffset == null) return;
+    final dx = details.globalPosition.dx - _fastAssignStartOffset!.dx;
+    final dy = details.globalPosition.dy - _fastAssignStartOffset!.dy;
+    final pixelDist = sqrt(dx * dx + dy * dy);
+    final meters = _pixelsToMeters(pixelDist).clamp(100.0, 5000.0);
+    setState(() => _fastAssignRadiusMeters = meters);
+  }
+
+  void _onFastAssignRelease(DragEndDetails details) {
+    _confirmFastAssign();
+  }
+
   void _goToMyLocation() {
     final pos = _userPosition.value;
     if (pos != null) {
@@ -466,11 +498,12 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  void _handleLongPress(BuildContext context, LatLng point) {
+  void _handleLongPress(BuildContext context, LatLng point, Offset screenOffset) {
     setState(() {
       _isFastAssigning = true;
       _fastAssignCenter = point;
-      _fastAssignRadiusMeters = 500;
+      _fastAssignRadiusMeters = 200;
+      _fastAssignStartOffset = screenOffset;
     });
   }
 
@@ -479,6 +512,7 @@ class _MapScreenState extends State<MapScreen> {
       _isFastAssigning = false;
       _fastAssignCenter = null;
       _fastAssignRadiusMeters = 500;
+      _fastAssignStartOffset = null;
     });
   }
 
@@ -509,6 +543,7 @@ class _MapScreenState extends State<MapScreen> {
       _isFastAssigning = false;
       _fastAssignCenter = null;
       _fastAssignRadiusMeters = 500;
+      _fastAssignStartOffset = null;
     });
   }
 
