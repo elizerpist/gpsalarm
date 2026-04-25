@@ -32,7 +32,7 @@ class MapScreen extends StatefulWidget {
 class _MapScreenState extends State<MapScreen> {
   final MapController _mapController = MapController();
   final LocationService _locationService = LocationService();
-  LatLng? _userPosition;
+  final ValueNotifier<LatLng?> _userPosition = ValueNotifier(null);
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   // Fast assign state
@@ -82,20 +82,18 @@ class _MapScreenState extends State<MapScreen> {
     if (hasPermission) {
       final pos = await _locationService.getCurrentPosition();
       if (pos != null && mounted) {
-        setState(() {
-          _userPosition = LatLng(pos.latitude, pos.longitude);
-        });
-        _mapController.move(_userPosition!, _mapController.camera.zoom);
+        _userPosition.value = LatLng(pos.latitude, pos.longitude);
+        _mapController.move(_userPosition.value!, _mapController.camera.zoom);
       }
       DebugConsole.log('Starting GPS tracking');
       _locationService.startTracking(onPosition: (position) {
         if (!mounted) return;
         final newPos = LatLng(position.latitude, position.longitude);
-        if (_userPosition == null ||
+        if (_userPosition.value == null ||
             AlarmService.distanceMeters(
-                    _userPosition!.latitude, _userPosition!.longitude,
+                    _userPosition.value!.latitude, _userPosition.value!.longitude,
                     newPos.latitude, newPos.longitude) > 5) {
-          setState(() => _userPosition = newPos);
+          _userPosition.value = newPos;
           DebugConsole.log('GPS: ${newPos.latitude.toStringAsFixed(4)}, ${newPos.longitude.toStringAsFixed(4)}');
         }
         _checkAlarms(position.latitude, position.longitude);
@@ -164,6 +162,7 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void dispose() {
     _locationService.dispose();
+    _userPosition.dispose();
     super.dispose();
   }
 
@@ -219,25 +218,29 @@ class _MapScreenState extends State<MapScreen> {
                   ],
                 ),
               ),
-              // Pin markers - only rebuilds when alarms change
+              // Pin markers - rebuilds only on alarm or GPS change
               Consumer<AlarmProvider>(
-                builder: (_, alarmProv, __) => MarkerLayer(
-                  markers: [
-                    ...alarmProv.alarmPoints.map((p) => buildPinMarker(
-                          point: p,
-                          onTap: () => _showEditPopup(context, p),
-                        )),
-                    if (_userPosition != null)
-                      buildUserLocationMarker(_userPosition!),
-                    if (_isFastAssigning && _fastAssignCenter != null)
-                      Marker(
-                        point: _fastAssignCenter!,
-                        width: 40,
-                        height: 40,
-                        child: const Icon(Icons.location_on,
-                            color: Colors.orange, size: 32),
-                      ),
-                  ],
+                builder: (_, alarmProv, __) =>
+                    ValueListenableBuilder<LatLng?>(
+                  valueListenable: _userPosition,
+                  builder: (_, userPos, __) => MarkerLayer(
+                    markers: [
+                      ...alarmProv.alarmPoints.map((p) => buildPinMarker(
+                            point: p,
+                            onTap: () => _showEditPopup(context, p),
+                          )),
+                      if (userPos != null)
+                        buildUserLocationMarker(userPos),
+                      if (_isFastAssigning && _fastAssignCenter != null)
+                        Marker(
+                          point: _fastAssignCenter!,
+                          width: 40,
+                          height: 40,
+                          child: const Icon(Icons.location_on,
+                              color: Colors.orange, size: 32),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ],
