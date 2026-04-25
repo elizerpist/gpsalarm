@@ -22,6 +22,7 @@ import '../widgets/radius_popup.dart';
 import '../widgets/user_location_marker.dart';
 import '../services/location_service.dart';
 import '../services/alarm_service.dart';
+import '../services/notification_service.dart';
 import 'settings_screen.dart';
 import '../services/debug_console.dart';
 import '../widgets/maplibre_map_view.dart';
@@ -124,15 +125,22 @@ class _MapScreenState extends State<MapScreen> {
 
     for (final point in activePoints) {
       bool shouldTrigger = false;
+      final isInside = AlarmService.isWithinRadius(
+        userLat: userLat,
+        userLng: userLng,
+        pointLat: point.latitude,
+        pointLng: point.longitude,
+        radiusMeters: point.radiusMeters,
+      );
 
       if (point.triggerType == TriggerType.distance) {
-        shouldTrigger = AlarmService.isWithinRadius(
-          userLat: userLat,
-          userLng: userLng,
-          pointLat: point.latitude,
-          pointLng: point.longitude,
-          radiusMeters: point.radiusMeters,
-        );
+        // On entry: trigger when entering the zone
+        // On leave: trigger when outside the zone (was inside before)
+        if (point.zoneTrigger == ZoneTrigger.onEntry) {
+          shouldTrigger = isInside;
+        } else {
+          shouldTrigger = !isInside;
+        }
       } else if (point.triggerType == TriggerType.time &&
           point.timeTrigger != null) {
         final dist = AlarmService.distanceMeters(
@@ -156,15 +164,27 @@ class _MapScreenState extends State<MapScreen> {
 
   void _showAlarmTriggered(AlarmPoint point) {
     if (!mounted) return;
+    final title = point.name ?? tr('no_name');
+    final zoneText = point.zoneTrigger == ZoneTrigger.onEntry ? 'Belépés' : 'Kilépés';
+    final body = point.triggerType == TriggerType.distance
+        ? '$zoneText — ${point.radiusMeters.round()}m'
+        : '$zoneText — ${point.timeTrigger?.inMinutes ?? 0} min';
+
+    // Send system notification
+    NotificationService.showAlarmNotification(
+      title: 'GPS Alarm: $title',
+      body: body,
+      id: point.id.hashCode,
+    );
+
+    // Show in-app dialog
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => AlertDialog(
         icon: const Icon(Icons.alarm, color: Colors.red, size: 48),
-        title: Text(point.name ?? tr('no_name')),
-        content: Text(point.triggerType == TriggerType.distance
-            ? '${point.radiusMeters.round()}m'
-            : '${point.timeTrigger?.inMinutes ?? 0} min'),
+        title: Text(title),
+        content: Text(body),
         actions: [
           FilledButton(
             onPressed: () => Navigator.pop(context),

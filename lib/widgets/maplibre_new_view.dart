@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' show cos, pi, pow, sqrt;
 import 'package:flutter/material.dart';
 import 'package:maplibre/maplibre.dart';
 import 'package:provider/provider.dart';
@@ -28,10 +27,11 @@ class MaplibreNewView extends StatefulWidget {
 class _MaplibreNewViewState extends State<MaplibreNewView> {
   MapController? _controller;
   final LocationService _locationService = LocationService();
-  Position? _userPosition;
   bool _isFastAssigning = false;
-  Position? _fastAssignCenter;
+  double _fastAssignLat = 0;
+  double _fastAssignLng = 0;
   double _fastAssignRadiusMeters = 500;
+  double _currentZoom = 13;
 
   static const _styleUrls = {
     'liberty': 'https://tiles.openfreemap.org/styles/liberty',
@@ -50,15 +50,13 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     if (hasPermission) {
       final pos = await _locationService.getCurrentPosition();
       if (pos != null && mounted) {
-        _userPosition = Position(pos.longitude, pos.latitude);
-        _controller?.flyTo(
-          center: _userPosition!,
+        _controller?.moveCamera(
+          center: Position(pos.longitude, pos.latitude),
           zoom: 14,
         );
       }
       _locationService.startTracking(onPosition: (position) {
         if (!mounted) return;
-        _userPosition = Position(position.longitude, position.latitude);
         _checkAlarms(position.latitude, position.longitude);
       });
     }
@@ -97,36 +95,32 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   void _onMapCreated(MapController controller) {
     _controller = controller;
     DebugConsole.log('MapLibre (new) map created');
-    if (_userPosition != null) {
-      controller.flyTo(center: _userPosition!, zoom: 14);
-    }
   }
 
-  void _onTap(Position position) {
+  void _onTap(double lat, double lng) {
     if (_isFastAssigning) return;
     final alarmProv = context.read<AlarmProvider>();
-    final existing = alarmProv.findNearby(position.lat.toDouble(), position.lng.toDouble());
+    final existing = alarmProv.findNearby(lat, lng);
     if (existing != null) {
       showModalBottomSheet(
         context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
-        builder: (_) => RadiusPopup(
-          latitude: existing.latitude, longitude: existing.longitude, existingPoint: existing,
-        ),
+        builder: (_) => RadiusPopup(latitude: existing.latitude, longitude: existing.longitude, existingPoint: existing),
       );
     } else {
       showModalBottomSheet(
         context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
-        builder: (_) => RadiusPopup(latitude: position.lat.toDouble(), longitude: position.lng.toDouble()),
+        builder: (_) => RadiusPopup(latitude: lat, longitude: lng),
       );
     }
   }
 
-  void _onLongPress(Position position) {
+  void _onLongPress(double lat, double lng) {
     final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
     if (haptic) Vibration.vibrate(duration: 30);
     setState(() {
       _isFastAssigning = true;
-      _fastAssignCenter = position;
+      _fastAssignLat = lat;
+      _fastAssignLng = lng;
       _fastAssignRadiusMeters = 500;
     });
   }
@@ -134,18 +128,16 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   void _cancelFastAssign() {
     setState(() {
       _isFastAssigning = false;
-      _fastAssignCenter = null;
     });
   }
 
   void _confirmFastAssign() {
-    if (_fastAssignCenter == null) return;
     final alarmProv = context.read<AlarmProvider>();
     if (alarmProv.canAddAlarm) {
       alarmProv.addAlarmPoint(AlarmPoint(
         id: const Uuid().v4(),
-        latitude: _fastAssignCenter!.lat.toDouble(),
-        longitude: _fastAssignCenter!.lng.toDouble(),
+        latitude: _fastAssignLat,
+        longitude: _fastAssignLng,
         radiusMeters: _fastAssignRadiusMeters,
         triggerType: TriggerType.distance,
       ));
@@ -164,16 +156,18 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       children: [
         MapLibreMap(
           options: MapOptions(
-            style: StyleString(string: _getStyleUrl()),
-            center: const Position(19.0402, 47.4979),
-            zoom: 13,
+            initStyle: _getStyleUrl(),
+            initCenter: const Position(19.0402, 47.4979),
+            initZoom: 13,
           ),
           onMapCreated: _onMapCreated,
           onEvent: (event) {
             if (event is MapEventClick) {
-              _onTap(event.point);
+              _onTap(event.point.lat.toDouble(), event.point.lng.toDouble());
             } else if (event is MapEventLongClick) {
-              _onLongPress(event.point);
+              _onLongPress(event.point.lat.toDouble(), event.point.lng.toDouble());
+            } else if (event is MapEventCameraIdle) {
+              _currentZoom = _controller?.camera?.zoom ?? _currentZoom;
             }
           },
         ),
@@ -181,12 +175,16 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
         if (!_isFastAssigning)
           MapControls(
             onMenuTap: () => widget.scaffoldKey.currentState?.openDrawer(),
-            onZoomIn: () => _controller?.flyTo(zoom: (_controller?.camera.zoom ?? 13) + 1),
-            onZoomOut: () => _controller?.flyTo(zoom: (_controller?.camera.zoom ?? 13) - 1),
+            onZoomIn: () => _controller?.moveCamera(zoom: _currentZoom + 1),
+            onZoomOut: () => _controller?.moveCamera(zoom: _currentZoom - 1),
             onSearchTap: () => context.read<MapProvider>().toggleSearch(),
-            onMyLocation: () {
-              if (_userPosition != null) {
-                _controller?.flyTo(center: _userPosition!, zoom: 15);
+            onMyLocation: () async {
+              final pos = await _locationService.getCurrentPosition();
+              if (pos != null) {
+                _controller?.moveCamera(
+                  center: Position(pos.longitude, pos.latitude),
+                  zoom: 15,
+                );
               }
             },
             searchActive: false,
@@ -197,8 +195,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             child: Container(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
               decoration: BoxDecoration(
-                color: Theme.of(context).brightness == Brightness.dark
-                    ? const Color(0xFF1a1a2e) : Colors.white,
+                color: Theme.of(context).brightness == Brightness.dark ? const Color(0xFF1a1a2e) : Colors.white,
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
                 boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 20)],
               ),
@@ -206,14 +203,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                 Row(children: [
                   const Icon(Icons.location_on, color: Colors.orange, size: 28),
                   const SizedBox(width: 8),
-                  const Expanded(child: Text('Fast Assign',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+                  const Expanded(child: Text('Fast Assign', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
                   Text('${_fastAssignRadiusMeters.round()}m',
                       style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.orange[700])),
                 ]),
                 const SizedBox(height: 12),
-                Slider(value: _fastAssignRadiusMeters, min: 100, max: 5000,
-                  divisions: 49, activeColor: Colors.orange,
+                Slider(value: _fastAssignRadiusMeters, min: 100, max: 5000, divisions: 49, activeColor: Colors.orange,
                   onChanged: (v) => setState(() => _fastAssignRadiusMeters = v)),
                 const SizedBox(height: 16),
                 Row(children: [

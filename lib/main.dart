@@ -9,6 +9,7 @@ import 'providers/settings_provider.dart';
 import 'providers/map_provider.dart';
 import 'screens/map_screen.dart';
 import 'services/debug_console.dart';
+import 'services/notification_service.dart';
 
 void main() async {
   runZonedGuarded(() async {
@@ -26,6 +27,8 @@ void main() async {
 
       if (!kIsWeb) {
         DebugConsole.log('Native mode: SQLite + Hive');
+        await NotificationService.init();
+        await NotificationService.requestPermission();
       } else {
         DebugConsole.log('Web mode: Hive only');
       }

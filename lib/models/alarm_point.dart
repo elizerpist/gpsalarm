@@ -1,5 +1,5 @@
 enum TriggerType { distance, time }
-
+enum ZoneTrigger { onEntry, onLeave }
 enum AlarmType { soundAndVibration, notificationOnly, fullScreenAlarm }
 
 class AlarmPoint {
@@ -10,6 +10,7 @@ class AlarmPoint {
   final double radiusMeters;
   final Duration? timeTrigger;
   final TriggerType triggerType;
+  final ZoneTrigger zoneTrigger;
   final bool isActive;
   final String? customAlarmSound;
   final AlarmType? customAlarmType;
@@ -23,6 +24,7 @@ class AlarmPoint {
     required this.radiusMeters,
     this.timeTrigger,
     required this.triggerType,
+    this.zoneTrigger = ZoneTrigger.onEntry,
     this.isActive = true,
     this.customAlarmSound,
     this.customAlarmType,
@@ -37,6 +39,7 @@ class AlarmPoint {
         'radiusMeters': radiusMeters,
         'timeTriggerMinutes': timeTrigger?.inMinutes,
         'triggerType': triggerType.index,
+        'zoneTrigger': zoneTrigger.index,
         'isActive': isActive,
         'customAlarmSound': customAlarmSound,
         'customAlarmType': customAlarmType?.index,
@@ -53,6 +56,9 @@ class AlarmPoint {
             ? Duration(minutes: map['timeTriggerMinutes'] as int)
             : null,
         triggerType: TriggerType.values[map['triggerType'] as int],
+        zoneTrigger: map['zoneTrigger'] != null
+            ? ZoneTrigger.values[map['zoneTrigger'] as int]
+            : ZoneTrigger.onEntry,
         isActive: map['isActive'] as bool,
         customAlarmSound: map['customAlarmSound'] as String?,
         customAlarmType: map['customAlarmType'] != null
@@ -68,6 +74,7 @@ class AlarmPoint {
     double? radiusMeters,
     Duration? timeTrigger,
     TriggerType? triggerType,
+    ZoneTrigger? zoneTrigger,
     bool? isActive,
     String? customAlarmSound,
     AlarmType? customAlarmType,
@@ -80,6 +87,7 @@ class AlarmPoint {
         radiusMeters: radiusMeters ?? this.radiusMeters,
         timeTrigger: timeTrigger ?? this.timeTrigger,
         triggerType: triggerType ?? this.triggerType,
+        zoneTrigger: zoneTrigger ?? this.zoneTrigger,
         isActive: isActive ?? this.isActive,
         customAlarmSound: customAlarmSound ?? this.customAlarmSound,
         customAlarmType: customAlarmType ?? this.customAlarmType,

@@ -46,5 +46,7 @@
   "dismiss": "Elutasítás",
   "background_location_rationale": "A GPS Alarm háttér helymeghatározást igényel, hogy értesíteni tudjon a mentett helyek közelében.",
   "open_settings": "Beállítások megnyitása",
-  "play": "Lejátszás"
+  "play": "Lejátszás",
+  "on_entry": "Belépéskor",
+  "on_leave": "Kilépéskor"
 }

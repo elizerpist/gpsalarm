@@ -46,5 +46,7 @@
   "dismiss": "Dismiss",
   "background_location_rationale": "GPS Alarm needs background location to alert you when you're near your saved locations.",
   "open_settings": "Open Settings",
-  "play": "Play"
+  "play": "Play",
+  "on_entry": "On entry",
+  "on_leave": "On leave"
 }

@@ -24,6 +24,7 @@ class RadiusPopup extends StatefulWidget {
 class _RadiusPopupState extends State<RadiusPopup> {
   late TextEditingController _nameController;
   late TriggerType _triggerType;
+  late ZoneTrigger _zoneTrigger;
   late double _radiusMeters;
   late int _timeMinutes;
 
@@ -33,6 +34,7 @@ class _RadiusPopupState extends State<RadiusPopup> {
     final p = widget.existingPoint;
     _nameController = TextEditingController(text: p?.name ?? '');
     _triggerType = p?.triggerType ?? TriggerType.distance;
+    _zoneTrigger = p?.zoneTrigger ?? ZoneTrigger.onEntry;
     _radiusMeters = p?.radiusMeters ?? 500;
     _timeMinutes = p?.timeTrigger?.inMinutes ?? 10;
   }
@@ -100,6 +102,25 @@ class _RadiusPopupState extends State<RadiusPopup> {
                   icon: Icons.timer,
                   selected: _triggerType == TriggerType.time,
                   onTap: () => setState(() => _triggerType = TriggerType.time),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            // Zone trigger: on entry / on leave
+            Row(
+              children: [
+                _TriggerChip(
+                  label: 'Belépéskor',
+                  icon: Icons.login,
+                  selected: _zoneTrigger == ZoneTrigger.onEntry,
+                  onTap: () => setState(() => _zoneTrigger = ZoneTrigger.onEntry),
+                ),
+                const SizedBox(width: 8),
+                _TriggerChip(
+                  label: 'Kilépéskor',
+                  icon: Icons.logout,
+                  selected: _zoneTrigger == ZoneTrigger.onLeave,
+                  onTap: () => setState(() => _zoneTrigger = ZoneTrigger.onLeave),
                 ),
               ],
             ),
@@ -222,6 +243,7 @@ class _RadiusPopupState extends State<RadiusPopup> {
       longitude: widget.longitude,
       radiusMeters: _triggerType == TriggerType.distance ? _radiusMeters : 0,
       triggerType: _triggerType,
+      zoneTrigger: _zoneTrigger,
       timeTrigger: _triggerType == TriggerType.time
           ? Duration(minutes: _timeMinutes)
           : null,
