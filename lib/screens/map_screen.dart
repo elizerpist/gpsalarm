@@ -25,6 +25,7 @@ import '../services/alarm_service.dart';
 import 'settings_screen.dart';
 import '../services/debug_console.dart';
 import '../widgets/maplibre_map_view.dart';
+import '../widgets/maplibre_new_view.dart';
 import '../widgets/offline_indicator.dart';
 import '../services/cached_tile_provider.dart';
 
@@ -187,11 +188,20 @@ class _MapScreenState extends State<MapScreen> {
     final mapProvider = context.select<SettingsProvider, MapTileProvider>(
         (p) => p.settings.mapProvider);
 
-    // Vector native (MapLibre GL) — native only
+    // Vector native (MapLibre GL legacy) — native only
     if (mapProvider == MapTileProvider.vectorNative && !kIsWeb) {
       return Scaffold(
         key: _scaffoldKey,
         body: MapLibreMapView(scaffoldKey: _scaffoldKey),
+        drawer: const SettingsDrawer(),
+      );
+    }
+
+    // Vector (maplibre new) — native only
+    if (mapProvider == MapTileProvider.vectorMaplibre && !kIsWeb) {
+      return Scaffold(
+        key: _scaffoldKey,
+        body: MaplibreNewView(scaffoldKey: _scaffoldKey),
         drawer: const SettingsDrawer(),
       );
     }
@@ -661,6 +671,7 @@ class _MapScreenState extends State<MapScreen> {
       case MapTileProvider.free:
         return _getFreeTileUrl(settings.mapTileStyle);
       case MapTileProvider.vectorNative:
+      case MapTileProvider.vectorMaplibre:
         return '';
     }
   }

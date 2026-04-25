@@ -158,6 +158,27 @@ class MapSettingsScreen extends StatelessWidget {
                   .updateSettings(settings.copyWith(vectorStyleUrl: url)),
             ),
           ],
+
+          const SizedBox(height: 12),
+
+          // MapLibre (new package) — native only
+          if (!kIsWeb)
+            _ProviderCard(
+              title: 'Vektor (MapLibre új)',
+              subtitle: 'Hatékonyabb bridge, offline letöltés, 60fps',
+              icon: Icons.rocket_launch,
+              selected: settings.mapProvider == MapTileProvider.vectorMaplibre,
+              onTap: () => settingsProv.updateSettings(
+                  settings.copyWith(mapProvider: MapTileProvider.vectorMaplibre)),
+            ),
+          if (!kIsWeb && settings.mapProvider == MapTileProvider.vectorMaplibre) ...[
+            const SizedBox(height: 8),
+            _VectorNativeStylePicker(
+              current: settings.vectorStyleUrl,
+              onChanged: (url) => settingsProv
+                  .updateSettings(settings.copyWith(vectorStyleUrl: url)),
+            ),
+          ],
         ],
       ),
     );
