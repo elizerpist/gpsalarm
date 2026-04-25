@@ -3,6 +3,7 @@ import 'alarm_point.dart';
 
 enum GpsPollingMode { continuous, custom }
 enum MapStartView { currentGps, lastPosition, custom }
+enum MapTileStyle { standard, humanitarian, topo }
 
 class AppSettings {
   final AlarmType defaultAlarmType;
@@ -14,6 +15,7 @@ class AppSettings {
   final MapStartView mapStartView;
   final double? customStartLat;
   final double? customStartLng;
+  final MapTileStyle mapTileStyle;
   final ThemeMode themeMode;
   final String locale;
 
@@ -27,6 +29,7 @@ class AppSettings {
     this.mapStartView = MapStartView.currentGps,
     this.customStartLat,
     this.customStartLng,
+    this.mapTileStyle = MapTileStyle.standard,
     this.themeMode = ThemeMode.system,
     this.locale = 'hu',
   });
@@ -41,6 +44,7 @@ class AppSettings {
         'mapStartView': mapStartView.index,
         'customStartLat': customStartLat,
         'customStartLng': customStartLng,
+        'mapTileStyle': mapTileStyle.index,
         'themeMode': themeMode.index,
         'locale': locale,
       };
@@ -56,6 +60,9 @@ class AppSettings {
         mapStartView: MapStartView.values[map['mapStartView'] as int],
         customStartLat: (map['customStartLat'] as num?)?.toDouble(),
         customStartLng: (map['customStartLng'] as num?)?.toDouble(),
+        mapTileStyle: map['mapTileStyle'] != null
+            ? MapTileStyle.values[map['mapTileStyle'] as int]
+            : MapTileStyle.standard,
         themeMode: ThemeMode.values[map['themeMode'] as int],
         locale: map['locale'] as String,
       );
@@ -70,6 +77,7 @@ class AppSettings {
     MapStartView? mapStartView,
     double? customStartLat,
     double? customStartLng,
+    MapTileStyle? mapTileStyle,
     ThemeMode? themeMode,
     String? locale,
   }) =>
@@ -84,6 +92,7 @@ class AppSettings {
         mapStartView: mapStartView ?? this.mapStartView,
         customStartLat: customStartLat ?? this.customStartLat,
         customStartLng: customStartLng ?? this.customStartLng,
+        mapTileStyle: mapTileStyle ?? this.mapTileStyle,
         themeMode: themeMode ?? this.themeMode,
         locale: locale ?? this.locale,
       );

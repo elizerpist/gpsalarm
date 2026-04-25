@@ -6,8 +6,10 @@ import 'package:provider/provider.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:uuid/uuid.dart';
 import '../models/alarm_point.dart';
+import '../models/app_settings.dart';
 import '../providers/map_provider.dart';
 import '../providers/alarm_provider.dart';
+import '../providers/settings_provider.dart';
 import '../widgets/map_controls.dart';
 import '../widgets/search_pill.dart';
 import '../widgets/pin_marker.dart';
@@ -131,6 +133,8 @@ class _MapScreenState extends State<MapScreen> {
   Widget build(BuildContext context) {
     final mapProv = context.watch<MapProvider>();
     final alarmProv = context.watch<AlarmProvider>();
+    final settingsProv = context.watch<SettingsProvider>();
+    final tileUrl = _getTileUrl(settingsProv.settings.mapTileStyle);
 
     return Scaffold(
       key: _scaffoldKey,
@@ -157,8 +161,7 @@ class _MapScreenState extends State<MapScreen> {
             ),
             children: [
               TileLayer(
-                urlTemplate:
-                    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                urlTemplate: tileUrl,
                 userAgentPackageName: 'com.gpsalarm.app',
               ),
               // Radius circles
@@ -416,6 +419,20 @@ class _MapScreenState extends State<MapScreen> {
         existingPoint: alarmPoint,
       ),
     );
+  }
+
+  String _getTileUrl(MapTileStyle style) {
+    switch (style) {
+      case MapTileStyle.standard:
+        // Clean street map - utcák, épületek, minimális domborzat
+        return 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+      case MapTileStyle.humanitarian:
+        // Humanitarian style - világosabb, utca-fókuszú
+        return 'https://a.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png';
+      case MapTileStyle.topo:
+        // Topográfiai - domborzat, szintvonalak
+        return 'https://tile.opentopomap.org/{z}/{x}/{y}.png';
+    }
   }
 
   Widget _buildDrawer(BuildContext context) {
