@@ -38,6 +38,9 @@ class _MapScreenState extends State<MapScreen> {
   double _fastAssignRadiusMeters = 500;
   bool _isFastAssigning = false;
 
+  // Cache tile URL to avoid rebuilds
+  String? _cachedTileUrl;
+
   @override
   void initState() {
     super.initState();
@@ -58,9 +61,14 @@ class _MapScreenState extends State<MapScreen> {
       }
       _locationService.startTracking(onPosition: (position) {
         if (!mounted) return;
-        setState(() {
-          _userPosition = LatLng(position.latitude, position.longitude);
-        });
+        final newPos = LatLng(position.latitude, position.longitude);
+        // Only rebuild if position changed significantly (>5m)
+        if (_userPosition == null ||
+            AlarmService.distanceMeters(
+                    _userPosition!.latitude, _userPosition!.longitude,
+                    newPos.latitude, newPos.longitude) > 5) {
+          setState(() => _userPosition = newPos);
+        }
         _checkAlarms(position.latitude, position.longitude);
       });
     }
@@ -131,21 +139,20 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final mapProv = context.watch<MapProvider>();
-    final alarmProv = context.watch<AlarmProvider>();
-    final settingsProv = context.watch<SettingsProvider>();
-    final tileUrl = _getTileUrl(settingsProv.settings);
+    // Only read settings once per build, use Selector for tile URL changes
+    final tileUrl = context.select<SettingsProvider, String>(
+        (p) => _getTileUrl(p.settings));
 
     return Scaffold(
       key: _scaffoldKey,
       body: Stack(
         children: [
-          // Map
+          // Map - uses read, not watch, for providers accessed via callbacks
           FlutterMap(
             mapController: _mapController,
             options: MapOptions(
-              initialCenter: mapProv.center,
-              initialZoom: mapProv.zoom,
+              initialCenter: context.read<MapProvider>().center,
+              initialZoom: context.read<MapProvider>().zoom,
               interactionOptions: const InteractionOptions(
                 flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
               ),
@@ -154,6 +161,7 @@ class _MapScreenState extends State<MapScreen> {
                   _handleLongPress(context, point),
               onPositionChanged: (position, hasGesture) {
                 if (hasGesture) {
+                  final mapProv = context.read<MapProvider>();
                   mapProv.setCenter(position.center);
                   mapProv.setZoom(position.zoom);
                 }
@@ -164,178 +172,191 @@ class _MapScreenState extends State<MapScreen> {
                 urlTemplate: tileUrl,
                 userAgentPackageName: 'com.gpsalarm.app',
               ),
-              // Radius circles
-              CircleLayer(
-                circles: [
-                  ...alarmProv.alarmPoints
-                      .map((p) => buildRadiusCircle(p)),
-                  if (_isFastAssigning && _fastAssignCenter != null)
-                    CircleMarker(
-                      point: _fastAssignCenter!,
-                      radius: _fastAssignRadiusMeters,
-                      useRadiusInMeter: true,
-                      color: Colors.orange.withOpacity(0.15),
-                      borderColor: Colors.orange.withOpacity(0.7),
-                      borderStrokeWidth: 3,
-                    ),
-                ],
+              // Radius circles - only rebuilds when alarms change
+              Consumer<AlarmProvider>(
+                builder: (_, alarmProv, __) => CircleLayer(
+                  circles: [
+                    ...alarmProv.alarmPoints
+                        .map((p) => buildRadiusCircle(p)),
+                    if (_isFastAssigning && _fastAssignCenter != null)
+                      CircleMarker(
+                        point: _fastAssignCenter!,
+                        radius: _fastAssignRadiusMeters,
+                        useRadiusInMeter: true,
+                        color: Colors.orange.withOpacity(0.15),
+                        borderColor: Colors.orange.withOpacity(0.7),
+                        borderStrokeWidth: 3,
+                      ),
+                  ],
+                ),
               ),
-              // Pin markers + user location
-              MarkerLayer(
-                markers: [
-                  ...alarmProv.alarmPoints.map((p) => buildPinMarker(
-                        point: p,
-                        onTap: () => _showEditPopup(context, p),
-                      )),
-                  if (_userPosition != null)
-                    buildUserLocationMarker(_userPosition!),
-                  // Fast assign pin preview
-                  if (_isFastAssigning && _fastAssignCenter != null)
-                    Marker(
-                      point: _fastAssignCenter!,
-                      width: 40,
-                      height: 40,
-                      child: const Icon(Icons.location_on,
-                          color: Colors.orange, size: 32),
-                    ),
-                ],
+              // Pin markers - only rebuilds when alarms change
+              Consumer<AlarmProvider>(
+                builder: (_, alarmProv, __) => MarkerLayer(
+                  markers: [
+                    ...alarmProv.alarmPoints.map((p) => buildPinMarker(
+                          point: p,
+                          onTap: () => _showEditPopup(context, p),
+                        )),
+                    if (_userPosition != null)
+                      buildUserLocationMarker(_userPosition!),
+                    if (_isFastAssigning && _fastAssignCenter != null)
+                      Marker(
+                        point: _fastAssignCenter!,
+                        width: 40,
+                        height: 40,
+                        child: const Icon(Icons.location_on,
+                            color: Colors.orange, size: 32),
+                      ),
+                  ],
+                ),
               ),
             ],
           ),
-          // Controls overlay (hidden during fast assign)
+          // Controls - only rebuilds when search state changes
           if (!_isFastAssigning)
-            MapControls(
-              onMenuTap: () => _scaffoldKey.currentState?.openDrawer(),
-              onZoomIn: () {
-                mapProv.zoomIn();
-                _mapController.move(mapProv.center, mapProv.zoom);
-              },
-              onZoomOut: () {
-                mapProv.zoomOut();
-                _mapController.move(mapProv.center, mapProv.zoom);
-              },
-              onSearchTap: () => mapProv.toggleSearch(),
-              searchActive: mapProv.searchActive,
-            ),
-          // Search pill
-          if (mapProv.searchActive && !_isFastAssigning)
-            SearchPill(
-              onResultSelected: (result) {
-                mapProv.goToSearchResult(result);
-                _mapController.move(
-                  LatLng(result.latitude, result.longitude),
-                  14.0,
-                );
-              },
-            ),
-          // Fast assign overlay with slider
-          if (_isFastAssigning)
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).brightness == Brightness.dark
-                      ? const Color(0xFF1a1a2e)
-                      : Colors.white,
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(20)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.2),
-                      blurRadius: 20,
-                      offset: const Offset(0, -4),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.location_on,
-                            color: Colors.orange, size: 28),
-                        const SizedBox(width: 8),
-                        const Expanded(
-                          child: Text('Fast Assign',
-                              style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold)),
-                        ),
-                        Text(
-                          '${_fastAssignRadiusMeters.round()}m',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.orange[700],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    // Radius slider
-                    Slider(
-                      value: _fastAssignRadiusMeters,
-                      min: 100,
-                      max: 5000,
-                      divisions: 49,
-                      activeColor: Colors.orange,
-                      label: '${_fastAssignRadiusMeters.round()}m',
-                      onChanged: (v) =>
-                          setState(() => _fastAssignRadiusMeters = v),
-                    ),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('100m',
-                            style: TextStyle(
-                                fontSize: 11, color: Colors.grey[500])),
-                        Text('5km',
-                            style: TextStyle(
-                                fontSize: 11, color: Colors.grey[500])),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    // Buttons
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: _cancelFastAssign,
-                            style: OutlinedButton.styleFrom(
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10)),
-                            ),
-                            child: Text(tr('cancel')),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: FilledButton(
-                            onPressed: _confirmFastAssign,
-                            style: FilledButton.styleFrom(
-                              backgroundColor: Colors.orange,
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10)),
-                            ),
-                            child: Text(tr('save')),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+            Selector<MapProvider, bool>(
+              selector: (_, p) => p.searchActive,
+              builder: (_, searchActive, __) => MapControls(
+                onMenuTap: () => _scaffoldKey.currentState?.openDrawer(),
+                onZoomIn: () {
+                  final mapProv = context.read<MapProvider>();
+                  mapProv.zoomIn();
+                  _mapController.move(mapProv.center, mapProv.zoom);
+                },
+                onZoomOut: () {
+                  final mapProv = context.read<MapProvider>();
+                  mapProv.zoomOut();
+                  _mapController.move(mapProv.center, mapProv.zoom);
+                },
+                onSearchTap: () =>
+                    context.read<MapProvider>().toggleSearch(),
+                searchActive: searchActive,
               ),
             ),
+          // Search pill - only when active
+          if (!_isFastAssigning)
+            Selector<MapProvider, bool>(
+              selector: (_, p) => p.searchActive,
+              builder: (_, searchActive, __) => searchActive
+                  ? SearchPill(
+                      onResultSelected: (result) {
+                        final mapProv = context.read<MapProvider>();
+                        mapProv.goToSearchResult(result);
+                        _mapController.move(
+                          LatLng(result.latitude, result.longitude),
+                          14.0,
+                        );
+                      },
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          // Fast assign overlay
+          if (_isFastAssigning) _buildFastAssignOverlay(),
         ],
       ),
-      drawer: _buildDrawer(context),
+      drawer: const SettingsDrawer(),
+    );
+  }
+
+  Widget _buildFastAssignOverlay() {
+    return Positioned(
+      bottom: 0,
+      left: 0,
+      right: 0,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        decoration: BoxDecoration(
+          color: Theme.of(context).brightness == Brightness.dark
+              ? const Color(0xFF1a1a2e)
+              : Colors.white,
+          borderRadius:
+              const BorderRadius.vertical(top: Radius.circular(20)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.2),
+              blurRadius: 20,
+              offset: const Offset(0, -4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.location_on,
+                    color: Colors.orange, size: 28),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text('Fast Assign',
+                      style: TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.bold)),
+                ),
+                Text(
+                  '${_fastAssignRadiusMeters.round()}m',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.orange[700],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Slider(
+              value: _fastAssignRadiusMeters,
+              min: 100,
+              max: 5000,
+              divisions: 49,
+              activeColor: Colors.orange,
+              label: '${_fastAssignRadiusMeters.round()}m',
+              onChanged: (v) =>
+                  setState(() => _fastAssignRadiusMeters = v),
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('100m',
+                    style:
+                        TextStyle(fontSize: 11, color: Colors.grey[500])),
+                Text('5km',
+                    style:
+                        TextStyle(fontSize: 11, color: Colors.grey[500])),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _cancelFastAssign,
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                    ),
+                    child: Text(tr('cancel')),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: _confirmFastAssign,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                    ),
+                    child: Text(tr('save')),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -454,9 +475,5 @@ class _MapScreenState extends State<MapScreen> {
       case MapTileStyle.openfreemap:
         return 'https://tiles.openfreemap.org/natural_earth/ne2sr/{z}/{x}/{y}.png';
     }
-  }
-
-  Widget _buildDrawer(BuildContext context) {
-    return const SettingsDrawer();
   }
 }
