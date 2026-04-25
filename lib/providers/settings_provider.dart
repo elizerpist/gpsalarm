@@ -1,46 +1,85 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
 import '../models/app_settings.dart';
+import '../services/database_service.dart';
 import '../services/debug_console.dart';
 
 class SettingsProvider extends ChangeNotifier {
-  static const String _boxName = 'settings';
-  static const String _key = 'appSettings';
+  static const String _hiveBoxName = 'settings';
+  static const String _hiveKey = 'appSettings';
+  static const String _dbKey = 'appSettings';
 
   AppSettings _settings = AppSettings();
-  Box? _box;
+  Box? _hiveBox;
 
   AppSettings get settings => _settings;
 
   Future<void> init() async {
-    _box = await Hive.openBox(_boxName);
-    _loadFromBox();
-    DebugConsole.log('Settings loaded: provider=${_settings.mapProvider.name} tile=${_settings.mapTileStyle.name} apiKey=${_settings.googleMapsApiKey != null ? "set" : "null"} mapTilerKey=${_settings.mapTilerApiKey != null ? "set" : "null"}');
-  }
+    // Open Hive
+    _hiveBox = await Hive.openBox(_hiveBoxName);
 
-  void _loadFromBox() {
-    if (_box == null) return;
-    final raw = _box!.get(_key);
-    if (raw != null) {
-      try {
-        _settings = AppSettings.fromMap(Map<String, dynamic>.from(raw as Map));
-      } catch (e) {
-        DebugConsole.log('Settings load ERROR: $e — using defaults');
-        _settings = AppSettings();
-        _saveToBox();
+    // Try loading from SQLite first (primary), fallback to Hive
+    bool loadedFromDb = false;
+    try {
+      final dbJson = await DatabaseService.getSetting(_dbKey);
+      if (dbJson != null) {
+        final map = json.decode(dbJson) as Map<String, dynamic>;
+        _settings = AppSettings.fromMap(map);
+        loadedFromDb = true;
+        DebugConsole.log('Settings loaded from SQLite');
       }
-      notifyListeners();
+    } catch (e) {
+      DebugConsole.log('SQLite load failed: $e');
     }
-  }
 
-  void _saveToBox() {
-    _box?.put(_key, _settings.toMap());
-    DebugConsole.log('Settings SAVED: provider=${_settings.mapProvider.name} apiKey=${_settings.googleMapsApiKey != null ? "set(${_settings.googleMapsApiKey!.length}ch)" : "null"}');
+    // Fallback: load from Hive
+    if (!loadedFromDb) {
+      try {
+        final raw = _hiveBox!.get(_hiveKey);
+        if (raw != null) {
+          _settings = AppSettings.fromMap(Map<String, dynamic>.from(raw as Map));
+          DebugConsole.log('Settings loaded from Hive (fallback)');
+          // Mirror to SQLite
+          _saveToDb();
+        } else {
+          DebugConsole.log('Settings: using defaults (first run)');
+        }
+      } catch (e) {
+        DebugConsole.log('Hive load failed: $e — using defaults');
+        _settings = AppSettings();
+      }
+    }
+
+    _logCurrentSettings();
+    notifyListeners();
   }
 
   void updateSettings(AppSettings updated) {
     _settings = updated;
-    _saveToBox();
+    _saveToHive();
+    _saveToDb();
     notifyListeners();
+  }
+
+  void _saveToHive() {
+    _hiveBox?.put(_hiveKey, _settings.toMap());
+  }
+
+  void _saveToDb() {
+    try {
+      final jsonStr = json.encode(_settings.toMap());
+      DatabaseService.saveSetting(_dbKey, jsonStr);
+    } catch (e) {
+      DebugConsole.log('SQLite save failed: $e');
+    }
+  }
+
+  void _logCurrentSettings() {
+    final s = _settings;
+    DebugConsole.log('Settings: provider=${s.mapProvider.name} tile=${s.mapTileStyle.name} '
+        'gApiKey=${s.googleMapsApiKey != null ? "set(${s.googleMapsApiKey!.length}ch)" : "null"} '
+        'mtApiKey=${s.mapTilerApiKey != null ? "set(${s.mapTilerApiKey!.length}ch)" : "null"} '
+        'alarm=${s.defaultAlarmSound} theme=${s.themeMode.name} locale=${s.locale}');
   }
 }
