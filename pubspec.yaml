@@ -38,4 +38,4 @@ flutter:
   uses-material-design: true
   assets:
     - assets/sounds/
-    - lib/l10n/
+    - assets/l10n/

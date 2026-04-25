@@ -35,7 +35,7 @@ void main() async {
   runApp(
     EasyLocalization(
       supportedLocales: const [Locale('hu'), Locale('en')],
-      path: 'lib/l10n',
+      path: 'assets/l10n',
       fallbackLocale: const Locale('hu'),
       child: MultiProvider(
         providers: [
