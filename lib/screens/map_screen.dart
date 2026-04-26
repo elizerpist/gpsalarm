@@ -198,6 +198,7 @@ class _MapScreenState extends State<MapScreen> {
   void dispose() {
     _locationService.dispose();
     _userPosition.dispose();
+    _fastAssignNameController.dispose();
     _cancelLongPressTimer();
     super.dispose();
   }
@@ -388,92 +389,184 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  // Fast assign expandable state
+  bool _fastAssignExpanded = false;
+  final TextEditingController _fastAssignNameController = TextEditingController();
+  TriggerType _fastAssignTriggerType = TriggerType.distance;
+  ZoneTrigger _fastAssignZoneTrigger = ZoneTrigger.onEntry;
+  int _fastAssignTimeMinutes = 10;
+
   Widget _buildFastAssignOverlay() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Positioned(
-      bottom: 0,
-      left: 0,
-      right: 0,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-        decoration: BoxDecoration(
-          color: Theme.of(context).brightness == Brightness.dark
-              ? const Color(0xFF1a1a2e)
-              : Colors.white,
-          borderRadius:
-              const BorderRadius.vertical(top: Radius.circular(20)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.2),
-              blurRadius: 20,
-              offset: const Offset(0, -4),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.location_on,
-                    color: Colors.red, size: 28),
-                const SizedBox(width: 8),
-                const Expanded(
-                  child: Text('Fast Assign',
-                      style: TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold)),
-                ),
-                Text(
-                  '${_fastAssignRadiusMeters.round()}m',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.red[700],
+      bottom: 0, left: 0, right: 0,
+      child: GestureDetector(
+        onVerticalDragEnd: (details) {
+          if (details.primaryVelocity != null) {
+            if (details.primaryVelocity! < -200) {
+              setState(() => _fastAssignExpanded = true);
+            } else if (details.primaryVelocity! > 200) {
+              setState(() => _fastAssignExpanded = false);
+            }
+          }
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1a1a2e) : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            boxShadow: [
+              BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 20, offset: const Offset(0, -4)),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Drag handle
+              Padding(
+                padding: const EdgeInsets.only(top: 8, bottom: 4),
+                child: Container(
+                  width: 40, height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[400],
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Slider(
-              value: _fastAssignRadiusMeters,
-              min: 100,
-              max: 5000,
-              divisions: 49,
-              activeColor: Colors.red,
-              label: '${_fastAssignRadiusMeters.round()}m',
-              onChanged: (v) =>
-                  setState(() => _fastAssignRadiusMeters = v),
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('100m',
-                    style:
-                        TextStyle(fontSize: 11, color: Colors.grey[500])),
-                Text('5km',
-                    style:
-                        TextStyle(fontSize: 11, color: Colors.grey[500])),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
+              ),
+              // Always visible: header + slider
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      const Icon(Icons.location_on, color: Colors.red, size: 28),
+                      const SizedBox(width: 8),
+                      const Expanded(child: Text('Fast Assign',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+                      Text('${_fastAssignRadiusMeters.round()}m',
+                          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.red[700])),
+                    ]),
+                    const SizedBox(height: 8),
+                    Slider(
+                      value: _fastAssignRadiusMeters, min: 100, max: 5000,
+                      divisions: 49, activeColor: Colors.red,
+                      onChanged: (v) => setState(() => _fastAssignRadiusMeters = v),
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('100m', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+                        Text('5km', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              // Expandable content — animated clip
+              AnimatedCrossFade(
+                duration: const Duration(milliseconds: 250),
+                crossFadeState: _fastAssignExpanded
+                    ? CrossFadeState.showSecond
+                    : CrossFadeState.showFirst,
+                firstChild: const SizedBox.shrink(),
+                secondChild: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      TextField(
+                        controller: _fastAssignNameController,
+                        decoration: InputDecoration(labelText: tr('name_optional')),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(tr('trigger_type'),
+                          style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                      const SizedBox(height: 8),
+                      Row(children: [
+                        _buildChip(tr('distance'), Icons.straighten,
+                            _fastAssignTriggerType == TriggerType.distance,
+                            () => setState(() => _fastAssignTriggerType = TriggerType.distance)),
+                        const SizedBox(width: 8),
+                        _buildChip(tr('time'), Icons.timer,
+                            _fastAssignTriggerType == TriggerType.time,
+                            () => setState(() => _fastAssignTriggerType = TriggerType.time)),
+                      ]),
+                      if (_fastAssignTriggerType == TriggerType.time) ...[
+                        const SizedBox(height: 12),
+                        Row(children: [
+                          Expanded(
+                            child: Slider(
+                              value: _fastAssignTimeMinutes.toDouble(),
+                              min: 5, max: 120, divisions: 23,
+                              onChanged: (v) => setState(() => _fastAssignTimeMinutes = v.round()),
+                            ),
+                          ),
+                          Text('$_fastAssignTimeMinutes min',
+                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                        ]),
+                      ],
+                      const SizedBox(height: 12),
+                      Row(children: [
+                        _buildChip(tr('on_entry'), Icons.login,
+                            _fastAssignZoneTrigger == ZoneTrigger.onEntry,
+                            () => setState(() => _fastAssignZoneTrigger = ZoneTrigger.onEntry)),
+                        const SizedBox(width: 8),
+                        _buildChip(tr('on_leave'), Icons.logout,
+                            _fastAssignZoneTrigger == ZoneTrigger.onLeave,
+                            () => setState(() => _fastAssignZoneTrigger = ZoneTrigger.onLeave)),
+                      ]),
+                    ],
+                  ),
+                ),
+              ),
+              // Fixed bottom buttons — always visible
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+                child: Row(children: [
+                  Expanded(child: OutlinedButton(
                     onPressed: _cancelFastAssign,
                     child: Text(tr('cancel')),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton(
+                  )),
+                  const SizedBox(width: 8),
+                  Expanded(child: FilledButton(
                     onPressed: _confirmFastAssign,
-                    // Uses global theme (light blue #3FA2FF)
                     child: Text(tr('save')),
-                  ),
-                ),
-              ],
+                  )),
+                ]),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChip(String label, IconData icon, bool selected, VoidCallback onTap) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? Theme.of(context).colorScheme.primaryContainer : Colors.transparent,
+            border: Border.all(
+              color: selected ? Theme.of(context).colorScheme.primary : Colors.grey[300]!,
+              width: selected ? 2 : 1,
             ),
-          ],
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Column(children: [
+            Icon(icon, color: selected ? Theme.of(context).colorScheme.primary : Colors.grey),
+            const SizedBox(height: 4),
+            Text(label, style: TextStyle(
+              fontSize: 12,
+              fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+              color: selected ? Theme.of(context).colorScheme.primary : Colors.grey,
+            )),
+          ]),
         ),
       ),
     );
@@ -594,9 +687,14 @@ class _MapScreenState extends State<MapScreen> {
   void _cancelFastAssign() {
     setState(() {
       _isFastAssigning = false;
+      _fastAssignExpanded = false;
       _fastAssignCenter = null;
       _fastAssignRadiusMeters = 500;
       _fastAssignStartOffset = null;
+      _fastAssignNameController.clear();
+      _fastAssignTriggerType = TriggerType.distance;
+      _fastAssignZoneTrigger = ZoneTrigger.onEntry;
+      _fastAssignTimeMinutes = 10;
     });
   }
 
@@ -605,12 +703,19 @@ class _MapScreenState extends State<MapScreen> {
     final alarmProv = context.read<AlarmProvider>();
 
     if (alarmProv.canAddAlarm) {
+      final name = _fastAssignNameController.text.isEmpty
+          ? null : _fastAssignNameController.text;
       final point = AlarmPoint(
         id: const Uuid().v4(),
+        name: name,
         latitude: _fastAssignCenter!.latitude,
         longitude: _fastAssignCenter!.longitude,
-        radiusMeters: _fastAssignRadiusMeters,
-        triggerType: TriggerType.distance,
+        radiusMeters: _fastAssignTriggerType == TriggerType.distance
+            ? _fastAssignRadiusMeters : 0,
+        triggerType: _fastAssignTriggerType,
+        zoneTrigger: _fastAssignZoneTrigger,
+        timeTrigger: _fastAssignTriggerType == TriggerType.time
+            ? Duration(minutes: _fastAssignTimeMinutes) : null,
       );
       alarmProv.addAlarmPoint(point);
 
@@ -625,9 +730,14 @@ class _MapScreenState extends State<MapScreen> {
 
     setState(() {
       _isFastAssigning = false;
+      _fastAssignExpanded = false;
       _fastAssignCenter = null;
       _fastAssignRadiusMeters = 500;
       _fastAssignStartOffset = null;
+      _fastAssignNameController.clear();
+      _fastAssignTriggerType = TriggerType.distance;
+      _fastAssignZoneTrigger = ZoneTrigger.onEntry;
+      _fastAssignTimeMinutes = 10;
     });
   }
 
