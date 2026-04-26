@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:maplibre/maplibre.dart';
 import 'package:provider/provider.dart';
@@ -13,7 +14,6 @@ import '../widgets/map_controls.dart';
 import '../widgets/search_pill.dart';
 import '../widgets/radius_popup.dart';
 import '../widgets/offline_indicator.dart';
-import '../services/geocoding_service.dart';
 import '../services/location_service.dart';
 import '../services/alarm_service.dart';
 import '../services/notification_service.dart';
@@ -169,6 +169,36 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     _cancelFastAssign();
   }
 
+  /// Convert meters to pixels at a given latitude and zoom level.
+  double _metersToPixels(double meters, double lat, double zoom) {
+    final metersPerPixel = 156543.03392 * math.cos(lat * math.pi / 180) / math.pow(2, zoom);
+    return meters / metersPerPixel;
+  }
+
+  /// Build a WidgetLayer Marker that draws a translucent radius circle.
+  Marker _buildRadiusMarker(double lat, double lng, double radiusMeters, bool isActive) {
+    final diameterPx = _metersToPixels(radiusMeters, lat, _currentZoom) * 2;
+    final clampedSize = diameterPx.clamp(4.0, 2000.0);
+    final color = isActive ? Colors.red : Colors.grey;
+    return Marker(
+      point: Geographic(lon: lng, lat: lat),
+      size: Size.square(clampedSize),
+      alignment: Alignment.center,
+      child: Container(
+        width: clampedSize,
+        height: clampedSize,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: color.withOpacity(isActive ? 0.12 : 0.05),
+          border: Border.all(
+            color: color.withOpacity(isActive ? 0.6 : 0.3),
+            width: isActive ? 2 : 1,
+          ),
+        ),
+      ),
+    );
+  }
+
   // Build marker points list for the MarkerLayer
   List<Point> _buildMarkerPoints(AlarmProvider alarmProv) {
     final points = <Point>[];
@@ -200,9 +230,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
 
     final markerPoints = _buildMarkerPoints(alarmProv);
     DebugConsole.log('VECTOR build: ${markerPoints.length} markers, style=$styleUrl');
-    final userPoints = _userPos != null
-        ? [Point(coordinates: _userPos!)]
-        : <Point>[];
 
     return Stack(
       children: [
@@ -223,24 +250,45 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               _currentZoom = _controller?.camera?.zoom ?? _currentZoom;
             }
           },
-          layers: [
-            // Alarm pins as red circles
+          layers: const [],
+          children: [
+            // Pin markers as Flutter widgets via WidgetLayer
             if (markerPoints.isNotEmpty)
-              CircleLayer(
-                points: markerPoints,
-                color: const Color(0xFFFF0000),
-                radius: 10,
-                strokeColor: const Color(0xFFFFFFFF),
-                strokeWidth: 3,
+              WidgetLayer(
+                markers: markerPoints.map((p) => Marker(
+                  point: Geographic(lon: p.coordinates.lng.toDouble(), lat: p.coordinates.lat.toDouble()),
+                  size: const Size(40, 50),
+                  alignment: Alignment.bottomCenter,
+                  child: const Icon(Icons.location_on, color: Colors.red, size: 36),
+                )).toList(),
               ),
-            // User position as blue dot
-            if (userPoints.isNotEmpty)
-              CircleLayer(
-                points: userPoints,
-                color: const Color(0xFF2196F3),
-                radius: 8,
-                strokeColor: const Color(0xFFFFFFFF),
-                strokeWidth: 3,
+            // Radius circles via WidgetLayer — one per alarm point
+            WidgetLayer(
+              markers: [
+                ...alarmProv.alarmPoints.map((p) => _buildRadiusMarker(p.latitude, p.longitude, p.radiusMeters, p.isActive)),
+                if (_isFastAssigning)
+                  _buildRadiusMarker(_fastAssignLat, _fastAssignLng, _fastAssignRadiusMeters, true),
+              ],
+            ),
+            // User location as widget pin
+            if (_userPos != null)
+              WidgetLayer(
+                markers: [
+                  Marker(
+                    point: Geographic(lon: _userPos!.lng.toDouble(), lat: _userPos!.lat.toDouble()),
+                    size: const Size(20, 20),
+                    alignment: Alignment.center,
+                    child: Container(
+                      width: 16, height: 16,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2196F3),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 3),
+                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 4)],
+                      ),
+                    ),
+                  ),
+                ],
               ),
           ],
         ),
