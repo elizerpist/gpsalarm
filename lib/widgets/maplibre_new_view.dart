@@ -229,18 +229,18 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               CircleLayer(
                 points: markerPoints,
                 color: const Color(0xFFFF0000),
-                radius: 10.0,
+                radius: 10,
                 strokeColor: const Color(0xFFFFFFFF),
-                strokeWidth: 3.0,
+                strokeWidth: 3,
               ),
             // User position as blue dot
             if (userPoints.isNotEmpty)
               CircleLayer(
                 points: userPoints,
                 color: const Color(0xFF2196F3),
-                radius: 8.0,
+                radius: 8,
                 strokeColor: const Color(0xFFFFFFFF),
-                strokeWidth: 3.0,
+                strokeWidth: 3,
               ),
           ],
         ),
