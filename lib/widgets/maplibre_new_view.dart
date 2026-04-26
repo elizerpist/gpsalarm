@@ -224,11 +224,23 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             }
           },
           layers: [
-            // Alarm + pending + fast assign markers
+            // Alarm pins as red circles
             if (markerPoints.isNotEmpty)
-              MarkerLayer(
+              CircleLayer(
                 points: markerPoints,
-                iconSize: 1.0,
+                circleColor: 'rgba(255, 0, 0, 1.0)',
+                circleRadius: 10.0,
+                circleStrokeColor: 'rgba(255, 255, 255, 1.0)',
+                circleStrokeWidth: 3.0,
+              ),
+            // User position as blue dot
+            if (userPoints.isNotEmpty)
+              CircleLayer(
+                points: userPoints,
+                circleColor: 'rgba(33, 150, 243, 1.0)',
+                circleRadius: 8.0,
+                circleStrokeColor: 'rgba(255, 255, 255, 1.0)',
+                circleStrokeWidth: 3.0,
               ),
           ],
         ),
