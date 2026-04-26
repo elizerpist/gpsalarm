@@ -139,96 +139,110 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     }
   }
 
-  /// GeoJSON polygon radius circles — Fill + Line from same source.
-  /// Both layers use the same geometry so they scale identically.
+  /// Per-alarm CircleStyleLayer approach.
+  /// Each alarm gets its own source + layer with literal interpolate expression
+  /// for smooth native zoom scaling. Layers are recreated when data changes.
+  int _radiusLayerVersion = 0;
+
   Future<void> _initRadiusLayer(StyleController style) async {
-    await style.addSource(GeoJsonSource(
-      id: 'radius-src',
-      data: '{"type":"FeatureCollection","features":[]}',
-      maxZoom: 22,
-    ));
-    await style.addLayer(FillStyleLayer(
-      id: 'radius-fill',
-      sourceId: 'radius-src',
-      paint: {
-        'fill-color': ['get', 'fill'],
-        'fill-opacity': ['get', 'fo'],
-      },
-    ));
-    await style.addLayer(LineStyleLayer(
-      id: 'radius-stroke',
-      sourceId: 'radius-src',
-      paint: {
-        'line-color': ['get', 'stroke'],
-        'line-width': ['get', 'sw'],
-      },
-    ));
     _radiusLayerReady = true;
-    DebugConsole.log('VECTOR: radius fill+stroke layers created');
+    DebugConsole.log('VECTOR: radius layer system ready');
   }
 
-  /// Sync alarm radius circles to the native GeoJSON source.
+  /// Sync radius circles — recreate per-alarm CircleStyleLayers.
   void _syncRadiusSource(AlarmProvider alarmProv) {
     if (!_radiusLayerReady) return;
     final style = _controller?.style;
     if (style == null) return;
 
-    final features = <Map<String, dynamic>>[];
-    for (final p in alarmProv.alarmPoints) {
-      features.add(_radiusPolygon(p.longitude, p.latitude, p.radiusMeters, p.isActive));
+    // Increment version to track which layers are current
+    _radiusLayerVersion++;
+    final v = _radiusLayerVersion;
+
+    // Collect all circles to render
+    final circles = <({String id, double lng, double lat, double radiusMeters, bool active})>[];
+
+    for (int i = 0; i < alarmProv.alarmPoints.length; i++) {
+      final p = alarmProv.alarmPoints[i];
+      circles.add((id: 'alarm-$i', lng: p.longitude, lat: p.latitude, radiusMeters: p.radiusMeters, active: p.isActive));
     }
     if (_isFastAssigning) {
-      features.add(_radiusPolygon(_fastAssignLng, _fastAssignLat, _fastAssignRadiusMeters, true));
+      circles.add((id: 'fast', lng: _fastAssignLng, lat: _fastAssignLat, radiusMeters: _fastAssignRadiusMeters, active: true));
     }
     if (_pendingTapPoint != null) {
-      features.add(_radiusPolygon(
-        _pendingTapPoint!.lng.toDouble(), _pendingTapPoint!.lat.toDouble(), _pendingRadius, true));
+      circles.add((id: 'pending', lng: _pendingTapPoint!.lng.toDouble(), lat: _pendingTapPoint!.lat.toDouble(), radiusMeters: _pendingRadius, active: true));
     }
 
-    style.updateGeoJsonSource(
-      id: 'radius-src',
-      data: jsonEncode({'type': 'FeatureCollection', 'features': features}),
-    );
+    // Async: clean old layers, create new ones
+    _rebuildRadiusLayers(style, circles, v);
   }
 
-  static Map<String, dynamic> _radiusPolygon(double lng, double lat, double radiusMeters, bool active) {
-    return {
-      'type': 'Feature',
-      'geometry': {
-        'type': 'Polygon',
-        'coordinates': [_geoCircle(lng, lat, radiusMeters)],
-      },
-      'properties': {
-        'fill': active ? '#FF0000' : '#9E9E9E',
-        'fo': active ? 0.12 : 0.05,
-        'stroke': active ? 'rgba(255,0,0,0.6)' : 'rgba(158,158,158,0.3)',
-        'sw': active ? 2.0 : 1.0,
-      },
-    };
-  }
-
-  /// 256-point polygon circle in geographic coordinates.
-  static List<List<double>> _geoCircle(double lng, double lat, double radiusMeters) {
-    const segments = 256;
-    final coords = <List<double>>[];
-    final angDist = radiusMeters / 6371000.0;
-    final latR = lat * math.pi / 180;
-    final lngR = lng * math.pi / 180;
-    final sinLat = math.sin(latR);
-    final cosLat = math.cos(latR);
-    final sinAng = math.sin(angDist);
-    final cosAng = math.cos(angDist);
-
-    for (int i = 0; i <= segments; i++) {
-      final bearing = 2 * math.pi * i / segments;
-      final pLat = math.asin(sinLat * cosAng + cosLat * sinAng * math.cos(bearing));
-      final pLng = lngR + math.atan2(
-        math.sin(bearing) * sinAng * cosLat,
-        cosAng - sinLat * math.sin(pLat),
-      );
-      coords.add([pLng * 180 / math.pi, pLat * 180 / math.pi]);
+  Future<void> _rebuildRadiusLayers(StyleController style, List<({String id, double lng, double lat, double radiusMeters, bool active})> circles, int version) async {
+    // Remove old radius layers and sources
+    final layerIds = await style.getLayerIds();
+    for (final lid in layerIds) {
+      if (lid.startsWith('radius-circle-') || lid.startsWith('radius-fill-')) {
+        try { await style.removeLayer(lid); } catch (_) {}
+      }
     }
-    return coords;
+    // Remove old sources
+    for (final c in circles) {
+      try { await style.removeSource('radius-pt-${c.id}'); } catch (_) {}
+      try { await style.removeSource('radius-pg-${c.id}'); } catch (_) {}
+    }
+    // Also clean up stale sources from previous versions
+    for (int i = 0; i < 20; i++) {
+      try { await style.removeSource('radius-pt-alarm-$i'); } catch (_) {}
+      try { await style.removeSource('radius-pg-alarm-$i'); } catch (_) {}
+    }
+    try { await style.removeSource('radius-pt-fast'); } catch (_) {}
+    try { await style.removeSource('radius-pt-pending'); } catch (_) {}
+    try { await style.removeSource('radius-pg-fast'); } catch (_) {}
+    try { await style.removeSource('radius-pg-pending'); } catch (_) {}
+
+    if (version != _radiusLayerVersion) return; // stale
+
+    for (final c in circles) {
+      if (version != _radiusLayerVersion) return;
+
+      final basePx = c.radiusMeters / (156543.03392 * math.cos(c.lat * math.pi / 180));
+      final fillColor = c.active ? 'rgba(255,0,0,0.12)' : 'rgba(158,158,158,0.05)';
+      final strokeColor = c.active ? 'rgba(255,0,0,0.6)' : 'rgba(158,158,158,0.3)';
+      final strokeWidth = c.active ? 2.0 : 1.0;
+
+      try {
+        // Point source for CircleStyleLayer (perfect circle stroke)
+        await style.addSource(GeoJsonSource(
+          id: 'radius-pt-${c.id}',
+          data: jsonEncode({
+            'type': 'FeatureCollection',
+            'features': [{
+              'type': 'Feature',
+              'geometry': {'type': 'Point', 'coordinates': [c.lng, c.lat]},
+              'properties': {},
+            }],
+          }),
+        ));
+
+        // CircleStyleLayer with literal interpolate — smooth native zoom scaling
+        await style.addLayer(CircleStyleLayer(
+          id: 'radius-circle-${c.id}',
+          sourceId: 'radius-pt-${c.id}',
+          paint: {
+            'circle-radius': [
+              'interpolate', ['exponential', 2.0], ['zoom'],
+              0.0, basePx,
+              22.0, basePx * 4194304.0,
+            ],
+            'circle-color': fillColor,
+            'circle-stroke-color': strokeColor,
+            'circle-stroke-width': strokeWidth,
+          },
+        ));
+      } catch (e) {
+        DebugConsole.log('VECTOR: radius layer error for ${c.id}: $e');
+      }
+    }
   }
 
   /// Render a Material icon to PNG bytes using PictureRecorder.
