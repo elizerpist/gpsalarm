@@ -139,17 +139,14 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     }
   }
 
-  /// Hybrid radius circles:
-  /// - Polygon FillStyleLayer: smooth geo-referenced zoom scaling (fill area)
-  /// - Annotation CircleLayer: perfect geometric circle stroke (in layers param)
-  /// The CircleLayer stroke masks the polygon's simplified edges at mid-zoom.
+  /// GeoJSON polygon radius circles — Fill + Line from same source.
+  /// Both layers use the same geometry so they scale identically.
   Future<void> _initRadiusLayer(StyleController style) async {
     await style.addSource(GeoJsonSource(
       id: 'radius-src',
       data: '{"type":"FeatureCollection","features":[]}',
       maxZoom: 22,
     ));
-    // Fill only — stroke comes from annotation CircleLayer (always perfect circle)
     await style.addLayer(FillStyleLayer(
       id: 'radius-fill',
       sourceId: 'radius-src',
@@ -158,8 +155,16 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
         'fill-opacity': ['get', 'fo'],
       },
     ));
+    await style.addLayer(LineStyleLayer(
+      id: 'radius-stroke',
+      sourceId: 'radius-src',
+      paint: {
+        'line-color': ['get', 'stroke'],
+        'line-width': ['get', 'sw'],
+      },
+    ));
     _radiusLayerReady = true;
-    DebugConsole.log('VECTOR: hybrid radius layers created');
+    DebugConsole.log('VECTOR: radius fill+stroke layers created');
   }
 
   /// Sync alarm radius circles to the native GeoJSON source.
@@ -196,15 +201,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       'properties': {
         'fill': active ? '#FF0000' : '#9E9E9E',
         'fo': active ? 0.12 : 0.05,
+        'stroke': active ? 'rgba(255,0,0,0.6)' : 'rgba(158,158,158,0.3)',
+        'sw': active ? 2.0 : 1.0,
       },
     };
-  }
-
-  /// Convert meters to screen pixels at a given latitude and current zoom.
-  /// MapLibre uses physical pixels internally, so multiply by devicePixelRatio.
-  double _metersToScreenPixels(double meters, double lat, double dpr) {
-    final metersPerPixel = 156543.03392 * math.cos(lat * math.pi / 180) / math.pow(2, _currentZoom);
-    return (meters / metersPerPixel) * dpr;
   }
 
   /// 256-point polygon circle in geographic coordinates.
@@ -373,8 +373,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     final alarmProv = context.watch<AlarmProvider>();
 
     final markers = _buildMarkerPoints(alarmProv);
-    final dpr = MediaQuery.of(context).devicePixelRatio;
-    // Sync radius circles to native GeoJSON source
     _syncRadiusSource(alarmProv);
 
     return Stack(
@@ -393,40 +391,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               _onTap(event.point);
             } else if (event is MapEventLongClick) {
               _onLongPress(event.point);
-            } else if (event is MapEventMoveCamera || event is MapEventCameraIdle) {
-              final newZoom = _controller?.camera?.zoom ?? _currentZoom;
-              if ((newZoom - _currentZoom).abs() > 0.01) {
-                setState(() => _currentZoom = newZoom);
-              }
+            } else if (event is MapEventCameraIdle) {
+              _currentZoom = _controller?.camera?.zoom ?? _currentZoom;
             }
           },
           layers: [
-            // Radius circle strokes — annotation CircleLayer = always perfect circle
-            // (polygon fill handles the area, this handles the border)
-            for (final p in alarmProv.alarmPoints)
-              CircleLayer(
-                points: [Point(coordinates: Position(p.longitude, p.latitude))],
-                radius: _metersToScreenPixels(p.radiusMeters, p.latitude, dpr).round().clamp(2, 1000),
-                color: const Color(0x00000000),
-                strokeColor: p.isActive ? const Color(0x99FF0000) : const Color(0x4D9E9E9E),
-                strokeWidth: p.isActive ? 2 : 1,
-              ),
-            if (_isFastAssigning)
-              CircleLayer(
-                points: [Point(coordinates: Position(_fastAssignLng, _fastAssignLat))],
-                radius: _metersToScreenPixels(_fastAssignRadiusMeters, _fastAssignLat, dpr).round().clamp(2, 1000),
-                color: const Color(0x00000000),
-                strokeColor: const Color(0x99FF0000),
-                strokeWidth: 2,
-              ),
-            if (_pendingTapPoint != null)
-              CircleLayer(
-                points: [Point(coordinates: _pendingTapPoint!)],
-                radius: _metersToScreenPixels(_pendingRadius, _pendingTapPoint!.lat.toDouble(), dpr).round().clamp(2, 1000),
-                color: const Color(0x00000000),
-                strokeColor: const Color(0x99FF0000),
-                strokeWidth: 2,
-              ),
             // Pin markers
             if (_imagesRegistered && markers.active.isNotEmpty)
               MarkerLayer(
