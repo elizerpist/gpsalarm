@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:maplibre/maplibre.dart';
 import 'package:provider/provider.dart';
@@ -36,8 +35,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   double _fastAssignLng = 0;
   double _fastAssignRadiusMeters = 500;
   double _currentZoom = 13;
-  _LatLng? _pendingTapPoint;
-  _LatLng? _userPos;
+  Position? _pendingTapPoint;
+  Position? _userPos;
 
   static const _styleUrls = {
     'liberty': 'https://tiles.openfreemap.org/styles/liberty',
@@ -56,19 +55,17 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     if (hasPermission) {
       final pos = await _locationService.getCurrentPosition();
       if (pos != null && mounted) {
-        setState(() => _userPos = _LatLng(pos.latitude, pos.longitude));
+        setState(() => _userPos = Position(pos.longitude, pos.latitude));
         _controller?.moveCamera(
-          center: Position(pos.longitude, pos.latitude),
-          zoom: 14,
-        );
+          center: Position(pos.longitude, pos.latitude), zoom: 14);
       }
       _locationService.startTracking(onPosition: (position) {
         if (!mounted) return;
-        final newPos = _LatLng(position.latitude, position.longitude);
+        final newPos = Position(position.longitude, position.latitude);
         if (_userPos == null ||
             AlarmService.distanceMeters(
-                    _userPos!.latitude, _userPos!.longitude,
-                    newPos.latitude, newPos.longitude) > 5) {
+                _userPos!.lat.toDouble(), _userPos!.lng.toDouble(),
+                position.latitude, position.longitude) > 5) {
           setState(() => _userPos = newPos);
         }
         _checkAlarms(position.latitude, position.longitude);
@@ -132,7 +129,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
           latitude: existing.latitude, longitude: existing.longitude, existingPoint: existing),
       );
     } else {
-      setState(() => _pendingTapPoint = _LatLng(lat, lng));
+      setState(() => _pendingTapPoint = position);
       showModalBottomSheet(
         context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
         builder: (_) => RadiusPopup(latitude: lat, longitude: lng),
@@ -169,36 +166,41 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     _cancelFastAssign();
   }
 
-  // --- GeoJSON builders ---
+  // Build marker points list for the MarkerLayer
+  List<Point> _buildMarkerPoints(AlarmProvider alarmProv) {
+    final points = <Point>[];
 
-  String _buildAlarmGeoJson(List<AlarmPoint> alarms) {
-    final features = alarms.map((p) => {
-      'type': 'Feature',
-      'id': p.id,
-      'geometry': {
-        'type': 'Point',
-        'coordinates': [p.longitude, p.latitude],
-      },
-      'properties': {
-        'id': p.id,
-        'name': p.name ?? '',
-        'radius': p.radiusMeters,
-        'active': p.isActive,
-      },
-    }).toList();
-    return json.encode({'type': 'FeatureCollection', 'features': features});
+    // Alarm points
+    for (final p in alarmProv.alarmPoints) {
+      points.add(Point(coordinates: Position(p.longitude, p.latitude)));
+    }
+
+    // Pending tap point
+    if (_pendingTapPoint != null) {
+      points.add(Point(coordinates: _pendingTapPoint!));
+    }
+
+    // Fast assign point
+    if (_isFastAssigning) {
+      points.add(Point(coordinates: Position(_fastAssignLng, _fastAssignLat)));
+    }
+
+    return points;
   }
 
-  String _buildSinglePointGeoJson(double lat, double lng, {String id = 'point'}) {
-    return json.encode({
-      'type': 'FeatureCollection',
-      'features': [{
-        'type': 'Feature',
-        'id': id,
-        'geometry': {'type': 'Point', 'coordinates': [lng, lat]},
-        'properties': {},
-      }],
-    });
+  // Build circle points for radius zones
+  List<Point> _buildCirclePoints(AlarmProvider alarmProv) {
+    final points = <Point>[];
+
+    for (final p in alarmProv.alarmPoints.where((p) => p.isActive)) {
+      points.add(Point(coordinates: Position(p.longitude, p.latitude)));
+    }
+
+    if (_isFastAssigning) {
+      points.add(Point(coordinates: Position(_fastAssignLng, _fastAssignLat)));
+    }
+
+    return points;
   }
 
   @override
@@ -206,6 +208,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     final styleUrl = context.select<SettingsProvider, String>(
         (p) => _styleUrls[p.settings.vectorStyleUrl] ?? _styleUrls['liberty']!);
     final alarmProv = context.watch<AlarmProvider>();
+
+    final markerPoints = _buildMarkerPoints(alarmProv);
+    final circlePoints = _buildCirclePoints(alarmProv);
+    final userPoints = _userPos != null
+        ? [Point(coordinates: _userPos!)]
+        : <Point>[];
 
     return Stack(
       children: [
@@ -226,11 +234,33 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               _currentZoom = _controller?.camera?.zoom ?? _currentZoom;
             }
           },
+          layers: [
+            // Radius circles
+            if (circlePoints.isNotEmpty)
+              CircleStyleLayer(
+                points: circlePoints,
+                circleRadius: 15,
+                circleColor: Colors.red.withOpacity(0.12),
+                circleStrokeWidth: 2,
+                circleStrokeColor: Colors.red.withOpacity(0.6),
+              ),
+            // Alarm + pending + fast assign markers
+            if (markerPoints.isNotEmpty)
+              MarkerLayer(
+                points: markerPoints,
+                iconSize: 0.1,
+              ),
+            // User location blue dot
+            if (userPoints.isNotEmpty)
+              CircleStyleLayer(
+                points: userPoints,
+                circleRadius: 8,
+                circleColor: const Color(0xFF2196F3),
+                circleStrokeWidth: 3,
+                circleStrokeColor: Colors.white,
+              ),
+          ],
         ),
-        // Alarm markers + circles as Flutter overlay with map projection
-        // Since maplibre ^0.2.0 source/layer API may not be stable,
-        // we use a StreamBuilder approach to project geo coords to screen
-        _buildMapOverlay(alarmProv),
         const OfflineIndicator(),
         if (!_isFastAssigning)
           Selector<MapProvider, bool>(
@@ -263,78 +293,37 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                   )
                 : const SizedBox.shrink(),
           ),
-        if (_isFastAssigning) _buildFastAssignPanel(),
+        if (_isFastAssigning)
+          Positioned(
+            bottom: 0, left: 0, right: 0,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+              decoration: BoxDecoration(
+                color: Theme.of(context).brightness == Brightness.dark ? const Color(0xFF1a1a2e) : Colors.white,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 20)],
+              ),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Row(children: [
+                  const Icon(Icons.location_on, color: Colors.red, size: 28),
+                  const SizedBox(width: 8),
+                  const Expanded(child: Text('Fast Assign', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+                  Text('${_fastAssignRadiusMeters.round()}m',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.red[700])),
+                ]),
+                const SizedBox(height: 12),
+                Slider(value: _fastAssignRadiusMeters, min: 100, max: 5000, divisions: 49, activeColor: Colors.red,
+                  onChanged: (v) => setState(() => _fastAssignRadiusMeters = v)),
+                const SizedBox(height: 16),
+                Row(children: [
+                  Expanded(child: OutlinedButton(onPressed: _cancelFastAssign, child: Text(tr('cancel')))),
+                  const SizedBox(width: 8),
+                  Expanded(child: FilledButton(onPressed: _confirmFastAssign, child: Text(tr('save')))),
+                ]),
+              ]),
+            ),
+          ),
       ],
     );
   }
-
-  /// Overlay that projects alarm points from geo to screen coords
-  /// This is a workaround until the maplibre package stabilizes its layers API
-  Widget _buildMapOverlay(AlarmProvider alarmProv) {
-    // For now, we cannot reliably project geo coords to screen in maplibre ^0.2.0
-    // without the sources/layers API. We show markers as simple positioned widgets
-    // that appear at the center of the tap (not geo-bound).
-    // TODO: Replace with native layers when maplibre ^0.2.0 API is confirmed
-    return IgnorePointer(
-      child: Stack(
-        children: [
-          // Pending tap pin
-          if (_pendingTapPoint != null)
-            const Positioned(
-              top: 0, left: 0, right: 0, bottom: 0,
-              child: Center(
-                child: Icon(Icons.location_on, color: Colors.red, size: 40),
-              ),
-            ),
-          // Fast assign pin
-          if (_isFastAssigning)
-            const Positioned(
-              top: 0, left: 0, right: 0, bottom: 0,
-              child: Center(
-                child: Icon(Icons.location_on, color: Colors.red, size: 40),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFastAssignPanel() {
-    return Positioned(
-      bottom: 0, left: 0, right: 0,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-        decoration: BoxDecoration(
-          color: Theme.of(context).brightness == Brightness.dark ? const Color(0xFF1a1a2e) : Colors.white,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 20)],
-        ),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Row(children: [
-            const Icon(Icons.location_on, color: Colors.red, size: 28),
-            const SizedBox(width: 8),
-            const Expanded(child: Text('Fast Assign', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
-            Text('${_fastAssignRadiusMeters.round()}m',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.red[700])),
-          ]),
-          const SizedBox(height: 12),
-          Slider(value: _fastAssignRadiusMeters, min: 100, max: 5000, divisions: 49, activeColor: Colors.red,
-            onChanged: (v) => setState(() => _fastAssignRadiusMeters = v)),
-          const SizedBox(height: 16),
-          Row(children: [
-            Expanded(child: OutlinedButton(onPressed: _cancelFastAssign, child: Text(tr('cancel')))),
-            const SizedBox(width: 8),
-            Expanded(child: FilledButton(onPressed: _confirmFastAssign,
-              child: Text(tr('save')))),
-          ]),
-        ]),
-      ),
-    );
-  }
-}
-
-class _LatLng {
-  final double latitude;
-  final double longitude;
-  const _LatLng(this.latitude, this.longitude);
 }
