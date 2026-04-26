@@ -226,13 +226,11 @@ class _MapScreenState extends State<MapScreen> {
         children: [
           // Long press gesture layer on top of map
           Listener(
-            behavior: _isFastAssigning
-                ? HitTestBehavior.opaque
-                : HitTestBehavior.translucent,
-            onPointerDown: _onPointerDown,
-            onPointerMove: _onPointerMove,
-            onPointerUp: _onPointerUp,
-            onPointerCancel: (_) {
+            behavior: HitTestBehavior.translucent,
+            onPointerDown: _isFastAssigning ? null : _onPointerDown,
+            onPointerMove: _isFastAssigning ? null : _onPointerMove,
+            onPointerUp: _isFastAssigning ? null : _onPointerUp,
+            onPointerCancel: _isFastAssigning ? null : (_) {
               _activePointers = (_activePointers - 1).clamp(0, 99);
               _cancelLongPressTimer();
             },
@@ -241,10 +239,8 @@ class _MapScreenState extends State<MapScreen> {
               options: MapOptions(
                 initialCenter: context.read<MapProvider>().center,
                 initialZoom: context.read<MapProvider>().zoom,
-                interactionOptions: InteractionOptions(
-                  flags: _isFastAssigning
-                      ? InteractiveFlag.none
-                      : InteractiveFlag.all & ~InteractiveFlag.rotate,
+                interactionOptions: const InteractionOptions(
+                  flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
                 ),
                 onTap: _isFastAssigning
                     ? null
