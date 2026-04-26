@@ -143,12 +143,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   /// Uses 256-segment geo-referenced polygons. No stroke line — translucent
   /// fill edges are much less visible than solid stroke polygon edges.
   Future<void> _initRadiusLayer(StyleController style) async {
-    // maxZoom: 2 → tiles generated at low zoom = circle is LARGE in tile
-    // units = Douglas-Peucker removes far fewer points = rounder circles.
     await style.addSource(GeoJsonSource(
       id: 'radius-src',
       data: '{"type":"FeatureCollection","features":[]}',
-      maxZoom: 2,
+      maxZoom: 22,
     ));
     await style.addLayer(FillStyleLayer(
       id: 'radius-fill',
