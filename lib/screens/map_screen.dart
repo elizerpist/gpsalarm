@@ -488,13 +488,11 @@ class _MapScreenState extends State<MapScreen> {
     });
   }
 
+  PersistentBottomSheetController? _fastAssignSheetController;
+
   void _showFastAssignSheet() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      barrierColor: Colors.black26,
-      builder: (_) => _FastAssignSheet(
+    _fastAssignSheetController = _scaffoldKey.currentState?.showBottomSheet(
+      (_) => _FastAssignSheet(
         initialRadius: _fastAssignRadiusMeters,
         onRadiusChanged: (v) => setState(() => _fastAssignRadiusMeters = v),
         onSave: (name, triggerType, zoneTrigger, timeMinutes) {
@@ -515,9 +513,14 @@ class _MapScreenState extends State<MapScreen> {
               SnackBar(content: Text(tr('fast_alarm', args: [_fastAssignRadiusMeters.round().toString()]))),
             );
           }
+          _fastAssignSheetController?.close();
         },
+        onCancel: () => _fastAssignSheetController?.close(),
       ),
-    ).whenComplete(() {
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+    );
+    _fastAssignSheetController?.closed.then((_) {
       if (mounted) {
         setState(() {
           _isFastAssigning = false;
@@ -605,11 +608,13 @@ class _FastAssignSheet extends StatefulWidget {
   final double initialRadius;
   final ValueChanged<double> onRadiusChanged;
   final void Function(String? name, TriggerType triggerType, ZoneTrigger zoneTrigger, int timeMinutes) onSave;
+  final VoidCallback onCancel;
 
   const _FastAssignSheet({
     required this.initialRadius,
     required this.onRadiusChanged,
     required this.onSave,
+    required this.onCancel,
   });
 
   @override
@@ -741,7 +746,7 @@ class _FastAssignSheetState extends State<_FastAssignSheet> {
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
                 child: Row(children: [
                   Expanded(child: OutlinedButton(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: widget.onCancel,
                     child: Text(tr('cancel')),
                   )),
                   const SizedBox(width: 8),
@@ -749,7 +754,6 @@ class _FastAssignSheetState extends State<_FastAssignSheet> {
                     onPressed: () {
                       final name = _nameController.text.isEmpty ? null : _nameController.text;
                       widget.onSave(name, _triggerType, _zoneTrigger, _timeMinutes);
-                      Navigator.pop(context);
                     },
                     child: Text(tr('save')),
                   )),
