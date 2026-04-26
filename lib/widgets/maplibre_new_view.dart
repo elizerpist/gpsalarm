@@ -150,7 +150,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     await style.addLayer(FillStyleLayer(
       id: 'radius-fill',
       sourceId: 'radius-src',
-      minZoom: 13,
       paint: {
         'fill-color': ['get', 'fill'],
         'fill-opacity': ['get', 'fo'],
@@ -159,7 +158,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     await style.addLayer(LineStyleLayer(
       id: 'radius-stroke',
       sourceId: 'radius-src',
-      minZoom: 13,
       paint: {
         'line-color': ['get', 'stroke'],
         'line-width': ['get', 'sw'],
