@@ -453,19 +453,6 @@ class _MapScreenState extends State<MapScreen> {
     return pixels * metersPerPixel;
   }
 
-  void _onFastAssignPan(DragUpdateDetails details) {
-    if (_fastAssignStartOffset == null) return;
-    final dx = details.globalPosition.dx - _fastAssignStartOffset!.dx;
-    final dy = details.globalPosition.dy - _fastAssignStartOffset!.dy;
-    final pixelDist = sqrt(dx * dx + dy * dy);
-    final meters = _pixelsToMeters(pixelDist).clamp(100.0, 5000.0);
-    setState(() => _fastAssignRadiusMeters = meters);
-  }
-
-  void _onFastAssignRelease(DragEndDetails details) {
-    _confirmFastAssign();
-  }
-
   void _goToMyLocation() {
     final pos = _userPosition.value;
     if (pos != null) {
