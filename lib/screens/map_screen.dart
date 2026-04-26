@@ -542,48 +542,6 @@ class _MapScreenState extends State<MapScreen> {
   }
 
 
-  void _confirmFastAssign() {
-    if (_fastAssignCenter == null) return;
-    final alarmProv = context.read<AlarmProvider>();
-
-    if (alarmProv.canAddAlarm) {
-      final name = _fastAssignNameController.text.isEmpty
-          ? null : _fastAssignNameController.text;
-      final point = AlarmPoint(
-        id: const Uuid().v4(),
-        name: name,
-        latitude: _fastAssignCenter!.latitude,
-        longitude: _fastAssignCenter!.longitude,
-        radiusMeters: _fastAssignTriggerType == TriggerType.distance
-            ? _fastAssignRadiusMeters : 0,
-        triggerType: _fastAssignTriggerType,
-        zoneTrigger: _fastAssignZoneTrigger,
-        timeTrigger: _fastAssignTriggerType == TriggerType.time
-            ? Duration(minutes: _fastAssignTimeMinutes) : null,
-      );
-      alarmProv.addAlarmPoint(point);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(tr('fast_alarm',
-              args: [_fastAssignRadiusMeters.round().toString()])),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    }
-
-    setState(() {
-      _isFastAssigning = false;
-      _fastAssignExpanded = false;
-      _fastAssignCenter = null;
-      _fastAssignRadiusMeters = 500;
-      _fastAssignStartOffset = null;
-      _fastAssignNameController.clear();
-      _fastAssignTriggerType = TriggerType.distance;
-      _fastAssignZoneTrigger = ZoneTrigger.onEntry;
-      _fastAssignTimeMinutes = 10;
-    });
-  }
 
   void _showCreatePopup(BuildContext context, LatLng point) {
     showModalBottomSheet(

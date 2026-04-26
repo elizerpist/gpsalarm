@@ -235,29 +235,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             }
           },
           layers: [
-            // Radius circles
-            if (circlePoints.isNotEmpty)
-              CircleStyleLayer(
-                points: circlePoints,
-                circleRadius: 15,
-                circleColor: Colors.red.withOpacity(0.12),
-                circleStrokeWidth: 2,
-                circleStrokeColor: Colors.red.withOpacity(0.6),
-              ),
             // Alarm + pending + fast assign markers
             if (markerPoints.isNotEmpty)
               MarkerLayer(
                 points: markerPoints,
                 iconSize: 0.1,
-              ),
-            // User location blue dot
-            if (userPoints.isNotEmpty)
-              CircleStyleLayer(
-                points: userPoints,
-                circleRadius: 8,
-                circleColor: const Color(0xFF2196F3),
-                circleStrokeWidth: 3,
-                circleStrokeColor: Colors.white,
               ),
           ],
         ),
