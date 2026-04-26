@@ -111,17 +111,39 @@ class GpsAlarmApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF3FA2FF),
+          primary: const Color(0xFF3FA2FF),
           brightness: Brightness.light,
         ),
         useMaterial3: true,
+        sliderTheme: const SliderThemeData(
+          activeTrackColor: Color(0xFF3FA2FF),
+          thumbColor: Color(0xFF3FA2FF),
+        ),
+        switchTheme: SwitchThemeData(
+          thumbColor: WidgetStateProperty.resolveWith((states) =>
+              states.contains(WidgetState.selected) ? const Color(0xFF3FA2FF) : null),
+          trackColor: WidgetStateProperty.resolveWith((states) =>
+              states.contains(WidgetState.selected) ? const Color(0xFF3FA2FF).withOpacity(0.5) : null),
+        ),
       ),
       darkTheme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF3FA2FF),
+          primary: const Color(0xFF3FA2FF),
           brightness: Brightness.dark,
         ),
         scaffoldBackgroundColor: const Color(0xFF1a1a2e),
         useMaterial3: true,
+        sliderTheme: const SliderThemeData(
+          activeTrackColor: Color(0xFF3FA2FF),
+          thumbColor: Color(0xFF3FA2FF),
+        ),
+        switchTheme: SwitchThemeData(
+          thumbColor: WidgetStateProperty.resolveWith((states) =>
+              states.contains(WidgetState.selected) ? const Color(0xFF3FA2FF) : null),
+          trackColor: WidgetStateProperty.resolveWith((states) =>
+              states.contains(WidgetState.selected) ? const Color(0xFF3FA2FF).withOpacity(0.5) : null),
+        ),
       ),
       home: const MapScreen(),
     );

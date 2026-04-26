@@ -55,6 +55,7 @@ class AlarmListScreen extends StatelessWidget {
                   onDismissed: (_) => alarmProv.removeAlarmPoint(point.id),
                   child: AlarmListTile(
                     point: point,
+                    onDelete: () => alarmProv.removeAlarmPoint(point.id),
                     onToggle: () => alarmProv.toggleActive(point.id),
                     onTap: () {
                       showModalBottomSheet(

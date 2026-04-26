@@ -6,12 +6,14 @@ class AlarmListTile extends StatelessWidget {
   final AlarmPoint point;
   final VoidCallback onToggle;
   final VoidCallback onTap;
+  final VoidCallback onDelete;
 
   const AlarmListTile({
     super.key,
     required this.point,
     required this.onToggle,
     required this.onTap,
+    required this.onDelete,
   });
 
   @override
@@ -54,21 +56,32 @@ class AlarmListTile extends StatelessWidget {
           ),
         ],
       ),
-      trailing: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Switch(
-            value: isActive,
-            onChanged: (_) => onToggle(),
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Switch(
+                value: isActive,
+                onChanged: (_) => onToggle(),
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              Text(
+                isActive ? tr('active') : tr('inactive'),
+                style: TextStyle(
+                  fontSize: 9,
+                  color: isActive ? Colors.green : Colors.grey,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
           ),
-          Text(
-            isActive ? tr('active') : tr('inactive'),
-            style: TextStyle(
-              fontSize: 9,
-              color: isActive ? Colors.green : Colors.grey,
-              fontWeight: FontWeight.bold,
-            ),
+          IconButton(
+            onPressed: onDelete,
+            icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
           ),
         ],
       ),
