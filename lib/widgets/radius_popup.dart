@@ -54,14 +54,27 @@ class _RadiusPopupState extends State<RadiusPopup> {
         color: isDark ? const Color(0xFF1a1a2e) : Colors.white,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 20,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-      ),
-      child: SingleChildScrollView(
-        child: Column(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Drag handle
+          Padding(
+            padding: const EdgeInsets.only(top: 8, bottom: 4),
+            child: Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[400],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.only(
+              left: 20, right: 20, top: 8,
+              bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -208,6 +221,9 @@ class _RadiusPopupState extends State<RadiusPopup> {
           ],
         ),
       ),
+    ),
+    ],
+    ),
     );
   }
 

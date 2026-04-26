@@ -113,10 +113,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
 
   void _onMapCreated(MapController controller) {
     _controller = controller;
-    DebugConsole.log('MapLibre (new) map created');
+    DebugConsole.log('VECTOR: MapController created');
+    DebugConsole.log('VECTOR: controller type = ${controller.runtimeType}');
   }
 
   void _onTap(Position position) {
+    DebugConsole.log('VECTOR TAP: lat=${position.lat}, lng=${position.lng}, fastAssign=$_isFastAssigning');
     if (_isFastAssigning) return;
     final lat = position.lat.toDouble();
     final lng = position.lng.toDouble();
@@ -140,6 +142,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   }
 
   void _onLongPress(Position position) {
+    DebugConsole.log('VECTOR LONG PRESS: lat=${position.lat}, lng=${position.lng}');
     final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
     if (haptic) Vibration.vibrate(duration: 30);
     setState(() {
@@ -188,20 +191,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     return points;
   }
 
-  // Build circle points for radius zones
-  List<Point> _buildCirclePoints(AlarmProvider alarmProv) {
-    final points = <Point>[];
-
-    for (final p in alarmProv.alarmPoints.where((p) => p.isActive)) {
-      points.add(Point(coordinates: Position(p.longitude, p.latitude)));
-    }
-
-    if (_isFastAssigning) {
-      points.add(Point(coordinates: Position(_fastAssignLng, _fastAssignLat)));
-    }
-
-    return points;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -210,7 +199,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     final alarmProv = context.watch<AlarmProvider>();
 
     final markerPoints = _buildMarkerPoints(alarmProv);
-    final circlePoints = _buildCirclePoints(alarmProv);
+    DebugConsole.log('VECTOR build: ${markerPoints.length} markers, style=$styleUrl');
     final userPoints = _userPos != null
         ? [Point(coordinates: _userPos!)]
         : <Point>[];
@@ -244,6 +233,25 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
           ],
         ),
         const OfflineIndicator(),
+        // Debug button - top right
+        Positioned(
+          top: MediaQuery.of(context).padding.top + 12,
+          right: 12,
+          child: GestureDetector(
+            onTap: () => showDialog(
+              context: context,
+              builder: (_) => const DebugConsoleDialog(),
+            ),
+            child: Container(
+              width: 36, height: 36,
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.5),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.terminal, color: Color(0xFF2ECDC4), size: 18),
+            ),
+          ),
+        ),
         if (!_isFastAssigning)
           Selector<MapProvider, bool>(
             selector: (_, p) => p.searchActive,

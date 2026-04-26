@@ -493,6 +493,7 @@ class _MapScreenState extends State<MapScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
+      barrierColor: Colors.black26,
       builder: (_) => _FastAssignSheet(
         initialRadius: _fastAssignRadiusMeters,
         onRadiusChanged: (v) => setState(() => _fastAssignRadiusMeters = v),
@@ -523,7 +524,11 @@ class _MapScreenState extends State<MapScreen> {
           _fastAssignCenter = null;
           _fastAssignRadiusMeters = 500;
           _fastAssignStartOffset = null;
+          _longPressTriggered = false;
+          _pointerDownPos = null;
+          _activePointers = 0;
         });
+        DebugConsole.log('Fast assign sheet closed, state reset');
       }
     });
   }
@@ -635,9 +640,9 @@ class _FastAssignSheetState extends State<_FastAssignSheet> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.3,
-      minChildSize: 0.2,
-      maxChildSize: 0.7,
+      initialChildSize: 0.22,
+      minChildSize: 0.1,
+      maxChildSize: 0.65,
       builder: (context, scrollController) {
         return Container(
           decoration: BoxDecoration(
