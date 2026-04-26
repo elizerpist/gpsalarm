@@ -139,32 +139,30 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     }
   }
 
-  /// Create native GeoJSON source + Fill/Line layers for radius circles.
-  /// Uses 256-segment geo-referenced polygons — visually perfect circles.
+  /// Create native GeoJSON source + CircleStyleLayer with map-space scaling.
+  /// circle-pitch-scale: 'map' makes the GL engine scale circles with zoom
+  /// natively on the GPU — no Dart updates needed during zoom.
   Future<void> _initRadiusLayer(StyleController style) async {
     await style.addSource(GeoJsonSource(
       id: 'radius-src',
       data: '{"type":"FeatureCollection","features":[]}',
-      maxZoom: 22,
     ));
-    await style.addLayer(FillStyleLayer(
-      id: 'radius-fill',
+    await style.addLayer(CircleStyleLayer(
+      id: 'radius-layer',
       sourceId: 'radius-src',
       paint: {
-        'fill-color': ['get', 'fill'],
-        'fill-opacity': ['get', 'fo'],
-      },
-    ));
-    await style.addLayer(LineStyleLayer(
-      id: 'radius-stroke',
-      sourceId: 'radius-src',
-      paint: {
-        'line-color': ['get', 'stroke'],
-        'line-width': ['get', 'sw'],
+        'circle-radius': ['get', 'basePx'],
+        'circle-pitch-scale': 'map',
+        'circle-pitch-alignment': 'map',
+        'circle-color': ['case', ['get', 'active'],
+          'rgba(255,0,0,0.12)', 'rgba(158,158,158,0.05)'],
+        'circle-stroke-color': ['case', ['get', 'active'],
+          'rgba(255,0,0,0.6)', 'rgba(158,158,158,0.3)'],
+        'circle-stroke-width': ['case', ['get', 'active'], 2.0, 1.0],
       },
     ));
     _radiusLayerReady = true;
-    DebugConsole.log('VECTOR: radius polygon layers created');
+    DebugConsole.log('VECTOR: radius circle layer created (map-space scaling)');
   }
 
   /// Sync alarm radius circles to the native GeoJSON source.
@@ -175,13 +173,13 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
 
     final features = <Map<String, dynamic>>[];
     for (final p in alarmProv.alarmPoints) {
-      features.add(_radiusPolygon(p.longitude, p.latitude, p.radiusMeters, p.isActive));
+      features.add(_radiusFeature(p.longitude, p.latitude, p.radiusMeters, p.isActive));
     }
     if (_isFastAssigning) {
-      features.add(_radiusPolygon(_fastAssignLng, _fastAssignLat, _fastAssignRadiusMeters, true));
+      features.add(_radiusFeature(_fastAssignLng, _fastAssignLat, _fastAssignRadiusMeters, true));
     }
     if (_pendingTapPoint != null) {
-      features.add(_radiusPolygon(
+      features.add(_radiusFeature(
         _pendingTapPoint!.lng.toDouble(), _pendingTapPoint!.lat.toDouble(), _pendingRadius, true));
     }
 
@@ -191,45 +189,15 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     );
   }
 
-  static Map<String, dynamic> _radiusPolygon(double lng, double lat, double radiusMeters, bool active) {
+  static Map<String, dynamic> _radiusFeature(double lng, double lat, double radiusMeters, bool active) {
+    // basePx = pixel radius at zoom 0. With circle-pitch-scale: 'map',
+    // the GL engine scales this by 2^zoom natively on the GPU.
+    final basePx = radiusMeters / (156543.03392 * math.cos(lat * math.pi / 180));
     return {
       'type': 'Feature',
-      'geometry': {
-        'type': 'Polygon',
-        'coordinates': [_geoCircle(lng, lat, radiusMeters)],
-      },
-      'properties': {
-        'fill': active ? '#FF0000' : '#9E9E9E',
-        'fo': active ? 0.12 : 0.05,
-        'stroke': active ? 'rgba(255,0,0,0.6)' : 'rgba(158,158,158,0.3)',
-        'sw': active ? 2.0 : 1.0,
-      },
+      'geometry': {'type': 'Point', 'coordinates': [lng, lat]},
+      'properties': {'basePx': basePx, 'active': active},
     };
-  }
-
-  /// 256-point polygon circle in geographic coordinates.
-  /// Max chord deviation at 500m radius: ~0.006m — invisible on any device.
-  static List<List<double>> _geoCircle(double lng, double lat, double radiusMeters) {
-    const segments = 256;
-    final coords = <List<double>>[];
-    final angDist = radiusMeters / 6371000.0;
-    final latR = lat * math.pi / 180;
-    final lngR = lng * math.pi / 180;
-    final sinLat = math.sin(latR);
-    final cosLat = math.cos(latR);
-    final sinAng = math.sin(angDist);
-    final cosAng = math.cos(angDist);
-
-    for (int i = 0; i <= segments; i++) {
-      final bearing = 2 * math.pi * i / segments;
-      final pLat = math.asin(sinLat * cosAng + cosLat * sinAng * math.cos(bearing));
-      final pLng = lngR + math.atan2(
-        math.sin(bearing) * sinAng * cosLat,
-        cosAng - sinLat * math.sin(pLat),
-      );
-      coords.add([pLng * 180 / math.pi, pLat * 180 / math.pi]);
-    }
-    return coords;
   }
 
   /// Render a Material icon to PNG bytes using PictureRecorder.
