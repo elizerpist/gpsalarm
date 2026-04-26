@@ -292,21 +292,25 @@ class _MapScreenState extends State<MapScreen> {
                           )),
                       if (userPos != null)
                         buildUserLocationMarker(userPos),
-                      // Pending tap pin (red, pulsing while popup open)
+                      // Pending tap pin
                       if (_pendingTapPoint != null)
                         Marker(
                           point: _pendingTapPoint!,
                           width: 40,
                           height: 50,
+                          // Icon tip at y=36 in 50px box → alignment y = (36-25)/25 = 0.44
+                          alignment: const Alignment(0, 0.44),
                           child: const Icon(Icons.location_on,
                               color: Colors.red, size: 36),
                         ),
-                      // Fast assign pin (orange)
+                      // Fast assign pin
                       if (_isFastAssigning && _fastAssignCenter != null)
                         Marker(
                           point: _fastAssignCenter!,
                           width: 40,
                           height: 40,
+                          // Icon tip at y=32 in 40px box → alignment y = (32-20)/20 = 0.6
+                          alignment: const Alignment(0, 0.6),
                           child: const Icon(Icons.location_on,
                               color: Colors.red, size: 32),
                         ),

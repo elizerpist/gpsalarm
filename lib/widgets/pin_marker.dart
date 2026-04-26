@@ -17,6 +17,9 @@ Marker buildPinMarker({
     point: LatLng(point.latitude, point.longitude),
     width: 60,
     height: 60,
+    // Pin tip (bottom of 32px icon) is at y=32 in 60px box.
+    // Alignment(0, 0.067) places y=32 at the geo coordinate.
+    alignment: const Alignment(0, 0.067),
     child: GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,

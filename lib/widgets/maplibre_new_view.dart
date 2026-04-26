@@ -225,13 +225,31 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     return byteData!.buffer.asUint8List();
   }
 
+  /// Find closest alarm within the pin's visual tap area (zoom-dependent).
+  AlarmPoint? _findTappedAlarm(double tapLat, double tapLng, AlarmProvider alarmProv) {
+    // Pin is ~64px tall (160 icon * 0.4 scale), anchor at bottom.
+    // Allow tapping within 40px of the anchor point.
+    final metersPerPx = 156543.03392 * math.cos(tapLat * math.pi / 180) / math.pow(2, _currentZoom);
+    final thresholdMeters = math.max(50.0, 40 * metersPerPx);
+    AlarmPoint? closest;
+    double closestDist = double.infinity;
+    for (final p in alarmProv.alarmPoints) {
+      final dist = AlarmService.distanceMeters(tapLat, tapLng, p.latitude, p.longitude);
+      if (dist < thresholdMeters && dist < closestDist) {
+        closest = p;
+        closestDist = dist;
+      }
+    }
+    return closest;
+  }
+
   void _onTap(Position position) {
     DebugConsole.log('VECTOR TAP: lat=${position.lat}, lng=${position.lng}, fastAssign=$_isFastAssigning');
     if (_isFastAssigning) return;
     final lat = position.lat.toDouble();
     final lng = position.lng.toDouble();
     final alarmProv = context.read<AlarmProvider>();
-    final existing = alarmProv.findNearby(lat, lng);
+    final existing = _findTappedAlarm(lat, lng, alarmProv);
     if (existing != null) {
       setState(() {
         _pendingTapPoint = position;
