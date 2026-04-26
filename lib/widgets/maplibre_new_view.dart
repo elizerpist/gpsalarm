@@ -11,7 +11,9 @@ import '../providers/map_provider.dart';
 import '../providers/settings_provider.dart';
 import '../widgets/map_controls.dart';
 import '../widgets/radius_popup.dart';
+import '../widgets/search_pill.dart';
 import '../widgets/offline_indicator.dart';
+import '../services/geocoding_service.dart';
 import '../services/location_service.dart';
 import '../services/alarm_service.dart';
 import '../services/debug_console.dart';
@@ -202,12 +204,15 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
           ),
         const OfflineIndicator(),
         if (!_isFastAssigning)
-          MapControls(
-            onMenuTap: () => widget.scaffoldKey.currentState?.openDrawer(),
-            onZoomIn: () => _controller?.moveCamera(zoom: _currentZoom + 1),
-            onZoomOut: () => _controller?.moveCamera(zoom: _currentZoom - 1),
-            onSearchTap: () => context.read<MapProvider>().toggleSearch(),
-            onMyLocation: () async {
+          Selector<MapProvider, bool>(
+            selector: (_, p) => p.searchActive,
+            builder: (_, searchActive, __) => MapControls(
+              onMenuTap: () => widget.scaffoldKey.currentState?.openDrawer(),
+              onZoomIn: () => _controller?.moveCamera(zoom: _currentZoom + 1),
+              onZoomOut: () => _controller?.moveCamera(zoom: _currentZoom - 1),
+              onSearchTap: () => context.read<MapProvider>().toggleSearch(),
+              searchActive: searchActive,
+              onMyLocation: () async {
               final pos = await _locationService.getCurrentPosition();
               if (pos != null) {
                 _controller?.moveCamera(
@@ -216,7 +221,23 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                 );
               }
             },
-            searchActive: false,
+          ),
+          ),
+        // Search pill
+        if (!_isFastAssigning)
+          Selector<MapProvider, bool>(
+            selector: (_, p) => p.searchActive,
+            builder: (_, searchActive, __) => searchActive
+                ? SearchPill(
+                    onResultSelected: (result) {
+                      context.read<MapProvider>().goToSearchResult(result);
+                      _controller?.moveCamera(
+                        center: Position(result.longitude, result.latitude),
+                        zoom: 14,
+                      );
+                    },
+                  )
+                : const SizedBox.shrink(),
           ),
         if (_isFastAssigning)
           Positioned(
