@@ -200,10 +200,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     };
   }
 
-  /// Convert meters to pixels at a given latitude and current zoom.
-  double _metersToPixels(double meters, double lat) {
+  /// Convert meters to screen pixels at a given latitude and current zoom.
+  /// MapLibre uses physical pixels internally, so multiply by devicePixelRatio.
+  double _metersToScreenPixels(double meters, double lat, double dpr) {
     final metersPerPixel = 156543.03392 * math.cos(lat * math.pi / 180) / math.pow(2, _currentZoom);
-    return meters / metersPerPixel;
+    return (meters / metersPerPixel) * dpr;
   }
 
   /// 256-point polygon circle in geographic coordinates.
@@ -372,7 +373,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     final alarmProv = context.watch<AlarmProvider>();
 
     final markers = _buildMarkerPoints(alarmProv);
-    // Sync radius circles to native GeoJSON source (smooth zoom via GL expression)
+    final dpr = MediaQuery.of(context).devicePixelRatio;
+    // Sync radius circles to native GeoJSON source
     _syncRadiusSource(alarmProv);
 
     return Stack(
@@ -404,7 +406,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             for (final p in alarmProv.alarmPoints)
               CircleLayer(
                 points: [Point(coordinates: Position(p.longitude, p.latitude))],
-                radius: _metersToPixels(p.radiusMeters, p.latitude).round().clamp(2, 1000),
+                radius: _metersToScreenPixels(p.radiusMeters, p.latitude, dpr).round().clamp(2, 1000),
                 color: const Color(0x00000000),
                 strokeColor: p.isActive ? const Color(0x99FF0000) : const Color(0x4D9E9E9E),
                 strokeWidth: p.isActive ? 2 : 1,
@@ -412,7 +414,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             if (_isFastAssigning)
               CircleLayer(
                 points: [Point(coordinates: Position(_fastAssignLng, _fastAssignLat))],
-                radius: _metersToPixels(_fastAssignRadiusMeters, _fastAssignLat).round().clamp(2, 1000),
+                radius: _metersToScreenPixels(_fastAssignRadiusMeters, _fastAssignLat, dpr).round().clamp(2, 1000),
                 color: const Color(0x00000000),
                 strokeColor: const Color(0x99FF0000),
                 strokeWidth: 2,
@@ -420,7 +422,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             if (_pendingTapPoint != null)
               CircleLayer(
                 points: [Point(coordinates: _pendingTapPoint!)],
-                radius: _metersToPixels(_pendingRadius, _pendingTapPoint!.lat.toDouble()).round().clamp(2, 1000),
+                radius: _metersToScreenPixels(_pendingRadius, _pendingTapPoint!.lat.toDouble(), dpr).round().clamp(2, 1000),
                 color: const Color(0x00000000),
                 strokeColor: const Color(0x99FF0000),
                 strokeWidth: 2,
