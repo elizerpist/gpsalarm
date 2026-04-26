@@ -110,14 +110,14 @@ class GpsAlarmApp extends StatelessWidget {
       themeMode: settings.themeMode,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF3F7FBF),
+          seedColor: const Color(0xFF3FA2FF),
           brightness: Brightness.light,
         ),
         useMaterial3: true,
       ),
       darkTheme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF3F7FBF),
+          seedColor: const Color(0xFF3FA2FF),
           brightness: Brightness.dark,
         ),
         scaffoldBackgroundColor: const Color(0xFF1a1a2e),
