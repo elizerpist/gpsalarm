@@ -29,6 +29,7 @@ class MaplibreNewView extends StatefulWidget {
 
 class _MaplibreNewViewState extends State<MaplibreNewView> {
   MapController? _controller;
+  bool _imagesRegistered = false;
   final LocationService _locationService = LocationService();
   bool _isFastAssigning = false;
   double _fastAssignLat = 0;
@@ -116,6 +117,29 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     _controller = controller;
     DebugConsole.log('VECTOR: MapController created');
     DebugConsole.log('VECTOR: controller type = ${controller.runtimeType}');
+  }
+
+  Future<void> _registerImages(StyleController style) async {
+    if (_imagesRegistered) return;
+    try {
+      await style.addImageFromIconData(
+        id: 'pin-red', iconData: Icons.location_on,
+        size: 160, color: const Color(0xFFFF0000),
+      );
+      await style.addImageFromIconData(
+        id: 'pin-grey', iconData: Icons.location_on,
+        size: 160, color: const Color(0xFF9E9E9E),
+      );
+      await style.addImageFromIconData(
+        id: 'dot-blue', iconData: Icons.circle,
+        size: 64, color: const Color(0xFF2196F3),
+      );
+      _imagesRegistered = true;
+      if (mounted) setState(() {});
+      DebugConsole.log('VECTOR: images registered (pin-red, pin-grey, dot-blue)');
+    } catch (e) {
+      DebugConsole.log('VECTOR: addImage error: $e');
+    }
   }
 
   void _onTap(Position position) {
@@ -256,6 +280,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             initZoom: 13,
           ),
           onMapCreated: _onMapCreated,
+          onStyleLoaded: (style) => _registerImages(style),
           onEvent: (event) {
             if (event is MapEventClick) {
               _onTap(event.point);
@@ -268,19 +293,28 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               }
             }
           },
-          layers: const [],
-          children: [
-            // Pin markers as Flutter widgets via WidgetLayer
-            if (markerPoints.isNotEmpty)
-              WidgetLayer(
-                markers: markerPoints.map((p) => Marker(
-                  point: Position(p.coordinates.lng.toDouble(), p.coordinates.lat.toDouble()),
-                  size: const Size(40, 50),
-                  alignment: Alignment.bottomCenter,
-                  child: const Icon(Icons.location_on, color: Colors.red, size: 36),
-                )).toList(),
+          layers: [
+            // Native pin markers — lag-free, geo-anchored
+            if (_imagesRegistered && markerPoints.isNotEmpty)
+              MarkerLayer(
+                points: markerPoints,
+                iconImage: 'pin-red',
+                iconSize: 0.4,
+                iconAnchor: IconAnchor.bottom,
+                iconAllowOverlap: true,
               ),
-            // Radius circles via WidgetLayer — one per alarm point
+            // User position — native blue dot
+            if (_imagesRegistered && _userPos != null)
+              MarkerLayer(
+                points: [Point(coordinates: _userPos!)],
+                iconImage: 'dot-blue',
+                iconSize: 0.5,
+                iconAnchor: IconAnchor.center,
+                iconAllowOverlap: true,
+              ),
+          ],
+          children: [
+            // Radius circles — WidgetLayer (no native meter-based circle)
             WidgetLayer(
               markers: [
                 ...alarmProv.alarmPoints.map((p) => _buildRadiusMarker(p.latitude, p.longitude, p.radiusMeters, p.isActive)),
@@ -290,26 +324,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                   _buildRadiusMarker(_pendingTapPoint!.lat.toDouble(), _pendingTapPoint!.lng.toDouble(), _pendingRadius, true),
               ],
             ),
-            // User location as widget pin
-            if (_userPos != null)
-              WidgetLayer(
-                markers: [
-                  Marker(
-                    point: Position(_userPos!.lng.toDouble(), _userPos!.lat.toDouble()),
-                    size: const Size(20, 20),
-                    alignment: Alignment.center,
-                    child: Container(
-                      width: 16, height: 16,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF2196F3),
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 3),
-                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 4)],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
           ],
         ),
         const OfflineIndicator(),
