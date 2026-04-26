@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -32,6 +33,7 @@ class MaplibreNewView extends StatefulWidget {
 class _MaplibreNewViewState extends State<MaplibreNewView> {
   MapController? _controller;
   bool _imagesRegistered = false;
+  bool _radiusLayerReady = false;
   final LocationService _locationService = LocationService();
   bool _isFastAssigning = false;
   double _fastAssignLat = 0;
@@ -128,12 +130,81 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       final greyPin = await _renderIconToPng(Icons.location_on, const Color(0xFF9E9E9E), 160);
       await style.addImage('pin-red', redPin);
       await style.addImage('pin-grey', greyPin);
+      await _initRadiusLayer(style);
       _imagesRegistered = true;
       if (mounted) setState(() {});
-      DebugConsole.log('VECTOR: images registered (pin-red, pin-grey)');
+      DebugConsole.log('VECTOR: images + radius layer registered');
     } catch (e) {
-      DebugConsole.log('VECTOR: addImage error: $e');
+      DebugConsole.log('VECTOR: init error: $e');
     }
+  }
+
+  /// Create a native GeoJSON source + CircleStyleLayer for radius circles.
+  /// Uses expression-based radius that scales smoothly with zoom via the GL renderer.
+  Future<void> _initRadiusLayer(StyleController style) async {
+    await style.addSource(GeoJsonSource(
+      id: 'radius-src',
+      data: '{"type":"FeatureCollection","features":[]}',
+    ));
+    await style.addLayer(CircleStyleLayer(
+      id: 'radius-layer',
+      sourceId: 'radius-src',
+      paint: {
+        // basePx * 2^zoom — smooth exponential scaling at GL level
+        'circle-radius': [
+          '*',
+          ['get', 'basePx'],
+          ['interpolate', ['exponential', 2], ['zoom'], 0, 1, 1, 2],
+        ],
+        'circle-color': [
+          'case', ['get', 'active'],
+          'rgba(255,0,0,0.12)', 'rgba(158,158,158,0.05)',
+        ],
+        'circle-stroke-color': [
+          'case', ['get', 'active'],
+          'rgba(255,0,0,0.6)', 'rgba(158,158,158,0.3)',
+        ],
+        'circle-stroke-width': [
+          'case', ['get', 'active'], 2, 1,
+        ],
+      },
+    ));
+    _radiusLayerReady = true;
+    DebugConsole.log('VECTOR: radius GeoJSON layer created');
+  }
+
+  /// Sync alarm radius circles to the native GeoJSON source.
+  void _syncRadiusSource(AlarmProvider alarmProv) {
+    if (!_radiusLayerReady) return;
+    final style = _controller?.style;
+    if (style == null) return;
+
+    final features = <Map<String, dynamic>>[];
+    for (final p in alarmProv.alarmPoints) {
+      features.add(_radiusFeature(p.longitude, p.latitude, p.radiusMeters, p.isActive));
+    }
+    if (_isFastAssigning) {
+      features.add(_radiusFeature(_fastAssignLng, _fastAssignLat, _fastAssignRadiusMeters, true));
+    }
+    if (_pendingTapPoint != null) {
+      features.add(_radiusFeature(
+        _pendingTapPoint!.lng.toDouble(), _pendingTapPoint!.lat.toDouble(), _pendingRadius, true));
+    }
+
+    style.updateGeoJsonSource(
+      id: 'radius-src',
+      data: jsonEncode({'type': 'FeatureCollection', 'features': features}),
+    );
+  }
+
+  static Map<String, dynamic> _radiusFeature(double lng, double lat, double radiusMeters, bool active) {
+    // basePx = pixel radius at zoom 0. The GL expression multiplies by 2^zoom.
+    final basePx = radiusMeters / (156543.03392 * math.cos(lat * math.pi / 180));
+    return {
+      'type': 'Feature',
+      'geometry': {'type': 'Point', 'coordinates': [lng, lat]},
+      'properties': {'basePx': basePx, 'active': active},
+    };
   }
 
   /// Render a Material icon to PNG bytes using PictureRecorder.
@@ -224,12 +295,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     _cancelFastAssign();
   }
 
-  /// Convert meters to pixels at a given latitude and zoom level.
-  double _metersToPixels(double meters, double lat, double zoom) {
-    final metersPerPixel = 156543.03392 * math.cos(lat * math.pi / 180) / math.pow(2, zoom);
-    return meters / metersPerPixel;
-  }
-
 
   // Build separate marker point lists for active (red) and inactive (grey) pins
   ({List<Point> active, List<Point> inactive}) _buildMarkerPoints(AlarmProvider alarmProv) {
@@ -266,7 +331,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     final alarmProv = context.watch<AlarmProvider>();
 
     final markers = _buildMarkerPoints(alarmProv);
-    DebugConsole.log('VECTOR build: ${markers.active.length} active + ${markers.inactive.length} inactive markers, style=$styleUrl');
+    // Sync radius circles to native GeoJSON source (smooth zoom via GL expression)
+    _syncRadiusSource(alarmProv);
 
     return Stack(
       children: [
@@ -284,40 +350,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               _onTap(event.point);
             } else if (event is MapEventLongClick) {
               _onLongPress(event.point);
-            } else if (event is MapEventMoveCamera || event is MapEventCameraIdle) {
-              final newZoom = _controller?.camera?.zoom ?? _currentZoom;
-              if ((newZoom - _currentZoom).abs() > 0.01) {
-                setState(() => _currentZoom = newZoom);
-              }
+            } else if (event is MapEventCameraIdle) {
+              _currentZoom = _controller?.camera?.zoom ?? _currentZoom;
             }
           },
           layers: [
-            // --- Radius circles (native CircleLayer — no scroll lag) ---
-            for (final p in alarmProv.alarmPoints)
-              CircleLayer(
-                points: [Point(coordinates: Position(p.longitude, p.latitude))],
-                radius: _metersToPixels(p.radiusMeters, p.latitude, _currentZoom).round().clamp(2, 1000),
-                color: p.isActive ? const Color(0x1FFF0000) : const Color(0x0D9E9E9E),
-                strokeColor: p.isActive ? const Color(0x99FF0000) : const Color(0x4D9E9E9E),
-                strokeWidth: p.isActive ? 2 : 1,
-              ),
-            if (_isFastAssigning)
-              CircleLayer(
-                points: [Point(coordinates: Position(_fastAssignLng, _fastAssignLat))],
-                radius: _metersToPixels(_fastAssignRadiusMeters, _fastAssignLat, _currentZoom).round().clamp(2, 1000),
-                color: const Color(0x1FFF0000),
-                strokeColor: const Color(0x99FF0000),
-                strokeWidth: 2,
-              ),
-            if (_pendingTapPoint != null)
-              CircleLayer(
-                points: [Point(coordinates: _pendingTapPoint!)],
-                radius: _metersToPixels(_pendingRadius, _pendingTapPoint!.lat.toDouble(), _currentZoom).round().clamp(2, 1000),
-                color: const Color(0x1FFF0000),
-                strokeColor: const Color(0x99FF0000),
-                strokeWidth: 2,
-              ),
-            // --- Pin markers ---
+            // Pin markers (above radius circles which are in the base style)
             if (_imagesRegistered && markers.active.isNotEmpty)
               MarkerLayer(
                 points: markers.active,
@@ -334,9 +372,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                 iconAnchor: IconAnchor.bottom,
                 iconAllowOverlap: true,
               ),
-            // --- User position — blue dot with white border + glow ---
+            // User position — blue dot with white border + glow
             if (_userPos != null) ...[
-              // Outer glow
               CircleLayer(
                 points: [Point(coordinates: _userPos!)],
                 radius: 16,
@@ -344,7 +381,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                 strokeColor: const Color(0x00000000),
                 strokeWidth: 0,
               ),
-              // Main dot with white border
               CircleLayer(
                 points: [Point(coordinates: _userPos!)],
                 radius: 8,
