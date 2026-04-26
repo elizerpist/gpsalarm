@@ -24,6 +24,19 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
+      - name: Patch MapLibre GeoJSON tolerance
+        run: |
+          # Set tolerance: 0 on GeoJSON sources to disable Douglas-Peucker simplification.
+          # This preserves polygon circle vertices at all zoom levels.
+          CONTROLLER=$(find $HOME/.pub-cache -path '*/maplibre_gl-*/android/src/main/java/org/maplibre/maplibregl/MapLibreMapController.java' | head -1)
+          if [ -n "$CONTROLLER" ]; then
+            sed -i 's/new GeoJsonOptions().withSynchronousUpdate(dragEnabled)/new GeoJsonOptions().withSynchronousUpdate(dragEnabled).withTolerance(0.0f)/' "$CONTROLLER"
+            echo "Patched: $CONTROLLER"
+            grep -n 'withTolerance' "$CONTROLLER"
+          else
+            echo "WARNING: MapLibreMapController.java not found, skipping patch"
+          fi
+
       - name: Build APK
         run: flutter build apk --release
 
