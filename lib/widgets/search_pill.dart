@@ -59,6 +59,10 @@ class _SearchPillState extends State<SearchPill> {
                     decoration: InputDecoration(
                       hintText: tr('search_city'),
                       border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      contentPadding: EdgeInsets.zero,
+                      isDense: true,
                       hintStyle: TextStyle(color: Colors.grey[400]),
                     ),
                     onChanged: (query) => mapProv.search(query),

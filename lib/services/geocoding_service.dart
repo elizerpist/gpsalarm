@@ -36,7 +36,9 @@ class GeocodingService {
       try {
         final uri = Uri.parse(
             '$_nominatimUrl?q=${Uri.encodeComponent(query)}&format=json&limit=5&accept-language=hu');
-        final response = await http.get(uri);
+        final response = await http.get(uri, headers: {
+          'User-Agent': 'GPSAlarmApp/1.0 (contact@gpsalarm.app)',
+        });
         if (response.statusCode == 200) {
           final data = json.decode(response.body) as List;
           final results = data.map((item) {
