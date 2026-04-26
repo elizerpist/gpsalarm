@@ -140,7 +140,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   }
 
   /// Create a native GeoJSON source + CircleStyleLayer for radius circles.
-  /// Uses expression-based radius that scales smoothly with zoom via the GL renderer.
   Future<void> _initRadiusLayer(StyleController style) async {
     await style.addSource(GeoJsonSource(
       id: 'radius-src',
@@ -150,23 +149,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       id: 'radius-layer',
       sourceId: 'radius-src',
       paint: {
-        // basePx * 2^zoom — smooth exponential scaling at GL level
-        'circle-radius': [
-          '*',
-          ['get', 'basePx'],
-          ['interpolate', ['exponential', 2], ['zoom'], 0, 1, 1, 2],
-        ],
-        'circle-color': [
-          'case', ['get', 'active'],
-          'rgba(255,0,0,0.12)', 'rgba(158,158,158,0.05)',
-        ],
-        'circle-stroke-color': [
-          'case', ['get', 'active'],
-          'rgba(255,0,0,0.6)', 'rgba(158,158,158,0.3)',
-        ],
-        'circle-stroke-width': [
-          'case', ['get', 'active'], 2, 1,
-        ],
+        'circle-radius': ['get', 'r'],
+        'circle-color': ['get', 'fill'],
+        'circle-stroke-color': ['get', 'stroke'],
+        'circle-stroke-width': ['get', 'sw'],
       },
     ));
     _radiusLayerReady = true;
@@ -197,13 +183,23 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     );
   }
 
-  static Map<String, dynamic> _radiusFeature(double lng, double lat, double radiusMeters, bool active) {
-    // basePx = pixel radius at zoom 0. The GL expression multiplies by 2^zoom.
-    final basePx = radiusMeters / (156543.03392 * math.cos(lat * math.pi / 180));
+  /// Convert meters to pixels at a given latitude and current zoom.
+  double _metersToPixels(double meters, double lat) {
+    final metersPerPixel = 156543.03392 * math.cos(lat * math.pi / 180) / math.pow(2, _currentZoom);
+    return meters / metersPerPixel;
+  }
+
+  Map<String, dynamic> _radiusFeature(double lng, double lat, double radiusMeters, bool active) {
+    final r = _metersToPixels(radiusMeters, lat);
     return {
       'type': 'Feature',
       'geometry': {'type': 'Point', 'coordinates': [lng, lat]},
-      'properties': {'basePx': basePx, 'active': active},
+      'properties': {
+        'r': r.clamp(2.0, 2000.0),
+        'fill': active ? 'rgba(255,0,0,0.12)' : 'rgba(158,158,158,0.05)',
+        'stroke': active ? 'rgba(255,0,0,0.6)' : 'rgba(158,158,158,0.3)',
+        'sw': active ? 2 : 1,
+      },
     };
   }
 
@@ -350,8 +346,13 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               _onTap(event.point);
             } else if (event is MapEventLongClick) {
               _onLongPress(event.point);
-            } else if (event is MapEventCameraIdle) {
-              _currentZoom = _controller?.camera?.zoom ?? _currentZoom;
+            } else if (event is MapEventMoveCamera || event is MapEventCameraIdle) {
+              final newZoom = _controller?.camera?.zoom ?? _currentZoom;
+              if ((newZoom - _currentZoom).abs() > 0.001) {
+                _currentZoom = newZoom;
+                // Re-sync radius circles with new pixel sizes (no setState needed)
+                _syncRadiusSource(context.read<AlarmProvider>());
+              }
             }
           },
           layers: [
