@@ -36,6 +36,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   double _fastAssignRadiusMeters = 500;
   double _currentZoom = 13;
   Position? _pendingTapPoint;
+  double _pendingRadius = 500;
   Position? _userPos;
 
   static const _styleUrls = {
@@ -125,16 +126,30 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     final alarmProv = context.read<AlarmProvider>();
     final existing = alarmProv.findNearby(lat, lng);
     if (existing != null) {
+      setState(() {
+        _pendingTapPoint = position;
+        _pendingRadius = existing.radiusMeters;
+      });
       showModalBottomSheet(
         context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
         builder: (_) => RadiusPopup(
-          latitude: existing.latitude, longitude: existing.longitude, existingPoint: existing),
-      );
+          latitude: existing.latitude, longitude: existing.longitude, existingPoint: existing,
+          onRadiusChanged: (v) { if (mounted) setState(() => _pendingRadius = v); },
+        ),
+      ).whenComplete(() {
+        if (mounted) setState(() => _pendingTapPoint = null);
+      });
     } else {
-      setState(() => _pendingTapPoint = position);
+      setState(() {
+        _pendingTapPoint = position;
+        _pendingRadius = 500;
+      });
       showModalBottomSheet(
         context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
-        builder: (_) => RadiusPopup(latitude: lat, longitude: lng),
+        builder: (_) => RadiusPopup(
+          latitude: lat, longitude: lng,
+          onRadiusChanged: (v) { if (mounted) setState(() => _pendingRadius = v); },
+        ),
       ).whenComplete(() {
         if (mounted) setState(() => _pendingTapPoint = null);
       });
@@ -246,8 +261,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               _onTap(event.point);
             } else if (event is MapEventLongClick) {
               _onLongPress(event.point);
-            } else if (event is MapEventCameraIdle) {
-              _currentZoom = _controller?.camera?.zoom ?? _currentZoom;
+            } else if (event is MapEventMoveCamera || event is MapEventCameraIdle) {
+              final newZoom = _controller?.camera?.zoom ?? _currentZoom;
+              if ((newZoom - _currentZoom).abs() > 0.01) {
+                setState(() => _currentZoom = newZoom);
+              }
             }
           },
           layers: const [],
@@ -268,6 +286,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                 ...alarmProv.alarmPoints.map((p) => _buildRadiusMarker(p.latitude, p.longitude, p.radiusMeters, p.isActive)),
                 if (_isFastAssigning)
                   _buildRadiusMarker(_fastAssignLat, _fastAssignLng, _fastAssignRadiusMeters, true),
+                if (_pendingTapPoint != null)
+                  _buildRadiusMarker(_pendingTapPoint!.lat.toDouble(), _pendingTapPoint!.lng.toDouble(), _pendingRadius, true),
               ],
             ),
             // User location as widget pin

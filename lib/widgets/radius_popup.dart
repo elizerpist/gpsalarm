@@ -9,12 +9,14 @@ class RadiusPopup extends StatefulWidget {
   final double latitude;
   final double longitude;
   final AlarmPoint? existingPoint;
+  final ValueChanged<double>? onRadiusChanged;
 
   const RadiusPopup({
     super.key,
     required this.latitude,
     required this.longitude,
     this.existingPoint,
+    this.onRadiusChanged,
   });
 
   @override
@@ -148,7 +150,10 @@ class _RadiusPopupState extends State<RadiusPopup> {
                       max: 5000,
                       divisions: 49,
                       label: '${_radiusMeters.round()}m',
-                      onChanged: (v) => setState(() => _radiusMeters = v),
+                      onChanged: (v) {
+                        setState(() => _radiusMeters = v);
+                        widget.onRadiusChanged?.call(v);
+                      },
                     ),
                   ),
                   SizedBox(
