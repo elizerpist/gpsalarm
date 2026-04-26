@@ -228,7 +228,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             if (markerPoints.isNotEmpty)
               MarkerLayer(
                 points: markerPoints,
-                iconSize: 0.1,
+                iconSize: 1.0,
               ),
           ],
         ),
