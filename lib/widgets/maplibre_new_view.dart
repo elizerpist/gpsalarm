@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:maplibre/maplibre.dart';
 import 'package:provider/provider.dart';
@@ -10,8 +12,8 @@ import '../providers/alarm_provider.dart';
 import '../providers/map_provider.dart';
 import '../providers/settings_provider.dart';
 import '../widgets/map_controls.dart';
-import '../widgets/radius_popup.dart';
 import '../widgets/search_pill.dart';
+import '../widgets/radius_popup.dart';
 import '../widgets/offline_indicator.dart';
 import '../services/geocoding_service.dart';
 import '../services/location_service.dart';
@@ -34,7 +36,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   double _fastAssignLng = 0;
   double _fastAssignRadiusMeters = 500;
   double _currentZoom = 13;
-  LatLng? _pendingTapPoint;
+  _LatLng? _pendingTapPoint;
+  _LatLng? _userPos;
+  bool _imagesLoaded = false;
 
   static const _styleUrls = {
     'liberty': 'https://tiles.openfreemap.org/styles/liberty',
@@ -53,6 +57,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     if (hasPermission) {
       final pos = await _locationService.getCurrentPosition();
       if (pos != null && mounted) {
+        setState(() => _userPos = _LatLng(pos.latitude, pos.longitude));
         _controller?.moveCamera(
           center: Position(pos.longitude, pos.latitude),
           zoom: 14,
@@ -60,6 +65,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       }
       _locationService.startTracking(onPosition: (position) {
         if (!mounted) return;
+        setState(() => _userPos = _LatLng(position.latitude, position.longitude));
         _checkAlarms(position.latitude, position.longitude);
       });
     }
@@ -101,6 +107,39 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     DebugConsole.log('MapLibre (new) map created');
   }
 
+  void _onStyleLoaded() async {
+    if (_controller == null || _imagesLoaded) return;
+    // Register marker images
+    try {
+      await _addMarkerImage('pin-red', Colors.red);
+      await _addMarkerImage('pin-orange', Colors.orange);
+      await _addMarkerImage('pin-blue', Colors.blue);
+      _imagesLoaded = true;
+      DebugConsole.log('Marker images loaded');
+    } catch (e) {
+      DebugConsole.log('Failed to load marker images: $e');
+    }
+  }
+
+  Future<void> _addMarkerImage(String id, Color color) async {
+    // Create a simple colored circle as marker image
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    final paint = Paint()..color = color;
+    canvas.drawCircle(const Offset(16, 16), 12, paint);
+    final borderPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3;
+    canvas.drawCircle(const Offset(16, 16), 12, borderPaint);
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(32, 32);
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    if (byteData != null) {
+      await _controller?.addImage(id, byteData.buffer.asUint8List());
+    }
+  }
+
   void _onTap(Position position) {
     if (_isFastAssigning) return;
     final lat = position.lat.toDouble();
@@ -114,7 +153,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
           latitude: existing.latitude, longitude: existing.longitude, existingPoint: existing),
       );
     } else {
-      setState(() => _pendingTapPoint = LatLng(lat, lng));
+      setState(() => _pendingTapPoint = _LatLng(lat, lng));
       showModalBottomSheet(
         context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
         builder: (_) => RadiusPopup(latitude: lat, longitude: lng),
@@ -153,10 +192,73 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     _cancelFastAssign();
   }
 
+  // Build GeoJSON annotation layers
+  List<AnnotationLayer> _buildAnnotationLayers() {
+    final alarmProv = context.watch<AlarmProvider>();
+    final layers = <AnnotationLayer>[];
+
+    // Alarm radius circles
+    for (final point in alarmProv.alarmPoints) {
+      layers.add(CircleAnnotation(
+        point: Position(point.longitude, point.latitude),
+        color: point.isActive ? Colors.red.withOpacity(0.12) : Colors.grey.withOpacity(0.05),
+        radius: point.radiusMeters / 10, // approximate visual size
+        strokeColor: point.isActive ? Colors.red.withOpacity(0.6) : Colors.grey.withOpacity(0.3),
+        strokeWidth: point.isActive ? 2 : 1,
+      ));
+    }
+
+    // Alarm markers
+    for (final point in alarmProv.alarmPoints) {
+      layers.add(MarkerAnnotation(
+        point: Position(point.longitude, point.latitude),
+        textField: point.name ?? '',
+        textSize: 10,
+        textOffset: const [0, 1.5],
+      ));
+    }
+
+    // Pending tap pin
+    if (_pendingTapPoint != null) {
+      layers.add(MarkerAnnotation(
+        point: Position(_pendingTapPoint!.longitude, _pendingTapPoint!.latitude),
+      ));
+    }
+
+    // Fast assign pin
+    if (_isFastAssigning) {
+      layers.add(CircleAnnotation(
+        point: Position(_fastAssignLng, _fastAssignLat),
+        color: Colors.orange.withOpacity(0.15),
+        radius: _fastAssignRadiusMeters / 10,
+        strokeColor: Colors.orange.withOpacity(0.7),
+        strokeWidth: 3,
+      ));
+      layers.add(MarkerAnnotation(
+        point: Position(_fastAssignLng, _fastAssignLat),
+      ));
+    }
+
+    // User position
+    if (_userPos != null) {
+      layers.add(CircleAnnotation(
+        point: Position(_userPos!.longitude, _userPos!.latitude),
+        color: const Color(0xFF2196F3),
+        radius: 8,
+        strokeColor: Colors.white,
+        strokeWidth: 3,
+      ));
+    }
+
+    return layers;
+  }
+
   @override
   Widget build(BuildContext context) {
     final styleUrl = context.select<SettingsProvider, String>(
         (p) => _styleUrls[p.settings.vectorStyleUrl] ?? _styleUrls['liberty']!);
+    // Watch alarm provider to rebuild annotations
+    context.watch<AlarmProvider>();
 
     return Stack(
       children: [
@@ -173,35 +275,14 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               _onTap(event.point);
             } else if (event is MapEventLongClick) {
               _onLongPress(event.point);
+            } else if (event is MapEventStyleLoaded) {
+              _onStyleLoaded();
+            } else if (event is MapEventCameraIdle) {
+              _currentZoom = _controller?.camera?.zoom ?? _currentZoom;
             }
           },
+          layers: _buildAnnotationLayers(),
         ),
-        // Pending tap pin overlay
-        if (_pendingTapPoint != null)
-          Positioned(
-            top: 0, left: 0, right: 0, bottom: 0,
-            child: IgnorePointer(
-              child: Center(
-                child: Transform.translate(
-                  offset: const Offset(0, -20),
-                  child: const Icon(Icons.location_on, color: Colors.red, size: 40),
-                ),
-              ),
-            ),
-          ),
-        // Fast assign pin overlay
-        if (_isFastAssigning)
-          Positioned(
-            top: 0, left: 0, right: 0, bottom: 0,
-            child: IgnorePointer(
-              child: Center(
-                child: Transform.translate(
-                  offset: const Offset(0, -20),
-                  child: const Icon(Icons.location_on, color: Colors.orange, size: 40),
-                ),
-              ),
-            ),
-          ),
         const OfflineIndicator(),
         if (!_isFastAssigning)
           Selector<MapProvider, bool>(
@@ -213,17 +294,16 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               onSearchTap: () => context.read<MapProvider>().toggleSearch(),
               searchActive: searchActive,
               onMyLocation: () async {
-              final pos = await _locationService.getCurrentPosition();
-              if (pos != null) {
-                _controller?.moveCamera(
-                  center: Position(pos.longitude, pos.latitude),
-                  zoom: 15,
-                );
-              }
-            },
+                final pos = await _locationService.getCurrentPosition();
+                if (pos != null) {
+                  _controller?.moveCamera(
+                    center: Position(pos.longitude, pos.latitude),
+                    zoom: 15,
+                  );
+                }
+              },
+            ),
           ),
-          ),
-        // Search pill
         if (!_isFastAssigning)
           Selector<MapProvider, bool>(
             selector: (_, p) => p.searchActive,
@@ -275,9 +355,44 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   }
 }
 
-// Helper class for tap position
-class LatLng {
+class _LatLng {
   final double latitude;
   final double longitude;
-  const LatLng(this.latitude, this.longitude);
+  const _LatLng(this.latitude, this.longitude);
+}
+
+// Annotation layer helpers — these map to maplibre's layer system
+// The maplibre ^0.2.0 package may use different class names;
+// these are abstractions that will be adapted to the actual API
+
+abstract class AnnotationLayer {}
+
+class CircleAnnotation extends AnnotationLayer {
+  final Position point;
+  final Color color;
+  final double radius;
+  final Color strokeColor;
+  final double strokeWidth;
+
+  CircleAnnotation({
+    required this.point,
+    required this.color,
+    required this.radius,
+    this.strokeColor = Colors.transparent,
+    this.strokeWidth = 0,
+  });
+}
+
+class MarkerAnnotation extends AnnotationLayer {
+  final Position point;
+  final String? textField;
+  final double? textSize;
+  final List<double>? textOffset;
+
+  MarkerAnnotation({
+    required this.point,
+    this.textField,
+    this.textSize,
+    this.textOffset,
+  });
 }
