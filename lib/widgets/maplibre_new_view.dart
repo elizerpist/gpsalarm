@@ -143,10 +143,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   /// Uses 256-segment geo-referenced polygons. No stroke line — translucent
   /// fill edges are much less visible than solid stroke polygon edges.
   Future<void> _initRadiusLayer(StyleController style) async {
+    // maxZoom: 2 → tiles generated at low zoom = circle is LARGE in tile
+    // units = Douglas-Peucker removes far fewer points = rounder circles.
     await style.addSource(GeoJsonSource(
       id: 'radius-src',
       data: '{"type":"FeatureCollection","features":[]}',
-      maxZoom: 22,
+      maxZoom: 2,
     ));
     await style.addLayer(FillStyleLayer(
       id: 'radius-fill',
@@ -156,8 +158,16 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
         'fill-opacity': ['get', 'fo'],
       },
     ));
+    await style.addLayer(LineStyleLayer(
+      id: 'radius-stroke',
+      sourceId: 'radius-src',
+      paint: {
+        'line-color': ['get', 'stroke'],
+        'line-width': ['get', 'sw'],
+      },
+    ));
     _radiusLayerReady = true;
-    DebugConsole.log('VECTOR: radius fill layer created');
+    DebugConsole.log('VECTOR: radius layers created (maxZoom:2)');
   }
 
   /// Sync alarm radius circles to the native GeoJSON source.
@@ -193,7 +203,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       },
       'properties': {
         'fill': active ? '#FF0000' : '#9E9E9E',
-        'fo': active ? 0.15 : 0.08,
+        'fo': active ? 0.12 : 0.05,
+        'stroke': active ? 'rgba(255,0,0,0.6)' : 'rgba(158,158,158,0.3)',
+        'sw': active ? 2.0 : 1.0,
       },
     };
   }
