@@ -79,8 +79,6 @@ class _RadiusPopupState extends State<RadiusPopup> {
               controller: _nameController,
               decoration: InputDecoration(
                 labelText: tr('name_optional'),
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10)),
               ),
             ),
             const SizedBox(height: 16),
@@ -185,9 +183,6 @@ class _RadiusPopupState extends State<RadiusPopup> {
                       style: const TextStyle(color: Colors.red)),
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: Colors.red),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
-                    padding: const EdgeInsets.symmetric(vertical: 10),
                   ),
                 ),
               ),
@@ -198,11 +193,6 @@ class _RadiusPopupState extends State<RadiusPopup> {
                 Expanded(
                   child: OutlinedButton(
                     onPressed: () => Navigator.pop(context),
-                    style: OutlinedButton.styleFrom(
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
                     child: Text(tr('cancel')),
                   ),
                 ),
@@ -210,11 +200,6 @@ class _RadiusPopupState extends State<RadiusPopup> {
                 Expanded(
                   child: FilledButton(
                     onPressed: () => _save(context),
-                    style: FilledButton.styleFrom(
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
                     child: Text(tr('save')),
                   ),
                 ),

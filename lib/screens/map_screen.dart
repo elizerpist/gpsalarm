@@ -276,8 +276,8 @@ class _MapScreenState extends State<MapScreen> {
                         point: _fastAssignCenter!,
                         radius: _fastAssignRadiusMeters,
                         useRadiusInMeter: true,
-                        color: Colors.orange.withOpacity(0.15),
-                        borderColor: Colors.orange.withOpacity(0.7),
+                        color: Colors.red.withOpacity(0.15),
+                        borderColor: Colors.red.withOpacity(0.7),
                         borderStrokeWidth: 3,
                       ),
                   ],
@@ -312,7 +312,7 @@ class _MapScreenState extends State<MapScreen> {
                           width: 40,
                           height: 40,
                           child: const Icon(Icons.location_on,
-                              color: Colors.orange, size: 32),
+                              color: Colors.red, size: 32),
                         ),
                     ],
                   ),
@@ -415,7 +415,7 @@ class _MapScreenState extends State<MapScreen> {
             Row(
               children: [
                 const Icon(Icons.location_on,
-                    color: Colors.orange, size: 28),
+                    color: Colors.red, size: 28),
                 const SizedBox(width: 8),
                 const Expanded(
                   child: Text('Fast Assign',
@@ -427,7 +427,7 @@ class _MapScreenState extends State<MapScreen> {
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
-                    color: Colors.orange[700],
+                    color: Colors.red[700],
                   ),
                 ),
               ],
@@ -438,7 +438,7 @@ class _MapScreenState extends State<MapScreen> {
               min: 100,
               max: 5000,
               divisions: 49,
-              activeColor: Colors.orange,
+              activeColor: Colors.red,
               label: '${_fastAssignRadiusMeters.round()}m',
               onChanged: (v) =>
                   setState(() => _fastAssignRadiusMeters = v),
@@ -460,11 +460,6 @@ class _MapScreenState extends State<MapScreen> {
                 Expanded(
                   child: OutlinedButton(
                     onPressed: _cancelFastAssign,
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10)),
-                    ),
                     child: Text(tr('cancel')),
                   ),
                 ),
@@ -472,12 +467,7 @@ class _MapScreenState extends State<MapScreen> {
                 Expanded(
                   child: FilledButton(
                     onPressed: _confirmFastAssign,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: Colors.orange,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10)),
-                    ),
+                    // Uses global theme (light blue #3FA2FF)
                     child: Text(tr('save')),
                   ),
                 ),

@@ -291,7 +291,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             const Positioned(
               top: 0, left: 0, right: 0, bottom: 0,
               child: Center(
-                child: Icon(Icons.location_on, color: Colors.orange, size: 40),
+                child: Icon(Icons.location_on, color: Colors.red, size: 40),
               ),
             ),
         ],
@@ -311,21 +311,21 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
         ),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Row(children: [
-            const Icon(Icons.location_on, color: Colors.orange, size: 28),
+            const Icon(Icons.location_on, color: Colors.red, size: 28),
             const SizedBox(width: 8),
             const Expanded(child: Text('Fast Assign', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
             Text('${_fastAssignRadiusMeters.round()}m',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.orange[700])),
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.red[700])),
           ]),
           const SizedBox(height: 12),
-          Slider(value: _fastAssignRadiusMeters, min: 100, max: 5000, divisions: 49, activeColor: Colors.orange,
+          Slider(value: _fastAssignRadiusMeters, min: 100, max: 5000, divisions: 49, activeColor: Colors.red,
             onChanged: (v) => setState(() => _fastAssignRadiusMeters = v)),
           const SizedBox(height: 16),
           Row(children: [
             Expanded(child: OutlinedButton(onPressed: _cancelFastAssign, child: Text(tr('cancel')))),
             const SizedBox(width: 8),
             Expanded(child: FilledButton(onPressed: _confirmFastAssign,
-              style: FilledButton.styleFrom(backgroundColor: Colors.orange), child: Text(tr('save')))),
+              child: Text(tr('save')))),
           ]),
         ]),
       ),
