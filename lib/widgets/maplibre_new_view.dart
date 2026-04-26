@@ -178,27 +178,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   }
 
   Future<void> _rebuildRadiusLayers(StyleController style, List<({String id, double lng, double lat, double radiusMeters, bool active})> circles, int version) async {
-    // Remove old radius layers and sources
-    final layerIds = await style.getLayerIds();
-    for (final lid in layerIds) {
-      if (lid.startsWith('radius-circle-') || lid.startsWith('radius-fill-')) {
-        try { await style.removeLayer(lid); } catch (_) {}
-      }
+    // Remove old radius layers and sources (try/catch — may not exist)
+    final ids = ['fast', 'pending', ...List.generate(20, (i) => 'alarm-$i')];
+    for (final id in ids) {
+      try { await style.removeLayer('radius-circle-$id'); } catch (_) {}
+      try { await style.removeSource('radius-pt-$id'); } catch (_) {}
     }
-    // Remove old sources
-    for (final c in circles) {
-      try { await style.removeSource('radius-pt-${c.id}'); } catch (_) {}
-      try { await style.removeSource('radius-pg-${c.id}'); } catch (_) {}
-    }
-    // Also clean up stale sources from previous versions
-    for (int i = 0; i < 20; i++) {
-      try { await style.removeSource('radius-pt-alarm-$i'); } catch (_) {}
-      try { await style.removeSource('radius-pg-alarm-$i'); } catch (_) {}
-    }
-    try { await style.removeSource('radius-pt-fast'); } catch (_) {}
-    try { await style.removeSource('radius-pt-pending'); } catch (_) {}
-    try { await style.removeSource('radius-pg-fast'); } catch (_) {}
-    try { await style.removeSource('radius-pg-pending'); } catch (_) {}
 
     if (version != _radiusLayerVersion) return; // stale
 
