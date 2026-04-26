@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:maplibre/maplibre.dart';
 import 'package:provider/provider.dart';
@@ -34,10 +36,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   bool _isFastAssigning = false;
   double _fastAssignLat = 0;
   double _fastAssignLng = 0;
-  double _fastAssignRadiusMeters = 500;
+  final ValueNotifier<double> _fastAssignRadius = ValueNotifier(500);
   double _currentZoom = 13;
   Position? _pendingTapPoint;
-  double _pendingRadius = 500;
+  final ValueNotifier<double> _pendingRadius = ValueNotifier(500);
   Position? _userPos;
 
   static const _styleUrls = {
@@ -110,6 +112,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   @override
   void dispose() {
     _locationService.dispose();
+    _fastAssignRadius.dispose();
+    _pendingRadius.dispose();
     super.dispose();
   }
 
@@ -122,24 +126,40 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   Future<void> _registerImages(StyleController style) async {
     if (_imagesRegistered) return;
     try {
-      await style.addImageFromIconData(
-        id: 'pin-red', iconData: Icons.location_on,
-        size: 160, color: const Color(0xFFFF0000),
-      );
-      await style.addImageFromIconData(
-        id: 'pin-grey', iconData: Icons.location_on,
-        size: 160, color: const Color(0xFF9E9E9E),
-      );
-      await style.addImageFromIconData(
-        id: 'dot-blue', iconData: Icons.circle,
-        size: 64, color: const Color(0xFF2196F3),
-      );
+      final redPin = await _renderIconToPng(Icons.location_on, const Color(0xFFFF0000), 160);
+      final greyPin = await _renderIconToPng(Icons.location_on, const Color(0xFF9E9E9E), 160);
+      final blueDot = await _renderIconToPng(Icons.circle, const Color(0xFF2196F3), 64);
+      await style.addImage('pin-red', redPin);
+      await style.addImage('pin-grey', greyPin);
+      await style.addImage('dot-blue', blueDot);
       _imagesRegistered = true;
       if (mounted) setState(() {});
       DebugConsole.log('VECTOR: images registered (pin-red, pin-grey, dot-blue)');
     } catch (e) {
       DebugConsole.log('VECTOR: addImage error: $e');
     }
+  }
+
+  /// Render a Material icon to PNG bytes using PictureRecorder.
+  static Future<Uint8List> _renderIconToPng(IconData icon, Color color, int size) async {
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, size.toDouble(), size.toDouble()));
+    final textPainter = TextPainter(textDirection: TextDirection.ltr);
+    textPainter.text = TextSpan(
+      text: String.fromCharCode(icon.codePoint),
+      style: TextStyle(
+        fontSize: size.toDouble(),
+        fontFamily: icon.fontFamily,
+        package: icon.fontPackage,
+        color: color,
+      ),
+    );
+    textPainter.layout();
+    textPainter.paint(canvas, Offset.zero);
+    final picture = recorder.endRecording();
+    final img = await picture.toImage(size, size);
+    final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
+    return byteData!.buffer.asUint8List();
   }
 
   void _onTap(Position position) {
@@ -150,29 +170,25 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     final alarmProv = context.read<AlarmProvider>();
     final existing = alarmProv.findNearby(lat, lng);
     if (existing != null) {
-      setState(() {
-        _pendingTapPoint = position;
-        _pendingRadius = existing.radiusMeters;
-      });
+      _pendingRadius.value = existing.radiusMeters;
+      setState(() => _pendingTapPoint = position);
       showModalBottomSheet(
         context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
         builder: (_) => RadiusPopup(
           latitude: existing.latitude, longitude: existing.longitude, existingPoint: existing,
-          onRadiusChanged: (v) { if (mounted) setState(() => _pendingRadius = v); },
+          onRadiusChanged: (v) { if (mounted) _pendingRadius.value = v; },
         ),
       ).whenComplete(() {
         if (mounted) setState(() => _pendingTapPoint = null);
       });
     } else {
-      setState(() {
-        _pendingTapPoint = position;
-        _pendingRadius = 500;
-      });
+      _pendingRadius.value = 500;
+      setState(() => _pendingTapPoint = position);
       showModalBottomSheet(
         context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
         builder: (_) => RadiusPopup(
           latitude: lat, longitude: lng,
-          onRadiusChanged: (v) { if (mounted) setState(() => _pendingRadius = v); },
+          onRadiusChanged: (v) { if (mounted) _pendingRadius.value = v; },
         ),
       ).whenComplete(() {
         if (mounted) setState(() => _pendingTapPoint = null);
@@ -184,11 +200,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     DebugConsole.log('VECTOR LONG PRESS: lat=${position.lat}, lng=${position.lng}');
     final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
     if (haptic) Vibration.vibrate(duration: 30);
+    _fastAssignRadius.value = 500;
     setState(() {
       _isFastAssigning = true;
       _fastAssignLat = position.lat.toDouble();
       _fastAssignLng = position.lng.toDouble();
-      _fastAssignRadiusMeters = 500;
     });
   }
 
@@ -201,7 +217,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
         id: const Uuid().v4(),
         latitude: _fastAssignLat,
         longitude: _fastAssignLng,
-        radiusMeters: _fastAssignRadiusMeters,
+        radiusMeters: _fastAssignRadius.value,
         triggerType: TriggerType.distance,
       ));
     }
@@ -238,26 +254,31 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     );
   }
 
-  // Build marker points list for the MarkerLayer
-  List<Point> _buildMarkerPoints(AlarmProvider alarmProv) {
-    final points = <Point>[];
+  // Build separate marker point lists for active (red) and inactive (grey) pins
+  ({List<Point> active, List<Point> inactive}) _buildMarkerPoints(AlarmProvider alarmProv) {
+    final active = <Point>[];
+    final inactive = <Point>[];
 
-    // Alarm points
     for (final p in alarmProv.alarmPoints) {
-      points.add(Point(coordinates: Position(p.longitude, p.latitude)));
+      final point = Point(coordinates: Position(p.longitude, p.latitude));
+      if (p.isActive) {
+        active.add(point);
+      } else {
+        inactive.add(point);
+      }
     }
 
-    // Pending tap point
+    // Pending tap point — always red
     if (_pendingTapPoint != null) {
-      points.add(Point(coordinates: _pendingTapPoint!));
+      active.add(Point(coordinates: _pendingTapPoint!));
     }
 
-    // Fast assign point
+    // Fast assign point — always red
     if (_isFastAssigning) {
-      points.add(Point(coordinates: Position(_fastAssignLng, _fastAssignLat)));
+      active.add(Point(coordinates: Position(_fastAssignLng, _fastAssignLat)));
     }
 
-    return points;
+    return (active: active, inactive: inactive);
   }
 
 
@@ -267,8 +288,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
         (p) => _styleUrls[p.settings.vectorStyleUrl] ?? _styleUrls['liberty']!);
     final alarmProv = context.watch<AlarmProvider>();
 
-    final markerPoints = _buildMarkerPoints(alarmProv);
-    DebugConsole.log('VECTOR build: ${markerPoints.length} markers, style=$styleUrl');
+    final markers = _buildMarkerPoints(alarmProv);
+    DebugConsole.log('VECTOR build: ${markers.active.length} active + ${markers.inactive.length} inactive markers, style=$styleUrl');
 
     return Stack(
       children: [
@@ -294,12 +315,21 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             }
           },
           layers: [
-            // Native pin markers — lag-free, geo-anchored
-            if (_imagesRegistered && markerPoints.isNotEmpty)
+            // Active alarm pins — red
+            if (_imagesRegistered && markers.active.isNotEmpty)
               MarkerLayer(
-                points: markerPoints,
+                points: markers.active,
                 iconImage: 'pin-red',
                 iconSize: 0.4,
+                iconAnchor: IconAnchor.bottom,
+                iconAllowOverlap: true,
+              ),
+            // Inactive alarm pins — grey
+            if (_imagesRegistered && markers.inactive.isNotEmpty)
+              MarkerLayer(
+                points: markers.inactive,
+                iconImage: 'pin-grey',
+                iconSize: 0.35,
                 iconAnchor: IconAnchor.bottom,
                 iconAllowOverlap: true,
               ),
@@ -314,15 +344,18 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               ),
           ],
           children: [
-            // Radius circles — WidgetLayer (no native meter-based circle)
-            WidgetLayer(
-              markers: [
-                ...alarmProv.alarmPoints.map((p) => _buildRadiusMarker(p.latitude, p.longitude, p.radiusMeters, p.isActive)),
-                if (_isFastAssigning)
-                  _buildRadiusMarker(_fastAssignLat, _fastAssignLng, _fastAssignRadiusMeters, true),
-                if (_pendingTapPoint != null)
-                  _buildRadiusMarker(_pendingTapPoint!.lat.toDouble(), _pendingTapPoint!.lng.toDouble(), _pendingRadius, true),
-              ],
+            // Radius circles — WidgetLayer, rebuilt only on radius notifier changes
+            ListenableBuilder(
+              listenable: Listenable.merge([_fastAssignRadius, _pendingRadius]),
+              builder: (_, __) => WidgetLayer(
+                markers: [
+                  ...alarmProv.alarmPoints.map((p) => _buildRadiusMarker(p.latitude, p.longitude, p.radiusMeters, p.isActive)),
+                  if (_isFastAssigning)
+                    _buildRadiusMarker(_fastAssignLat, _fastAssignLng, _fastAssignRadius.value, true),
+                  if (_pendingTapPoint != null)
+                    _buildRadiusMarker(_pendingTapPoint!.lat.toDouble(), _pendingTapPoint!.lng.toDouble(), _pendingRadius.value, true),
+                ],
+              ),
             ),
           ],
         ),
@@ -381,8 +414,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
           Positioned(
             bottom: 0, left: 0, right: 0,
             child: _VectorFastAssignCard(
-              initialRadius: _fastAssignRadiusMeters,
-              onRadiusChanged: (v) => setState(() => _fastAssignRadiusMeters = v),
+              initialRadius: _fastAssignRadius.value,
+              onRadiusChanged: (v) => _fastAssignRadius.value = v,
               onSave: _confirmFastAssign,
               onCancel: _cancelFastAssign,
             ),
