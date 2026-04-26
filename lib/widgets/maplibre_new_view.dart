@@ -298,34 +298,95 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
         if (_isFastAssigning)
           Positioned(
             bottom: 0, left: 0, right: 0,
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-              decoration: BoxDecoration(
-                color: Theme.of(context).brightness == Brightness.dark ? const Color(0xFF1a1a2e) : Colors.white,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 20)],
-              ),
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Row(children: [
-                  const Icon(Icons.location_on, color: Colors.red, size: 28),
-                  const SizedBox(width: 8),
-                  const Expanded(child: Text('Fast Assign', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
-                  Text('${_fastAssignRadiusMeters.round()}m',
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.red[700])),
-                ]),
-                const SizedBox(height: 12),
-                Slider(value: _fastAssignRadiusMeters, min: 100, max: 5000, divisions: 49, activeColor: Colors.red,
-                  onChanged: (v) => setState(() => _fastAssignRadiusMeters = v)),
-                const SizedBox(height: 16),
-                Row(children: [
-                  Expanded(child: OutlinedButton(onPressed: _cancelFastAssign, child: Text(tr('cancel')))),
-                  const SizedBox(width: 8),
-                  Expanded(child: FilledButton(onPressed: _confirmFastAssign, child: Text(tr('save')))),
-                ]),
-              ]),
+            child: _VectorFastAssignCard(
+              initialRadius: _fastAssignRadiusMeters,
+              onRadiusChanged: (v) => setState(() => _fastAssignRadiusMeters = v),
+              onSave: _confirmFastAssign,
+              onCancel: _cancelFastAssign,
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Vector map fast assign card — own state to avoid parent rebuild on slider drag.
+class _VectorFastAssignCard extends StatefulWidget {
+  final double initialRadius;
+  final ValueChanged<double> onRadiusChanged;
+  final VoidCallback onSave;
+  final VoidCallback onCancel;
+
+  const _VectorFastAssignCard({
+    required this.initialRadius,
+    required this.onRadiusChanged,
+    required this.onSave,
+    required this.onCancel,
+  });
+
+  @override
+  State<_VectorFastAssignCard> createState() => _VectorFastAssignCardState();
+}
+
+class _VectorFastAssignCardState extends State<_VectorFastAssignCard> {
+  late double _radius;
+
+  @override
+  void initState() {
+    super.initState();
+    _radius = widget.initialRadius;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bottomPad = MediaQuery.of(context).padding.bottom;
+
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + bottomPad),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1a1a2e) : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 20, offset: const Offset(0, -4))],
+        ),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Row(children: [
+            const Icon(Icons.location_on, color: Colors.red, size: 28),
+            const SizedBox(width: 8),
+            const Expanded(child: Text('Fast Assign',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+            Text('${_radius.round()}m',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.red[700])),
+          ]),
+          const SizedBox(height: 8),
+          Slider(
+            value: _radius, min: 100, max: 5000, divisions: 49,
+            activeColor: Colors.red,
+            onChanged: (v) {
+              setState(() => _radius = v);
+              widget.onRadiusChanged(v);
+            },
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('100m', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+                Text('5km', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(child: OutlinedButton(onPressed: widget.onCancel, child: Text(tr('cancel')))),
+            const SizedBox(width: 8),
+            Expanded(child: FilledButton(onPressed: widget.onSave, child: Text(tr('save')))),
+          ]),
+        ]),
+      ),
     );
   }
 }

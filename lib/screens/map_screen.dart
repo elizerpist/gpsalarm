@@ -376,8 +376,17 @@ class _MapScreenState extends State<MapScreen> {
                     )
                   : const SizedBox.shrink(),
             ),
-          // Fast assign overlay
-          // Fast assign sheet is shown via showModalBottomSheet
+          // Fast assign card — Positioned overlay, does NOT block map gestures
+          if (_isFastAssigning)
+            Positioned(
+              bottom: 0, left: 0, right: 0,
+              child: _FastAssignCard(
+                initialRadius: _fastAssignRadiusMeters,
+                onRadiusChanged: (v) => setState(() => _fastAssignRadiusMeters = v),
+                onSave: _saveFastAssign,
+                onCancel: _cancelFastAssign,
+              ),
+            ),
         ],
       ),
       drawer: const SettingsDrawer(),
@@ -481,59 +490,40 @@ class _MapScreenState extends State<MapScreen> {
       _fastAssignRadiusMeters = 200;
       _fastAssignStartOffset = screenOffset;
     });
-    // Show bottom sheet after setState so circle appears on map
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_isFastAssigning || !mounted) return;
-      _showFastAssignSheet();
-    });
   }
 
-  PersistentBottomSheetController? _fastAssignSheetController;
+  void _saveFastAssign(String? name, TriggerType triggerType, ZoneTrigger zoneTrigger, int timeMinutes) {
+    if (_fastAssignCenter == null) return;
+    final alarmProv = context.read<AlarmProvider>();
+    if (alarmProv.canAddAlarm) {
+      alarmProv.addAlarmPoint(AlarmPoint(
+        id: const Uuid().v4(),
+        name: name,
+        latitude: _fastAssignCenter!.latitude,
+        longitude: _fastAssignCenter!.longitude,
+        radiusMeters: triggerType == TriggerType.distance ? _fastAssignRadiusMeters : 0,
+        triggerType: triggerType,
+        zoneTrigger: zoneTrigger,
+        timeTrigger: triggerType == TriggerType.time ? Duration(minutes: timeMinutes) : null,
+      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(tr('fast_alarm', args: [_fastAssignRadiusMeters.round().toString()]))),
+      );
+    }
+    _cancelFastAssign();
+  }
 
-  void _showFastAssignSheet() {
-    _fastAssignSheetController = _scaffoldKey.currentState?.showBottomSheet(
-      (_) => _FastAssignSheet(
-        initialRadius: _fastAssignRadiusMeters,
-        onRadiusChanged: (v) => setState(() => _fastAssignRadiusMeters = v),
-        onSave: (name, triggerType, zoneTrigger, timeMinutes) {
-          if (_fastAssignCenter == null) return;
-          final alarmProv = context.read<AlarmProvider>();
-          if (alarmProv.canAddAlarm) {
-            alarmProv.addAlarmPoint(AlarmPoint(
-              id: const Uuid().v4(),
-              name: name,
-              latitude: _fastAssignCenter!.latitude,
-              longitude: _fastAssignCenter!.longitude,
-              radiusMeters: triggerType == TriggerType.distance ? _fastAssignRadiusMeters : 0,
-              triggerType: triggerType,
-              zoneTrigger: zoneTrigger,
-              timeTrigger: triggerType == TriggerType.time ? Duration(minutes: timeMinutes) : null,
-            ));
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(tr('fast_alarm', args: [_fastAssignRadiusMeters.round().toString()]))),
-            );
-          }
-          _fastAssignSheetController?.close();
-        },
-        onCancel: () => _fastAssignSheetController?.close(),
-      ),
-      backgroundColor: Colors.transparent,
-      elevation: 0,
-    );
-    _fastAssignSheetController?.closed.then((_) {
-      if (mounted) {
-        setState(() {
-          _isFastAssigning = false;
-          _fastAssignCenter = null;
-          _fastAssignRadiusMeters = 500;
-          _fastAssignStartOffset = null;
-          _longPressTriggered = false;
-          _pointerDownPos = null;
-          _activePointers = 0;
-        });
-        DebugConsole.log('Fast assign sheet closed, state reset');
-      }
+  void _cancelFastAssign() {
+    setState(() {
+      _isFastAssigning = false;
+      _fastAssignCenter = null;
+      _fastAssignRadiusMeters = 500;
+      _fastAssignStartOffset = null;
+      _longPressTriggered = false;
+      _pointerDownPos = null;
+      _activePointers = 0;
     });
+    DebugConsole.log('Fast assign closed, state reset');
   }
 
 
@@ -603,14 +593,16 @@ class _MapScreenState extends State<MapScreen> {
   }
 }
 
-/// Draggable bottom sheet for fast assign — behaves like showModalBottomSheet
-class _FastAssignSheet extends StatefulWidget {
+/// Fast assign card — inline Positioned overlay, NO showBottomSheet.
+/// Has its own state so slider doesn't trigger parent rebuild (no build spam).
+/// Expandable: tap chevron to reveal name/trigger options.
+class _FastAssignCard extends StatefulWidget {
   final double initialRadius;
   final ValueChanged<double> onRadiusChanged;
   final void Function(String? name, TriggerType triggerType, ZoneTrigger zoneTrigger, int timeMinutes) onSave;
   final VoidCallback onCancel;
 
-  const _FastAssignSheet({
+  const _FastAssignCard({
     required this.initialRadius,
     required this.onRadiusChanged,
     required this.onSave,
@@ -618,11 +610,12 @@ class _FastAssignSheet extends StatefulWidget {
   });
 
   @override
-  State<_FastAssignSheet> createState() => _FastAssignSheetState();
+  State<_FastAssignCard> createState() => _FastAssignCardState();
 }
 
-class _FastAssignSheetState extends State<_FastAssignSheet> {
+class _FastAssignCardState extends State<_FastAssignCard> {
   late double _radius;
+  bool _expanded = false;
   final _nameController = TextEditingController();
   TriggerType _triggerType = TriggerType.distance;
   ZoneTrigger _zoneTrigger = ZoneTrigger.onEntry;
@@ -643,21 +636,25 @@ class _FastAssignSheetState extends State<_FastAssignSheet> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bottomPad = MediaQuery.of(context).padding.bottom;
 
-    return DraggableScrollableSheet(
-      initialChildSize: 0.22,
-      minChildSize: 0.1,
-      maxChildSize: 0.65,
-      builder: (context, scrollController) {
-        return Container(
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1a1a2e) : Colors.white,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: Column(
-            children: [
-              // Drag handle
-              Padding(
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1a1a2e) : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 20, offset: const Offset(0, -4))],
+        ),
+        child: AnimatedSize(
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeInOut,
+          alignment: Alignment.topCenter,
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            // Drag handle — tap to expand/collapse
+            GestureDetector(
+              onTap: () => setState(() => _expanded = !_expanded),
+              child: Padding(
                 padding: const EdgeInsets.only(top: 8, bottom: 4),
                 child: Container(
                   width: 40, height: 4,
@@ -667,102 +664,113 @@ class _FastAssignSheetState extends State<_FastAssignSheet> {
                   ),
                 ),
               ),
-              // Scrollable content
-              Expanded(
-                child: ListView(
-                  controller: scrollController,
-                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
-                  children: [
-                    // Header
-                    Row(children: [
-                      const Icon(Icons.location_on, color: Colors.red, size: 28),
-                      const SizedBox(width: 8),
-                      const Expanded(child: Text('Fast Assign',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
-                      Text('${_radius.round()}m',
-                          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.red[700])),
-                    ]),
-                    const SizedBox(height: 8),
-                    // Slider
-                    Slider(
-                      value: _radius, min: 100, max: 5000, divisions: 49,
-                      activeColor: Colors.red,
-                      onChanged: (v) {
-                        setState(() => _radius = v);
-                        widget.onRadiusChanged(v);
-                      },
-                    ),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('100m', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
-                        Text('5km', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    // Name
-                    TextField(
-                      controller: _nameController,
-                      decoration: InputDecoration(labelText: tr('name_optional')),
-                    ),
-                    const SizedBox(height: 16),
-                    // Trigger type
-                    Text(tr('trigger_type'),
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-                    const SizedBox(height: 8),
-                    Row(children: [
-                      _chip(tr('distance'), Icons.straighten, _triggerType == TriggerType.distance,
-                          () => setState(() => _triggerType = TriggerType.distance)),
-                      const SizedBox(width: 8),
-                      _chip(tr('time'), Icons.timer, _triggerType == TriggerType.time,
-                          () => setState(() => _triggerType = TriggerType.time)),
-                    ]),
-                    if (_triggerType == TriggerType.time) ...[
-                      const SizedBox(height: 12),
-                      Row(children: [
-                        Expanded(child: Slider(
-                          value: _timeMinutes.toDouble(), min: 5, max: 120, divisions: 23,
-                          onChanged: (v) => setState(() => _timeMinutes = v.round()),
-                        )),
-                        Text('$_timeMinutes min',
-                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                      ]),
-                    ],
-                    const SizedBox(height: 12),
-                    // Zone trigger
-                    Row(children: [
-                      _chip(tr('on_entry'), Icons.login, _zoneTrigger == ZoneTrigger.onEntry,
-                          () => setState(() => _zoneTrigger = ZoneTrigger.onEntry)),
-                      const SizedBox(width: 8),
-                      _chip(tr('on_leave'), Icons.logout, _zoneTrigger == ZoneTrigger.onLeave,
-                          () => setState(() => _zoneTrigger = ZoneTrigger.onLeave)),
-                    ]),
-                    const SizedBox(height: 20),
-                  ],
+            ),
+            // Compact header: icon + "Fast Assign" + radius + expand chevron
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 12, 0),
+              child: Row(children: [
+                const Icon(Icons.location_on, color: Colors.red, size: 28),
+                const SizedBox(width: 8),
+                const Expanded(child: Text('Fast Assign',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+                Text('${_radius.round()}m',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.red[700])),
+                IconButton(
+                  icon: Icon(_expanded ? Icons.expand_more : Icons.expand_less, size: 24),
+                  onPressed: () => setState(() => _expanded = !_expanded),
+                ),
+              ]),
+            ),
+            // Slider — always visible
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Slider(
+                value: _radius, min: 100, max: 5000, divisions: 49,
+                activeColor: Colors.red,
+                onChanged: (v) {
+                  setState(() => _radius = v);
+                  widget.onRadiusChanged(v);
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('100m', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+                  Text('5km', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+                ],
+              ),
+            ),
+            // Expanded section
+            if (_expanded) ...[
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: TextField(
+                  controller: _nameController,
+                  decoration: InputDecoration(labelText: tr('name_optional')),
                 ),
               ),
-              // Fixed bottom buttons
+              const SizedBox(height: 12),
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-                child: Row(children: [
-                  Expanded(child: OutlinedButton(
-                    onPressed: widget.onCancel,
-                    child: Text(tr('cancel')),
-                  )),
-                  const SizedBox(width: 8),
-                  Expanded(child: FilledButton(
-                    onPressed: () {
-                      final name = _nameController.text.isEmpty ? null : _nameController.text;
-                      widget.onSave(name, _triggerType, _zoneTrigger, _timeMinutes);
-                    },
-                    child: Text(tr('save')),
-                  )),
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(tr('trigger_type'),
+                      style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                  const SizedBox(height: 8),
+                  Row(children: [
+                    _chip(tr('distance'), Icons.straighten, _triggerType == TriggerType.distance,
+                        () => setState(() => _triggerType = TriggerType.distance)),
+                    const SizedBox(width: 8),
+                    _chip(tr('time'), Icons.timer, _triggerType == TriggerType.time,
+                        () => setState(() => _triggerType = TriggerType.time)),
+                  ]),
+                  if (_triggerType == TriggerType.time) ...[
+                    const SizedBox(height: 12),
+                    Row(children: [
+                      Expanded(child: Slider(
+                        value: _timeMinutes.toDouble(), min: 5, max: 120, divisions: 23,
+                        onChanged: (v) => setState(() => _timeMinutes = v.round()),
+                      )),
+                      Text('$_timeMinutes min',
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                    ]),
+                  ],
+                  const SizedBox(height: 12),
+                  Row(children: [
+                    _chip(tr('on_entry'), Icons.login, _zoneTrigger == ZoneTrigger.onEntry,
+                        () => setState(() => _zoneTrigger = ZoneTrigger.onEntry)),
+                    const SizedBox(width: 8),
+                    _chip(tr('on_leave'), Icons.logout, _zoneTrigger == ZoneTrigger.onLeave,
+                        () => setState(() => _zoneTrigger = ZoneTrigger.onLeave)),
+                  ]),
                 ]),
               ),
             ],
-          ),
-        );
-      },
+            const SizedBox(height: 12),
+            // Buttons — always visible
+            Padding(
+              padding: EdgeInsets.fromLTRB(20, 0, 20, 16 + bottomPad),
+              child: Row(children: [
+                Expanded(child: OutlinedButton(
+                  onPressed: widget.onCancel,
+                  child: Text(tr('cancel')),
+                )),
+                const SizedBox(width: 8),
+                Expanded(child: FilledButton(
+                  onPressed: () {
+                    final name = _nameController.text.isEmpty ? null : _nameController.text;
+                    widget.onSave(name, _triggerType, _zoneTrigger, _timeMinutes);
+                  },
+                  child: Text(tr('save')),
+                )),
+              ]),
+            ),
+          ]),
+        ),
+      ),
     );
   }
 
