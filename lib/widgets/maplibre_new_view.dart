@@ -181,7 +181,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     final clampedSize = diameterPx.clamp(4.0, 2000.0);
     final color = isActive ? Colors.red : Colors.grey;
     return Marker(
-      point: Geographic(lon: lng, lat: lat),
+      point: Position(lng, lat),
       size: Size.square(clampedSize),
       alignment: Alignment.center,
       child: Container(
@@ -256,7 +256,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             if (markerPoints.isNotEmpty)
               WidgetLayer(
                 markers: markerPoints.map((p) => Marker(
-                  point: Geographic(lon: p.coordinates.lng.toDouble(), lat: p.coordinates.lat.toDouble()),
+                  point: Position(p.coordinates.lng.toDouble(), p.coordinates.lat.toDouble()),
                   size: const Size(40, 50),
                   alignment: Alignment.bottomCenter,
                   child: const Icon(Icons.location_on, color: Colors.red, size: 36),
@@ -275,7 +275,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               WidgetLayer(
                 markers: [
                   Marker(
-                    point: Geographic(lon: _userPos!.lng.toDouble(), lat: _userPos!.lat.toDouble()),
+                    point: Position(_userPos!.lng.toDouble(), _userPos!.lat.toDouble()),
                     size: const Size(20, 20),
                     alignment: Alignment.center,
                     child: Container(
