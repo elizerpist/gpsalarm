@@ -157,6 +157,19 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   int _radiusLayerVersion = 0;
 
   Future<void> _initRadiusLayer(StyleController style) async {
+    // Inverted veil source for onLeave triggers
+    await style.addSource(GeoJsonSource(
+      id: 'veil-src',
+      data: '{"type":"FeatureCollection","features":[]}',
+    ));
+    await style.addLayer(FillStyleLayer(
+      id: 'veil-fill',
+      sourceId: 'veil-src',
+      paint: {
+        'fill-color': '#FF0000',
+        'fill-opacity': 0.15,
+      },
+    ));
     _radiusLayerReady = true;
     DebugConsole.log('VECTOR: radius layer system ready');
   }
@@ -196,8 +209,56 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       circles.add((id: 'pending', lng: _pendingTapPoint!.lng.toDouble(), lat: _pendingTapPoint!.lat.toDouble(), radiusMeters: _pendingRadius, active: true, isTime: false));
     }
 
+    // Update inverted veil for onLeave alarms
+    _updateVeil(style, alarmProv);
+
     // Async: clean old layers, create new ones
     _rebuildRadiusLayers(style, circles, v);
+  }
+
+  void _updateVeil(StyleController style, AlarmProvider alarmProv) {
+    final leaveAlarms = alarmProv.alarmPoints
+        .where((p) => p.zoneTrigger == ZoneTrigger.onLeave)
+        .toList();
+    final hasFastLeave = _isFastAssigning && _fastAssignZoneTrigger == ZoneTrigger.onLeave;
+
+    if (leaveAlarms.isEmpty && !hasFastLeave) {
+      style.updateGeoJsonSource(id: 'veil-src', data: '{"type":"FeatureCollection","features":[]}');
+      return;
+    }
+
+    // World polygon with holes for each onLeave circle
+    final holes = <List<List<double>>>[];
+    for (final p in leaveAlarms) {
+      double r = p.radiusMeters;
+      if (p.triggerType == TriggerType.time && p.timeTrigger != null) {
+        r = math.max(200.0, (_speedKmh / 3.6) * p.timeTrigger!.inSeconds.toDouble());
+      }
+      holes.add(_geoCircle(p.longitude, p.latitude, r));
+    }
+    if (hasFastLeave) {
+      final r = _fastAssignTriggerType == TriggerType.time
+          ? math.max(200.0, (_speedKmh / 3.6) * _fastAssignTimeMinutes * 60)
+          : _fastAssignRadiusMeters;
+      holes.add(_geoCircle(_fastAssignLng, _fastAssignLat, r));
+    }
+
+    final coords = <List<List<double>>>[
+      [[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]],
+      ...holes,
+    ];
+
+    style.updateGeoJsonSource(
+      id: 'veil-src',
+      data: jsonEncode({
+        'type': 'FeatureCollection',
+        'features': [{
+          'type': 'Feature',
+          'geometry': {'type': 'Polygon', 'coordinates': coords},
+          'properties': {},
+        }],
+      }),
+    );
   }
 
   Future<void> _rebuildRadiusLayers(StyleController style, List<({String id, double lng, double lat, double radiusMeters, bool active, bool isTime})> circles, int version) async {
@@ -611,15 +672,16 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               onPointerMove: (e) {
                 if (!_isDraggingRadius || _fastAssignScreenCenter == null) return;
                 final dist = (e.localPosition - _fastAssignScreenCenter!).distance;
-                final metersPerPx = 156543.03392 * math.cos(_fastAssignLat * math.pi / 180) / math.pow(2, _currentZoom);
-                final meters = (dist * metersPerPx).clamp(100.0, 10000.0);
                 if (_fastAssignTriggerType == TriggerType.distance) {
-                  setState(() => _fastAssignRadiusMeters = meters.clamp(100.0, 5000.0));
+                  final metersPerPx = 156543.03392 * math.cos(_fastAssignLat * math.pi / 180) / math.pow(2, _currentZoom);
+                  final meters = (dist * metersPerPx).clamp(100.0, 5000.0);
+                  setState(() => _fastAssignRadiusMeters = meters);
+                  DebugConsole.log('VECTOR_DRAG: dist=${dist.round()}px → ${meters.round()}m');
                 } else {
-                  // Time mode: convert meters to minutes based on speed
-                  final speedMs = math.max(1.0, _speedKmh / 3.6);
-                  final minutes = (meters / speedMs / 60).clamp(5.0, 120.0).round();
+                  // Time mode: drag distance → minutes directly
+                  final minutes = (dist * 0.3).clamp(5.0, 120.0).round();
                   setState(() => _fastAssignTimeMinutes = minutes);
+                  DebugConsole.log('VECTOR_DRAG: dist=${dist.round()}px → ${minutes}min');
                 }
               },
               onPointerUp: (_) {

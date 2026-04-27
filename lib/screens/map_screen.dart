@@ -545,14 +545,15 @@ class _MapScreenState extends State<MapScreen> {
       final center = _getCircleCenterScreen();
       if (center != null) {
         final dist = (event.localPosition - center).distance;
-        final meters = _pixelsToMeters(dist).clamp(100.0, 10000.0);
         if (_triggerTypeForFastAssign == TriggerType.distance) {
-          setState(() => _fastAssignRadiusMeters = meters.clamp(100.0, 5000.0));
+          final meters = _pixelsToMeters(dist).clamp(100.0, 5000.0);
+          setState(() => _fastAssignRadiusMeters = meters);
+          DebugConsole.log('DRAG_MOVE: dist=${dist.round()}px → ${meters.round()}m');
         } else {
-          // Time mode: convert drag meters to minutes
-          final speedMs = max(1.0, _speedKmh / 3.6);
-          final minutes = (meters / speedMs / 60).clamp(5.0, 120.0).round();
+          // Time mode: drag distance → minutes (1px ≈ 0.3min, so 100px ≈ 30min)
+          final minutes = (dist * 0.3).clamp(5.0, 120.0).round();
           setState(() => _fastAssignTimeMinutes = minutes);
+          DebugConsole.log('DRAG_MOVE: dist=${dist.round()}px → ${minutes}min');
         }
       }
       return;
