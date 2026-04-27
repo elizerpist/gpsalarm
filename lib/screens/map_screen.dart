@@ -402,10 +402,8 @@ class _MapScreenState extends State<MapScreen> {
           // Offline indicator
           const OfflineIndicator(),
           // Scale bar — bottom left
-          AnimatedPositioned(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOut,
-            bottom: _isFastAssigning ? 180 : 24,
+          Positioned(
+            bottom: 24,
             left: 12,
             child: ScaleBar(
               zoom: _rasterZoom,

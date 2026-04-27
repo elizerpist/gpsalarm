@@ -41,7 +41,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   double _fastAssignLat = 0;
   double _fastAssignLng = 0;
   double _fastAssignRadiusMeters = 500;
-  Offset? _fastAssignScreenCenter; // screen position of circle center
+  TriggerType _fastAssignTriggerType = TriggerType.distance;
+  ZoneTrigger _fastAssignZoneTrigger = ZoneTrigger.onEntry;
+  int _fastAssignTimeMinutes = 10;
+  Offset? _fastAssignScreenCenter;
   bool _isDraggingRadius = false;
   double _currentZoom = 13;
   double _speedKmh = 0;
@@ -182,7 +185,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       circles.add((id: 'alarm-$i', lng: p.longitude, lat: p.latitude, radiusMeters: radius, active: p.isActive, isTime: isTime));
     }
     if (_isFastAssigning) {
-      circles.add((id: 'fast', lng: _fastAssignLng, lat: _fastAssignLat, radiusMeters: _fastAssignRadiusMeters, active: true, isTime: false));
+      final isTime = _fastAssignTriggerType == TriggerType.time;
+      double fastRadius = _fastAssignRadiusMeters;
+      if (isTime) {
+        fastRadius = math.max(200.0, (_speedKmh / 3.6) * _fastAssignTimeMinutes * 60);
+      }
+      circles.add((id: 'fast', lng: _fastAssignLng, lat: _fastAssignLat, radiusMeters: fastRadius, active: true, isTime: isTime));
     }
     if (_pendingTapPoint != null) {
       circles.add((id: 'pending', lng: _pendingTapPoint!.lng.toDouble(), lat: _pendingTapPoint!.lat.toDouble(), radiusMeters: _pendingRadius, active: true, isTime: false));
@@ -402,6 +410,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       _isFastAssigning = false;
       _fastAssignScreenCenter = null;
       _isDraggingRadius = false;
+      _fastAssignTriggerType = TriggerType.distance;
+      _fastAssignZoneTrigger = ZoneTrigger.onEntry;
+      _fastAssignTimeMinutes = 10;
     });
   }
 
@@ -519,10 +530,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
         ),
         const OfflineIndicator(),
         // Scale bar — bottom left
-        AnimatedPositioned(
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-          bottom: _isFastAssigning ? 180 : 24,
+        Positioned(
+          bottom: 24,
           left: 12,
           child: ScaleBar(
             zoom: _currentZoom,
@@ -588,9 +597,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             child: FastAssignCard(
               initialRadius: _fastAssignRadiusMeters,
               onRadiusChanged: (v) => setState(() => _fastAssignRadiusMeters = v),
-              onZoneTriggerChanged: (_) {},
-              onTriggerTypeChanged: (_) {},
-              onTimeChanged: (_) {},
+              onZoneTriggerChanged: (v) => setState(() => _fastAssignZoneTrigger = v),
+              onTriggerTypeChanged: (v) => setState(() => _fastAssignTriggerType = v),
+              onTimeChanged: (v) => setState(() => _fastAssignTimeMinutes = v),
               onSave: (name, triggerType, zoneTrigger, timeMinutes) {
                 _confirmFastAssign();
               },
