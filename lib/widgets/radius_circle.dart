@@ -38,7 +38,7 @@ Polygon buildTimeTriggerCircle(LatLng center, double radiusMeters, {bool isActiv
     color: Colors.orange.withOpacity(isActive ? 0.10 : 0.05),
     borderColor: Colors.orange.withOpacity(isActive ? 0.7 : 0.3),
     borderStrokeWidth: isActive ? 2.5 : 1,
-    pattern: StrokePattern.dotted(spacingFactor: 1.5),
+    pattern: StrokePattern.dashed(segments: const [8.0, 4.0]),
     isFilled: true,
   );
 }

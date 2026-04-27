@@ -44,6 +44,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   Offset? _fastAssignScreenCenter; // screen position of circle center
   bool _isDraggingRadius = false;
   double _currentZoom = 13;
+  double _speedKmh = 0;
   Position? _pendingTapPoint;
   double _pendingRadius = 500;
   Position? _userPos;
@@ -79,6 +80,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
           setState(() => _userPos = newPos);
         }
         _checkAlarms(position.latitude, position.longitude);
+        final newSpeed = _locationService.averageSpeedKmh;
+        if ((newSpeed - _speedKmh).abs() > 0.5) {
+          setState(() => _speedKmh = newSpeed);
+        }
       });
     }
   }
@@ -164,24 +169,30 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     final v = _radiusLayerVersion;
 
     // Collect all circles to render
-    final circles = <({String id, double lng, double lat, double radiusMeters, bool active})>[];
+    final circles = <({String id, double lng, double lat, double radiusMeters, bool active, bool isTime})>[];
 
     for (int i = 0; i < alarmProv.alarmPoints.length; i++) {
       final p = alarmProv.alarmPoints[i];
-      circles.add((id: 'alarm-$i', lng: p.longitude, lat: p.latitude, radiusMeters: p.radiusMeters, active: p.isActive));
+      double radius = p.radiusMeters;
+      final isTime = p.triggerType == TriggerType.time;
+      if (isTime && p.timeTrigger != null) {
+        final speedMs = _speedKmh / 3.6;
+        radius = math.max(200.0, speedMs * p.timeTrigger!.inSeconds.toDouble());
+      }
+      circles.add((id: 'alarm-$i', lng: p.longitude, lat: p.latitude, radiusMeters: radius, active: p.isActive, isTime: isTime));
     }
     if (_isFastAssigning) {
-      circles.add((id: 'fast', lng: _fastAssignLng, lat: _fastAssignLat, radiusMeters: _fastAssignRadiusMeters, active: true));
+      circles.add((id: 'fast', lng: _fastAssignLng, lat: _fastAssignLat, radiusMeters: _fastAssignRadiusMeters, active: true, isTime: false));
     }
     if (_pendingTapPoint != null) {
-      circles.add((id: 'pending', lng: _pendingTapPoint!.lng.toDouble(), lat: _pendingTapPoint!.lat.toDouble(), radiusMeters: _pendingRadius, active: true));
+      circles.add((id: 'pending', lng: _pendingTapPoint!.lng.toDouble(), lat: _pendingTapPoint!.lat.toDouble(), radiusMeters: _pendingRadius, active: true, isTime: false));
     }
 
     // Async: clean old layers, create new ones
     _rebuildRadiusLayers(style, circles, v);
   }
 
-  Future<void> _rebuildRadiusLayers(StyleController style, List<({String id, double lng, double lat, double radiusMeters, bool active})> circles, int version) async {
+  Future<void> _rebuildRadiusLayers(StyleController style, List<({String id, double lng, double lat, double radiusMeters, bool active, bool isTime})> circles, int version) async {
     // Remove old radius layers and sources (try/catch — may not exist)
     final ids = ['fast', 'pending', ...List.generate(20, (i) => 'alarm-$i')];
     for (final id in ids) {
@@ -195,8 +206,15 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       if (version != _radiusLayerVersion) return;
 
       final basePx = c.radiusMeters / (156543.03392 * math.cos(c.lat * math.pi / 180));
-      final fillColor = c.active ? 'rgba(255,0,0,0.12)' : 'rgba(158,158,158,0.05)';
-      final strokeColor = c.active ? 'rgba(255,0,0,0.6)' : 'rgba(158,158,158,0.3)';
+      final String fillColor;
+      final String strokeColor;
+      if (c.isTime) {
+        fillColor = c.active ? 'rgba(255,152,0,0.10)' : 'rgba(158,158,158,0.05)';
+        strokeColor = c.active ? 'rgba(255,152,0,0.7)' : 'rgba(158,158,158,0.3)';
+      } else {
+        fillColor = c.active ? 'rgba(255,0,0,0.12)' : 'rgba(158,158,158,0.05)';
+        strokeColor = c.active ? 'rgba(255,0,0,0.6)' : 'rgba(158,158,158,0.3)';
+      }
       final strokeWidth = c.active ? 2.0 : 1.0;
 
       try {
@@ -480,6 +498,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
           child: ScaleBar(
             zoom: _currentZoom,
             latitude: _userPos?.lat.toDouble() ?? 47.5,
+            speedKmh: _speedKmh,
           ),
         ),
         // Debug button - top right
