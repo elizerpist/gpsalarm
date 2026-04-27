@@ -22,6 +22,7 @@ import '../services/alarm_service.dart';
 import '../services/notification_service.dart';
 import '../services/debug_console.dart';
 import '../widgets/scale_bar.dart';
+import '../widgets/fast_assign_card.dart';
 
 class MaplibreNewView extends StatefulWidget {
   final GlobalKey<ScaffoldState> scaffoldKey;
@@ -532,17 +533,19 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                   )
                 : const SizedBox.shrink(),
           ),
-        // Fast assign card — ABOVE everything, handles its own swipe
+        // Fast assign card — shared widget, same as raster map
         if (_isFastAssigning)
           Positioned(
             bottom: 0, left: 0, right: 0,
-            child: _VectorFastAssignCard(
+            child: FastAssignCard(
               initialRadius: _fastAssignRadiusMeters,
-              onRadiusChanged: (v) {
-                DebugConsole.log('FAST_ASSIGN: slider radius=${v.round()}m');
-                setState(() => _fastAssignRadiusMeters = v);
+              onRadiusChanged: (v) => setState(() => _fastAssignRadiusMeters = v),
+              onZoneTriggerChanged: (_) {},
+              onTriggerTypeChanged: (_) {},
+              onTimeChanged: (_) {},
+              onSave: (name, triggerType, zoneTrigger, timeMinutes) {
+                _confirmFastAssign();
               },
-              onSave: _confirmFastAssign,
               onCancel: _cancelFastAssign,
             ),
           ),
@@ -551,150 +554,3 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   }
 }
 
-/// Vector map fast assign card with swipe gestures.
-/// Swipe up: expand. Swipe down: collapse → cancel.
-class _VectorFastAssignCard extends StatefulWidget {
-  final double initialRadius;
-  final ValueChanged<double> onRadiusChanged;
-  final VoidCallback onSave;
-  final VoidCallback onCancel;
-
-  const _VectorFastAssignCard({
-    required this.initialRadius,
-    required this.onRadiusChanged,
-    required this.onSave,
-    required this.onCancel,
-  });
-
-  @override
-  State<_VectorFastAssignCard> createState() => _VectorFastAssignCardState();
-}
-
-class _VectorFastAssignCardState extends State<_VectorFastAssignCard> {
-  late double _radius;
-  double _dragOffset = 0;
-  static const double _collapsedHeight = 180;
-  static const double _expandedExtra = 80;
-
-  @override
-  void initState() {
-    super.initState();
-    _radius = widget.initialRadius;
-  }
-
-  double get _expandFraction => (_dragOffset.abs() / _expandedExtra).clamp(0.0, 1.0);
-  bool get _isExpanded => _expandFraction > 0.3;
-
-  void _snapToPosition() {
-    setState(() {
-      if (_dragOffset < -_expandedExtra * 0.3) {
-        _dragOffset = -_expandedExtra;
-      } else if (_dragOffset > 40) {
-        widget.onCancel();
-        return;
-      } else {
-        _dragOffset = 0;
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bottomPad = MediaQuery.of(context).padding.bottom;
-    final cardHeight = _collapsedHeight + (_expandFraction * _expandedExtra);
-
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onVerticalDragUpdate: (d) => setState(() => _dragOffset += d.delta.dy),
-      onVerticalDragEnd: (_) => _snapToPosition(),
-      child: Material(
-        color: Colors.transparent,
-        child: Container(
-          height: cardHeight + bottomPad + 16,
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1a1a2e) : Colors.white,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 20, offset: const Offset(0, -4))],
-          ),
-          child: Column(children: [
-            // Drag handle
-            GestureDetector(
-              onTap: () => setState(() {
-                _dragOffset = _isExpanded ? 0 : -_expandedExtra;
-              }),
-              child: Padding(
-                padding: const EdgeInsets.only(top: 8, bottom: 4),
-                child: Container(
-                  width: 40, height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[400],
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-            ),
-            // Scrollable content
-            Expanded(
-              child: ClipRect(
-                child: SingleChildScrollView(
-                  physics: const NeverScrollableScrollPhysics(),
-                  child: Column(mainAxisSize: MainAxisSize.min, children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 4, 12, 0),
-                      child: Row(children: [
-                        const Icon(Icons.location_on, color: Colors.red, size: 28),
-                        const SizedBox(width: 8),
-                        const Expanded(child: Text('Fast Assign',
-                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
-                        Text('${_radius.round()}m',
-                            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.red[700])),
-                        IconButton(
-                          icon: Icon(_isExpanded ? Icons.expand_more : Icons.expand_less, size: 24),
-                          onPressed: () => setState(() {
-                            _dragOffset = _isExpanded ? 0 : -_expandedExtra;
-                          }),
-                        ),
-                      ]),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Slider(
-                        value: _radius, min: 100, max: 5000, divisions: 49,
-                        activeColor: Colors.red,
-                        onChanged: (v) {
-                          setState(() => _radius = v);
-                          widget.onRadiusChanged(v);
-                        },
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text('100m', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
-                          Text('5km', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                  ]),
-                ),
-              ),
-            ),
-            // Bottom buttons — ALWAYS visible, fixed
-            Padding(
-              padding: EdgeInsets.fromLTRB(20, 0, 20, 16 + bottomPad),
-              child: Row(children: [
-                Expanded(child: OutlinedButton(onPressed: widget.onCancel, child: Text(tr('cancel')))),
-                const SizedBox(width: 8),
-                Expanded(child: FilledButton(onPressed: widget.onSave, child: Text(tr('save')))),
-              ]),
-            ),
-          ]),
-        ),
-      ),
-    );
-  }
-}
