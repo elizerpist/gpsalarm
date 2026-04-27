@@ -590,6 +590,47 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                   )
                 : const SizedBox.shrink(),
           ),
+        // Radius drag overlay for vector map
+        if (_isFastAssigning && _fastAssignScreenCenter != null)
+          Positioned.fill(
+            child: Listener(
+              behavior: HitTestBehavior.translucent,
+              onPointerDown: (e) {
+                if (_fastAssignScreenCenter == null) return;
+                final dist = (e.localPosition - _fastAssignScreenCenter!).distance;
+                final metersPerPx = 156543.03392 * math.cos(_fastAssignLat * math.pi / 180) / math.pow(2, _currentZoom);
+                final currentRadius = _fastAssignTriggerType == TriggerType.time
+                    ? math.max(200.0, (_speedKmh / 3.6) * _fastAssignTimeMinutes * 60)
+                    : _fastAssignRadiusMeters;
+                final radiusPx = currentRadius / metersPerPx;
+                if (dist <= radiusPx * 1.5) {
+                  _isDraggingRadius = true;
+                  DebugConsole.log('VECTOR_DRAG: start dist=${dist.round()} radiusPx=${radiusPx.round()} type=$_fastAssignTriggerType');
+                }
+              },
+              onPointerMove: (e) {
+                if (!_isDraggingRadius || _fastAssignScreenCenter == null) return;
+                final dist = (e.localPosition - _fastAssignScreenCenter!).distance;
+                final metersPerPx = 156543.03392 * math.cos(_fastAssignLat * math.pi / 180) / math.pow(2, _currentZoom);
+                final meters = (dist * metersPerPx).clamp(100.0, 10000.0);
+                if (_fastAssignTriggerType == TriggerType.distance) {
+                  setState(() => _fastAssignRadiusMeters = meters.clamp(100.0, 5000.0));
+                } else {
+                  // Time mode: convert meters to minutes based on speed
+                  final speedMs = math.max(1.0, _speedKmh / 3.6);
+                  final minutes = (meters / speedMs / 60).clamp(5.0, 120.0).round();
+                  setState(() => _fastAssignTimeMinutes = minutes);
+                }
+              },
+              onPointerUp: (_) {
+                if (_isDraggingRadius) {
+                  DebugConsole.log('VECTOR_DRAG: end');
+                  _isDraggingRadius = false;
+                }
+              },
+              child: const SizedBox.expand(),
+            ),
+          ),
         // Fast assign card — shared widget, same as raster map
         if (_isFastAssigning)
           Positioned(

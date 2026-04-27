@@ -510,14 +510,17 @@ class _MapScreenState extends State<MapScreen> {
       final center = _getCircleCenterScreen();
       if (center != null) {
         final dist = (event.localPosition - center).distance;
-        final radiusPx = _fastAssignRadiusMeters / _pixelsToMeters(1);
-        if (dist <= radiusPx * 1.3) {
+        final currentRadius = _triggerTypeForFastAssign == TriggerType.time
+            ? max(200.0, (_speedKmh / 3.6) * _fastAssignTimeMinutes * 60)
+            : _fastAssignRadiusMeters;
+        final radiusPx = currentRadius / _pixelsToMeters(1);
+        if (dist <= radiusPx * 1.5) {
           _isDraggingRadius = true;
-          DebugConsole.log('RADIUS_DRAG: start dist=${dist.round()} radiusPx=${radiusPx.round()}');
+          DebugConsole.log('RADIUS_DRAG: start dist=${dist.round()} radiusPx=${radiusPx.round()} type=$_triggerTypeForFastAssign');
           return;
         }
       }
-      return; // outside circle — let map handle pan
+      return;
     }
 
     // Normal mode: long press detection
@@ -542,8 +545,15 @@ class _MapScreenState extends State<MapScreen> {
       final center = _getCircleCenterScreen();
       if (center != null) {
         final dist = (event.localPosition - center).distance;
-        final meters = _pixelsToMeters(dist).clamp(100.0, 5000.0);
-        setState(() => _fastAssignRadiusMeters = meters);
+        final meters = _pixelsToMeters(dist).clamp(100.0, 10000.0);
+        if (_triggerTypeForFastAssign == TriggerType.distance) {
+          setState(() => _fastAssignRadiusMeters = meters.clamp(100.0, 5000.0));
+        } else {
+          // Time mode: convert drag meters to minutes
+          final speedMs = max(1.0, _speedKmh / 3.6);
+          final minutes = (meters / speedMs / 60).clamp(5.0, 120.0).round();
+          setState(() => _fastAssignTimeMinutes = minutes);
+        }
       }
       return;
     }
