@@ -159,6 +159,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   Timer? _radiusDebounce;
   Timer? _fastCircleDebounce;
   int _fastCircleVersion = 0;
+  bool _fastCircleUpdating = false; // guard against concurrent async updates
+  int _dragLogCounter = 0;
 
   static const _emptyGeoJson = '{"type":"FeatureCollection","features":[]}';
 
@@ -181,6 +183,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   /// Recreate fast assign CircleStyleLayer with current radius.
   /// Only ONE layer to remove+add — much faster than rebuilding all alarms.
   Future<void> _updateFastCircleLayer(StyleController style) async {
+    if (_fastCircleUpdating) return; // skip if previous update still in flight
+    _fastCircleUpdating = true;
     try { await style.removeLayer('fast-circle'); } catch (_) {}
 
     // Update point source position
@@ -212,6 +216,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
         'circle-stroke-width': 2.0,
       },
     ));
+    _fastCircleUpdating = false;
   }
 
   /// Recreate pending tap CircleStyleLayer with current radius.
@@ -728,6 +733,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                 // Track this pointer — ignore all others
                 _dragPointerId = e.pointer;
                 _isDraggingRadius = true;
+                _dragLogCounter = 0;
                 DebugConsole.log('VECTOR_DRAG: start pointer=${e.pointer}');
               },
               onPointerMove: (e) {
@@ -738,9 +744,16 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                   final metersPerPx = 156543.03392 * math.cos(_fastAssignLat * math.pi / 180) / math.pow(2, _currentZoom);
                   final meters = (dist * metersPerPx).clamp(100.0, 5000.0);
                   setState(() => _fastAssignRadiusMeters = meters);
+                  // Throttled log: every 10th event
+                  if (++_dragLogCounter % 10 == 0) {
+                    DebugConsole.log('VECTOR_DRAG: ${dist.round()}px → ${meters.round()}m (updating=$_fastCircleUpdating)');
+                  }
                 } else {
                   final minutes = (dist * 0.3).clamp(5.0, 120.0).round();
                   setState(() => _fastAssignTimeMinutes = minutes);
+                  if (++_dragLogCounter % 10 == 0) {
+                    DebugConsole.log('VECTOR_DRAG: ${dist.round()}px → ${minutes}min');
+                  }
                 }
               },
               onPointerUp: (e) {
