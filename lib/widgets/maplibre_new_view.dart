@@ -127,6 +127,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   @override
   void dispose() {
     _radiusDebounce?.cancel();
+    _fastCircleDebounce?.cancel();
     _locationService.dispose();
     super.dispose();
   }
@@ -156,6 +157,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   /// Radius circle version tracker for stale async rebuild detection.
   int _radiusLayerVersion = 0;
   Timer? _radiusDebounce;
+  Timer? _fastCircleDebounce;
+  int _fastCircleVersion = 0;
 
   static const _emptyGeoJson = '{"type":"FeatureCollection","features":[]}';
 
@@ -179,6 +182,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   /// Only ONE layer to remove+add — much faster than rebuilding all alarms.
   Future<void> _updateFastCircleLayer(StyleController style) async {
     try { await style.removeLayer('fast-circle'); } catch (_) {}
+
+    // Update point source position
+    style.updateGeoJsonSource(
+      id: 'fast-src',
+      data: _pointGeoJson(_fastAssignLng, _fastAssignLat),
+    );
 
     final isTime = _fastAssignTriggerType == TriggerType.time;
     double radius = _fastAssignRadiusMeters;
@@ -229,28 +238,31 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   }
 
   /// Sync radius circles.
-  /// Fast assign + pending: dedicated CircleStyleLayer, recreated on radius change.
-  /// Alarm circles: debounced rebuild (only when alarms change).
+  /// Fast assign + pending: dedicated CircleStyleLayer, debounced per-frame.
+  /// Alarm circles: debounced rebuild, SKIPPED during drag (they don't change).
   void _syncRadiusSource(AlarmProvider alarmProv) {
     if (!_radiusLayerReady) return;
     final style = _controller?.style;
     if (style == null) return;
 
-    // --- Fast assign circle ---
+    // --- Fast assign circle: debounced 16ms (1 frame) ---
     if (_isFastAssigning) {
-      // Update point source position (instant)
-      style.updateGeoJsonSource(
-        id: 'fast-src',
-        data: _pointGeoJson(_fastAssignLng, _fastAssignLat),
-      );
-      // Recreate CircleStyleLayer with new radius (only 1 remove + 1 add)
-      _updateFastCircleLayer(style);
-    } else {
+      _fastCircleVersion++;
+      final fv = _fastCircleVersion;
+      _fastCircleDebounce?.cancel();
+      _fastCircleDebounce = Timer(const Duration(milliseconds: 16), () {
+        if (fv == _fastCircleVersion) {
+          _updateFastCircleLayer(style);
+        }
+      });
+    } else if (_fastCircleVersion > 0) {
+      _fastCircleDebounce?.cancel();
+      _fastCircleVersion = 0;
       try { style.removeLayer('fast-circle'); } catch (_) {}
       style.updateGeoJsonSource(id: 'fast-src', data: _emptyGeoJson);
     }
 
-    // --- Pending tap circle ---
+    // --- Pending tap circle: debounced 16ms ---
     if (_pendingTapPoint != null) {
       style.updateGeoJsonSource(
         id: 'pending-src',
@@ -265,10 +277,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       style.updateGeoJsonSource(id: 'pending-src', data: _emptyGeoJson);
     }
 
-    // --- Veil (onLeave overlay) ---
+    // --- Veil (onLeave overlay) — instant updateGeoJsonSource ---
     _updateVeil(style, alarmProv);
 
-    // --- Alarm circles: debounced rebuild ---
+    // --- Alarm circles: skip rebuild during drag (alarm data doesn't change) ---
+    if (_isDraggingRadius) return;
+
     _radiusLayerVersion++;
     final v = _radiusLayerVersion;
     final alarmCircles = <({String id, double lng, double lat, double radiusMeters, bool active, bool isTime, bool isLeave})>[];
