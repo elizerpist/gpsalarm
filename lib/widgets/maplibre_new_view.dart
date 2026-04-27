@@ -197,7 +197,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     final ids = ['fast', 'pending', ...List.generate(20, (i) => 'alarm-$i')];
     for (final id in ids) {
       try { await style.removeLayer('radius-circle-$id'); } catch (_) {}
+      try { await style.removeLayer('radius-dashline-$id'); } catch (_) {}
       try { await style.removeSource('radius-pt-$id'); } catch (_) {}
+      try { await style.removeSource('radius-dash-$id'); } catch (_) {}
     }
 
     if (version != _radiusLayerVersion) return; // stale
@@ -218,7 +220,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       final strokeWidth = c.active ? 2.0 : 1.0;
 
       try {
-        // Point source for CircleStyleLayer (perfect circle stroke)
+        // Point source for CircleStyleLayer (fill + solid stroke)
         await style.addSource(GeoJsonSource(
           id: 'radius-pt-${c.id}',
           data: jsonEncode({
@@ -231,7 +233,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
           }),
         ));
 
-        // CircleStyleLayer with literal interpolate — smooth native zoom scaling
+        // CircleStyleLayer — fill + stroke (solid for distance, no stroke for time)
         await style.addLayer(CircleStyleLayer(
           id: 'radius-circle-${c.id}',
           sourceId: 'radius-pt-${c.id}',
@@ -242,10 +244,37 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               22.0, basePx * 4194304.0,
             ],
             'circle-color': fillColor,
-            'circle-stroke-color': strokeColor,
-            'circle-stroke-width': strokeWidth,
+            'circle-stroke-color': c.isTime ? 'rgba(0,0,0,0)' : strokeColor,
+            'circle-stroke-width': c.isTime ? 0.0 : strokeWidth,
           },
         ));
+
+        // Time-based: add dashed border via polygon LineStyleLayer
+        if (c.isTime) {
+          await style.addSource(GeoJsonSource(
+            id: 'radius-dash-${c.id}',
+            data: jsonEncode({
+              'type': 'FeatureCollection',
+              'features': [{
+                'type': 'Feature',
+                'geometry': {
+                  'type': 'Polygon',
+                  'coordinates': [_geoCircle(c.lng, c.lat, c.radiusMeters)],
+                },
+                'properties': {},
+              }],
+            }),
+          ));
+          await style.addLayer(LineStyleLayer(
+            id: 'radius-dashline-${c.id}',
+            sourceId: 'radius-dash-${c.id}',
+            paint: {
+              'line-color': strokeColor,
+              'line-width': strokeWidth + 1,
+              'line-dasharray': [3.0, 2.0],
+            },
+          ));
+        }
       } catch (e) {
         DebugConsole.log('VECTOR: radius layer error for ${c.id}: $e');
       }
@@ -570,6 +599,29 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
           ),
       ],
     );
+  }
+
+  /// 64-point polygon circle for dashed border LineStyleLayer.
+  static List<List<double>> _geoCircle(double lng, double lat, double radiusMeters) {
+    const segments = 64;
+    final coords = <List<double>>[];
+    final angDist = radiusMeters / 6371000.0;
+    final latR = lat * math.pi / 180;
+    final lngR = lng * math.pi / 180;
+    final sinLat = math.sin(latR);
+    final cosLat = math.cos(latR);
+    final sinAng = math.sin(angDist);
+    final cosAng = math.cos(angDist);
+    for (int i = 0; i <= segments; i++) {
+      final bearing = 2 * math.pi * i / segments;
+      final pLat = math.asin(sinLat * cosAng + cosLat * sinAng * math.cos(bearing));
+      final pLng = lngR + math.atan2(
+        math.sin(bearing) * sinAng * cosLat,
+        cosAng - sinLat * math.sin(pLat),
+      );
+      coords.add([pLng * 180 / math.pi, pLat * 180 / math.pi]);
+    }
+    return coords;
   }
 }
 

@@ -36,9 +36,9 @@ Polygon buildTimeTriggerCircle(LatLng center, double radiusMeters, {bool isActiv
   return Polygon(
     points: points,
     color: Colors.orange.withOpacity(isActive ? 0.10 : 0.05),
-    borderColor: Colors.orange.withOpacity(isActive ? 0.7 : 0.3),
-    borderStrokeWidth: isActive ? 2.5 : 1,
-    pattern: StrokePattern.dashed(segments: const [8.0, 4.0]),
+    borderColor: Colors.orange.withOpacity(isActive ? 0.85 : 0.4),
+    borderStrokeWidth: isActive ? 3.0 : 2.0,
+    pattern: StrokePattern.dashed(segments: const [12.0, 6.0]),
     isFilled: true,
   );
 }

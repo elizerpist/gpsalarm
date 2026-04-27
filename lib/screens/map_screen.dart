@@ -154,14 +154,17 @@ class _MapScreenState extends State<MapScreen> {
         }
       } else if (point.triggerType == TriggerType.time &&
           point.timeTrigger != null) {
+        // Time-based: trigger when user is inside the dynamic radius circle.
+        // The circle radius = max(200m, speed * time).
+        final speedMs = _locationService.averageSpeedKmh / 3.6;
+        final timeRadius = max(200.0, speedMs * point.timeTrigger!.inSeconds.toDouble());
         final dist = AlarmService.distanceMeters(
             userLat, userLng, point.latitude, point.longitude);
-        final eta = AlarmService.calculateEtaMinutes(
-          distanceMeters: dist,
-          speedKmh: _locationService.averageSpeedKmh,
-        );
-        if (eta != null && eta <= point.timeTrigger!.inMinutes) {
-          shouldTrigger = true;
+        final insideTimeCircle = dist <= timeRadius;
+        if (point.zoneTrigger == ZoneTrigger.onEntry) {
+          shouldTrigger = insideTimeCircle;
+        } else {
+          shouldTrigger = !insideTimeCircle;
         }
       }
 
