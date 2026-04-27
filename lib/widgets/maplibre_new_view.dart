@@ -125,6 +125,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
 
   @override
   void dispose() {
+    _radiusDebounce?.cancel();
     _locationService.dispose();
     super.dispose();
   }
@@ -155,6 +156,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   /// Each alarm gets its own source + layer with literal interpolate expression
   /// for smooth native zoom scaling. Layers are recreated when data changes.
   int _radiusLayerVersion = 0;
+  Timer? _radiusDebounce;
 
   Future<void> _initRadiusLayer(StyleController style) async {
     // Inverted veil source for onLeave triggers
@@ -209,11 +211,16 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       circles.add((id: 'pending', lng: _pendingTapPoint!.lng.toDouble(), lat: _pendingTapPoint!.lat.toDouble(), radiusMeters: _pendingRadius, active: true, isTime: false));
     }
 
-    // Update inverted veil for onLeave alarms
+    // Update inverted veil for onLeave alarms (immediate, uses updateGeoJsonSource)
     _updateVeil(style, alarmProv);
 
-    // Async: clean old layers, create new ones
-    _rebuildRadiusLayers(style, circles, v);
+    // Debounce layer rebuild to batch rapid slider/drag changes
+    _radiusDebounce?.cancel();
+    _radiusDebounce = Timer(const Duration(milliseconds: 16), () {
+      if (v == _radiusLayerVersion) {
+        _rebuildRadiusLayers(style, circles, v);
+      }
+    });
   }
 
   void _updateVeil(StyleController style, AlarmProvider alarmProv) {
@@ -289,37 +296,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       final strokeWidth = c.active ? 2.0 : 1.0;
 
       try {
-        // Point source for CircleStyleLayer (fill + solid stroke)
-        await style.addSource(GeoJsonSource(
-          id: 'radius-pt-${c.id}',
-          data: jsonEncode({
-            'type': 'FeatureCollection',
-            'features': [{
-              'type': 'Feature',
-              'geometry': {'type': 'Point', 'coordinates': [c.lng, c.lat]},
-              'properties': {},
-            }],
-          }),
-        ));
-
-        // CircleStyleLayer — fill + stroke (solid for distance, no stroke for time)
-        await style.addLayer(CircleStyleLayer(
-          id: 'radius-circle-${c.id}',
-          sourceId: 'radius-pt-${c.id}',
-          paint: {
-            'circle-radius': [
-              'interpolate', ['exponential', 2.0], ['zoom'],
-              0.0, basePx,
-              22.0, basePx * 4194304.0,
-            ],
-            'circle-color': fillColor,
-            'circle-stroke-color': c.isTime ? 'rgba(0,0,0,0)' : strokeColor,
-            'circle-stroke-width': c.isTime ? 0.0 : strokeWidth,
-          },
-        ));
-
-        // Time-based: add dashed border via polygon LineStyleLayer
         if (c.isTime) {
+          // Time-based: polygon only (fill + dashed border) — no CircleStyleLayer
+          // This avoids the "double circle" where CircleStyleLayer and polygon don't align
           await style.addSource(GeoJsonSource(
             id: 'radius-dash-${c.id}',
             data: jsonEncode({
@@ -334,6 +313,16 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               }],
             }),
           ));
+          // Polygon fill
+          await style.addLayer(FillStyleLayer(
+            id: 'radius-circle-${c.id}',
+            sourceId: 'radius-dash-${c.id}',
+            paint: {
+              'fill-color': c.active ? '#FF9800' : '#9E9E9E',
+              'fill-opacity': c.active ? 0.10 : 0.05,
+            },
+          ));
+          // Dashed border
           await style.addLayer(LineStyleLayer(
             id: 'radius-dashline-${c.id}',
             sourceId: 'radius-dash-${c.id}',
@@ -341,6 +330,33 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               'line-color': strokeColor,
               'line-width': strokeWidth + 1,
               'line-dasharray': [3.0, 2.0],
+            },
+          ));
+        } else {
+          // Distance-based: CircleStyleLayer with interpolated radius (perfect circle)
+          await style.addSource(GeoJsonSource(
+            id: 'radius-pt-${c.id}',
+            data: jsonEncode({
+              'type': 'FeatureCollection',
+              'features': [{
+                'type': 'Feature',
+                'geometry': {'type': 'Point', 'coordinates': [c.lng, c.lat]},
+                'properties': {},
+              }],
+            }),
+          ));
+          await style.addLayer(CircleStyleLayer(
+            id: 'radius-circle-${c.id}',
+            sourceId: 'radius-pt-${c.id}',
+            paint: {
+              'circle-radius': [
+                'interpolate', ['exponential', 2.0], ['zoom'],
+                0.0, basePx,
+                22.0, basePx * 4194304.0,
+              ],
+              'circle-color': fillColor,
+              'circle-stroke-color': strokeColor,
+              'circle-stroke-width': strokeWidth,
             },
           ));
         }
@@ -458,6 +474,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     DebugConsole.log('FAST_ASSIGN: activated at ($screenCenter), lat=${position.lat.toStringAsFixed(4)}, lng=${position.lng.toStringAsFixed(4)}');
     setState(() {
       _isFastAssigning = true;
+      _isDraggingRadius = true; // Allow immediate swipe without lifting finger
       _fastAssignLat = position.lat.toDouble();
       _fastAssignLng = position.lng.toDouble();
       _fastAssignRadiusMeters = 500;
@@ -655,7 +672,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
         if (_isFastAssigning && _fastAssignScreenCenter != null)
           Positioned.fill(
             child: Listener(
-              behavior: HitTestBehavior.translucent,
+              behavior: HitTestBehavior.opaque,
               onPointerDown: (e) {
                 if (_fastAssignScreenCenter == null) return;
                 final dist = (e.localPosition - _fastAssignScreenCenter!).distance;
