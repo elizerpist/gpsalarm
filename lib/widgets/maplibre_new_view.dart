@@ -250,21 +250,30 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     final style = _controller?.style;
     if (style == null) return;
 
-    // --- Fast assign circle: debounced 16ms (1 frame) ---
-    if (_isFastAssigning) {
+    // --- Fast assign circle ---
+    // onLeave: skip CircleStyleLayer — the veil hole IS the visual boundary
+    // During drag: skip native layer update — Flutter overlay circle provides instant feedback
+    final showFastCircle = _isFastAssigning && _fastAssignZoneTrigger != ZoneTrigger.onLeave;
+    if (showFastCircle) {
+      // Native CircleStyleLayer update — debounced 100ms since Flutter overlay
+      // provides instant visual feedback, this only needs to catch up eventually
       _fastCircleVersion++;
       final fv = _fastCircleVersion;
       _fastCircleDebounce?.cancel();
-      _fastCircleDebounce = Timer(const Duration(milliseconds: 16), () {
+      _fastCircleDebounce = Timer(const Duration(milliseconds: 100), () {
         if (fv == _fastCircleVersion) {
           _updateFastCircleLayer(style);
         }
       });
-    } else if (_fastCircleVersion > 0) {
+    } else if (!showFastCircle) {
+      // Remove fast circle layer if it exists (not fast assigning, or onLeave mode)
       _fastCircleDebounce?.cancel();
-      _fastCircleVersion = 0;
-      try { style.removeLayer('fast-circle'); } catch (_) {}
-      style.updateGeoJsonSource(id: 'fast-src', data: _emptyGeoJson);
+      if (_fastCircleVersion > 0) {
+        _fastCircleVersion = 0;
+        _fastCircleUpdating = false;
+        try { style.removeLayer('fast-circle'); } catch (_) {}
+        style.updateGeoJsonSource(id: 'fast-src', data: _emptyGeoJson);
+      }
     }
 
     // --- Pending tap circle: debounced 16ms ---
@@ -466,19 +475,13 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     final alarmProv = context.read<AlarmProvider>();
     final existing = _findTappedAlarm(lat, lng, alarmProv);
     if (existing != null) {
-      setState(() {
-        _pendingTapPoint = position;
-        _pendingRadius = existing.radiusMeters;
-      });
+      // Edit existing alarm — don't set _pendingTapPoint (alarm already has its own pin)
       showModalBottomSheet(
         context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
         builder: (_) => RadiusPopup(
           latitude: existing.latitude, longitude: existing.longitude, existingPoint: existing,
-          onRadiusChanged: (v) { if (mounted) setState(() => _pendingRadius = v); },
         ),
-      ).whenComplete(() {
-        if (mounted) setState(() => _pendingTapPoint = null);
-      });
+      );
     } else {
       setState(() {
         _pendingTapPoint = position;
@@ -549,7 +552,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     });
   }
 
-  void _confirmFastAssign() {
+  void _confirmFastAssign({bool isActive = true}) {
     final alarmProv = context.read<AlarmProvider>();
     if (alarmProv.canAddAlarm) {
       alarmProv.addAlarmPoint(AlarmPoint(
@@ -557,12 +560,28 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
         latitude: _fastAssignLat,
         longitude: _fastAssignLng,
         radiusMeters: _fastAssignRadiusMeters,
-        triggerType: TriggerType.distance,
+        triggerType: _fastAssignTriggerType,
+        zoneTrigger: _fastAssignZoneTrigger,
+        isActive: isActive,
+        timeTrigger: _fastAssignTriggerType == TriggerType.time
+            ? Duration(minutes: _fastAssignTimeMinutes)
+            : null,
       ));
     }
     _cancelFastAssign();
   }
 
+
+  /// Current fast assign radius in screen pixels (for overlay painter).
+  double get _currentRadiusPx {
+    final isTime = _fastAssignTriggerType == TriggerType.time;
+    double radius = _fastAssignRadiusMeters;
+    if (isTime) {
+      radius = math.max(200.0, (_speedKmh / 3.6) * _fastAssignTimeMinutes * 60);
+    }
+    final metersPerPx = 156543.03392 * math.cos(_fastAssignLat * math.pi / 180) / math.pow(2, _currentZoom);
+    return radius / metersPerPx;
+  }
 
   // Build separate marker point lists for active (red) and inactive (grey) pins
   ({List<Point> active, List<Point> inactive}) _buildMarkerPoints(AlarmProvider alarmProv) {
@@ -761,8 +780,19 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                 DebugConsole.log('VECTOR_DRAG: end');
                 _isDraggingRadius = false;
                 _dragPointerId = null;
+                // Force native CircleStyleLayer update on drag end
+                _fastCircleVersion = 0;
               },
-              child: const SizedBox.expand(),
+              child: CustomPaint(
+                painter: _fastAssignScreenCenter != null && _fastAssignZoneTrigger != ZoneTrigger.onLeave
+                    ? _RadiusOverlayPainter(
+                        center: _fastAssignScreenCenter!,
+                        radiusPx: _currentRadiusPx,
+                        isTime: _fastAssignTriggerType == TriggerType.time,
+                      )
+                    : null,
+                child: const SizedBox.expand(),
+              ),
             ),
           ),
         // Fast assign card — shared widget, same as raster map
@@ -775,8 +805,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               onZoneTriggerChanged: (v) => setState(() => _fastAssignZoneTrigger = v),
               onTriggerTypeChanged: (v) => setState(() => _fastAssignTriggerType = v),
               onTimeChanged: (v) => setState(() => _fastAssignTimeMinutes = v),
-              onSave: (name, triggerType, zoneTrigger, timeMinutes) {
-                _confirmFastAssign();
+              onSave: (name, triggerType, zoneTrigger, timeMinutes, isActive) {
+                _confirmFastAssign(isActive: isActive);
               },
               onCancel: _cancelFastAssign,
             ),
@@ -807,5 +837,43 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     }
     return coords;
   }
+}
+
+/// Flutter-side circle painter for instant visual feedback during drag.
+/// Bypasses the native bridge entirely — drawn in Flutter's render pipeline at 60fps.
+class _RadiusOverlayPainter extends CustomPainter {
+  final Offset center;
+  final double radiusPx;
+  final bool isTime;
+
+  _RadiusOverlayPainter({
+    required this.center,
+    required this.radiusPx,
+    required this.isTime,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final fillColor = isTime
+        ? const Color(0x1AFF9800) // orange 10%
+        : const Color(0x1FFF0000); // red 12%
+    final strokeColor = isTime
+        ? const Color(0xB3FF9800) // orange 70%
+        : const Color(0x99FF0000); // red 60%
+
+    // Fill
+    canvas.drawCircle(center, radiusPx, Paint()..color = fillColor);
+    // Stroke
+    canvas.drawCircle(center, radiusPx, Paint()
+      ..color = strokeColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0);
+  }
+
+  @override
+  bool shouldRepaint(_RadiusOverlayPainter oldDelegate) =>
+      center != oldDelegate.center ||
+      radiusPx != oldDelegate.radiusPx ||
+      isTime != oldDelegate.isTime;
 }
 

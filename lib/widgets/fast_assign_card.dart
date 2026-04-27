@@ -12,7 +12,7 @@ class FastAssignCard extends StatefulWidget {
   final ValueChanged<ZoneTrigger> onZoneTriggerChanged;
   final ValueChanged<TriggerType> onTriggerTypeChanged;
   final ValueChanged<int> onTimeChanged;
-  final void Function(String? name, TriggerType triggerType, ZoneTrigger zoneTrigger, int timeMinutes) onSave;
+  final void Function(String? name, TriggerType triggerType, ZoneTrigger zoneTrigger, int timeMinutes, bool isActive) onSave;
   final VoidCallback onCancel;
 
   const FastAssignCard({
@@ -39,11 +39,21 @@ class _FastAssignCardState extends State<FastAssignCard> {
   TriggerType _triggerType = TriggerType.distance;
   ZoneTrigger _zoneTrigger = ZoneTrigger.onEntry;
   int _timeMinutes = 10;
+  bool _isActive = true;
 
   @override
   void initState() {
     super.initState();
     _radius = widget.initialRadius;
+  }
+
+  @override
+  void didUpdateWidget(FastAssignCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Sync slider when radius changes externally (e.g. swipe drag on map)
+    if (widget.initialRadius != oldWidget.initialRadius) {
+      _radius = widget.initialRadius;
+    }
   }
 
   @override
@@ -157,6 +167,16 @@ class _FastAssignCardState extends State<FastAssignCard> {
                               widget.onZoneTriggerChanged(next);
                             },
                           ),
+                          // Active/inactive switch
+                          SizedBox(
+                            height: 36,
+                            child: FittedBox(
+                              child: Switch(
+                                value: _isActive,
+                                onChanged: (v) => setState(() => _isActive = v),
+                              ),
+                            ),
+                          ),
                           IconButton(
                             icon: Icon(_isExpanded ? Icons.expand_more : Icons.expand_less, size: 22),
                             onPressed: () => setState(() {
@@ -228,7 +248,7 @@ class _FastAssignCardState extends State<FastAssignCard> {
                   Expanded(child: FilledButton(
                     onPressed: () {
                       final name = _nameController.text.isEmpty ? null : _nameController.text;
-                      widget.onSave(name, _triggerType, _zoneTrigger, _timeMinutes);
+                      widget.onSave(name, _triggerType, _zoneTrigger, _timeMinutes, _isActive);
                     },
                     child: Text(tr('save')),
                   )),

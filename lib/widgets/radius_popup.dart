@@ -29,6 +29,7 @@ class _RadiusPopupState extends State<RadiusPopup> {
   late ZoneTrigger _zoneTrigger;
   late double _radiusMeters;
   late int _timeMinutes;
+  late bool _isActive;
 
   @override
   void initState() {
@@ -39,6 +40,7 @@ class _RadiusPopupState extends State<RadiusPopup> {
     _zoneTrigger = p?.zoneTrigger ?? ZoneTrigger.onEntry;
     _radiusMeters = p?.radiusMeters ?? 500;
     _timeMinutes = p?.timeTrigger?.inMinutes ?? 10;
+    _isActive = p?.isActive ?? true;
   }
 
   @override
@@ -121,6 +123,16 @@ class _RadiusPopupState extends State<RadiusPopup> {
                       }),
                     ),
                     const SizedBox(width: 4),
+                    // Active/inactive switch
+                    SizedBox(
+                      height: 36,
+                      child: FittedBox(
+                        child: Switch(
+                          value: _isActive,
+                          onChanged: (v) => setState(() => _isActive = v),
+                        ),
+                      ),
+                    ),
                   ]),
                   const SizedBox(height: 12),
                   // Slider
@@ -265,6 +277,7 @@ class _RadiusPopupState extends State<RadiusPopup> {
       radiusMeters: _triggerType == TriggerType.distance ? _radiusMeters : 0,
       triggerType: _triggerType,
       zoneTrigger: _zoneTrigger,
+      isActive: _isActive,
       timeTrigger: _triggerType == TriggerType.time
           ? Duration(minutes: _timeMinutes)
           : null,

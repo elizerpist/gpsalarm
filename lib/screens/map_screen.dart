@@ -387,7 +387,7 @@ class _MapScreenState extends State<MapScreen> {
                           point: _fastAssignCenter!,
                           width: 40,
                           height: 50,
-                          alignment: const Alignment(0, 0.28),
+                          alignment: const Alignment(0, 0.44),
                           child: const Icon(Icons.location_on,
                               color: Colors.red, size: 36),
                         ),
@@ -632,7 +632,7 @@ class _MapScreenState extends State<MapScreen> {
     });
   }
 
-  void _saveFastAssign(String? name, TriggerType triggerType, ZoneTrigger zoneTrigger, int timeMinutes) {
+  void _saveFastAssign(String? name, TriggerType triggerType, ZoneTrigger zoneTrigger, int timeMinutes, bool isActive) {
     if (_fastAssignCenter == null) return;
     final alarmProv = context.read<AlarmProvider>();
     if (alarmProv.canAddAlarm) {
@@ -644,6 +644,7 @@ class _MapScreenState extends State<MapScreen> {
         radiusMeters: triggerType == TriggerType.distance ? _fastAssignRadiusMeters : 0,
         triggerType: triggerType,
         zoneTrigger: zoneTrigger,
+        isActive: isActive,
         timeTrigger: triggerType == TriggerType.time ? Duration(minutes: timeMinutes) : null,
       ));
       ScaffoldMessenger.of(context).showSnackBar(
