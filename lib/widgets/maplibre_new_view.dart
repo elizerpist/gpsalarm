@@ -52,8 +52,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   Position? _pendingTapPoint;
   double _pendingRadius = 500;
   Position? _userPos;
-  bool _fastLayersCreated = false;
-  TriggerType? _lastFastLayerType;
 
   static const _styleUrls = {
     'liberty': 'https://tiles.openfreemap.org/styles/liberty',
@@ -177,101 +175,103 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     DebugConsole.log('VECTOR: radius layer system ready');
   }
 
-  /// Create/recreate fast assign circle layers (only when triggerType changes).
-  Future<void> _ensureFastLayers(StyleController style) async {
-    if (_fastLayersCreated && _lastFastLayerType == _fastAssignTriggerType) return;
-    // Remove old layers
-    try { await style.removeLayer('fast-fill'); } catch (_) {}
-    try { await style.removeLayer('fast-line'); } catch (_) {}
+  /// Recreate fast assign CircleStyleLayer with current radius.
+  /// Only ONE layer to remove+add — much faster than rebuilding all alarms.
+  Future<void> _updateFastCircleLayer(StyleController style) async {
+    try { await style.removeLayer('fast-circle'); } catch (_) {}
 
     final isTime = _fastAssignTriggerType == TriggerType.time;
-    await style.addLayer(FillStyleLayer(
-      id: 'fast-fill',
+    double radius = _fastAssignRadiusMeters;
+    if (isTime) {
+      radius = math.max(200.0, (_speedKmh / 3.6) * _fastAssignTimeMinutes * 60);
+    }
+    final basePx = radius / (156543.03392 * math.cos(_fastAssignLat * math.pi / 180));
+    final fillColor = isTime ? 'rgba(255,152,0,0.10)' : 'rgba(255,0,0,0.12)';
+    final strokeColor = isTime ? 'rgba(255,152,0,0.7)' : 'rgba(255,0,0,0.6)';
+
+    await style.addLayer(CircleStyleLayer(
+      id: 'fast-circle',
       sourceId: 'fast-src',
       paint: {
-        'fill-color': isTime ? '#FF9800' : '#FF0000',
-        'fill-opacity': 0.12,
+        'circle-radius': [
+          'interpolate', ['exponential', 2.0], ['zoom'],
+          0.0, basePx,
+          22.0, basePx * 4194304.0,
+        ],
+        'circle-color': fillColor,
+        'circle-stroke-color': strokeColor,
+        'circle-stroke-width': 2.0,
       },
     ));
-    await style.addLayer(LineStyleLayer(
-      id: 'fast-line',
-      sourceId: 'fast-src',
-      paint: {
-        'line-color': isTime ? 'rgba(255,152,0,0.7)' : 'rgba(255,0,0,0.6)',
-        'line-width': 3.0,
-        if (isTime) 'line-dasharray': [3.0, 2.0],
-      },
-    ));
-    _lastFastLayerType = _fastAssignTriggerType;
-    _fastLayersCreated = true;
   }
 
-  /// Create pending tap circle layers (always distance-based style).
-  Future<void> _ensurePendingLayers(StyleController style) async {
-    try { await style.removeLayer('pending-fill'); } catch (_) {}
-    try { await style.removeLayer('pending-line'); } catch (_) {}
-    await style.addLayer(FillStyleLayer(
-      id: 'pending-fill',
-      sourceId: 'pending-src',
-      paint: { 'fill-color': '#FF0000', 'fill-opacity': 0.12 },
-    ));
-    await style.addLayer(LineStyleLayer(
-      id: 'pending-line',
+  /// Recreate pending tap CircleStyleLayer with current radius.
+  Future<void> _updatePendingCircleLayer(StyleController style) async {
+    try { await style.removeLayer('pending-circle'); } catch (_) {}
+
+    final lat = _pendingTapPoint!.lat.toDouble();
+    final basePx = _pendingRadius / (156543.03392 * math.cos(lat * math.pi / 180));
+
+    await style.addLayer(CircleStyleLayer(
+      id: 'pending-circle',
       sourceId: 'pending-src',
       paint: {
-        'line-color': 'rgba(255,0,0,0.6)',
-        'line-width': 3.0,
+        'circle-radius': [
+          'interpolate', ['exponential', 2.0], ['zoom'],
+          0.0, basePx,
+          22.0, basePx * 4194304.0,
+        ],
+        'circle-color': 'rgba(255,0,0,0.12)',
+        'circle-stroke-color': 'rgba(255,0,0,0.6)',
+        'circle-stroke-width': 2.0,
       },
     ));
   }
 
   /// Sync radius circles.
-  /// Fast assign + pending use persistent sources (instant updateGeoJsonSource).
-  /// Alarm circles use debounced layer rebuild (only when alarms change).
+  /// Fast assign + pending: dedicated CircleStyleLayer, recreated on radius change.
+  /// Alarm circles: debounced rebuild (only when alarms change).
   void _syncRadiusSource(AlarmProvider alarmProv) {
     if (!_radiusLayerReady) return;
     final style = _controller?.style;
     if (style == null) return;
 
-    // --- Fast assign circle: instant source update ---
+    // --- Fast assign circle ---
     if (_isFastAssigning) {
-      final isTime = _fastAssignTriggerType == TriggerType.time;
-      double fastRadius = _fastAssignRadiusMeters;
-      if (isTime) {
-        fastRadius = math.max(200.0, (_speedKmh / 3.6) * _fastAssignTimeMinutes * 60);
-      }
-      // Ensure layers exist (async but fire-and-forget — only runs when type changes)
-      _ensureFastLayers(style);
-      // Update source data instantly (no layer recreation!)
+      // Update point source position (instant)
       style.updateGeoJsonSource(
         id: 'fast-src',
-        data: _polygonGeoJson(_fastAssignLng, _fastAssignLat, fastRadius),
+        data: _pointGeoJson(_fastAssignLng, _fastAssignLat),
       );
+      // Recreate CircleStyleLayer with new radius (only 1 remove + 1 add)
+      _updateFastCircleLayer(style);
     } else {
+      try { style.removeLayer('fast-circle'); } catch (_) {}
       style.updateGeoJsonSource(id: 'fast-src', data: _emptyGeoJson);
     }
 
-    // --- Pending tap circle: instant source update ---
+    // --- Pending tap circle ---
     if (_pendingTapPoint != null) {
       style.updateGeoJsonSource(
         id: 'pending-src',
-        data: _polygonGeoJson(
+        data: _pointGeoJson(
           _pendingTapPoint!.lng.toDouble(),
           _pendingTapPoint!.lat.toDouble(),
-          _pendingRadius,
         ),
       );
+      _updatePendingCircleLayer(style);
     } else {
+      try { style.removeLayer('pending-circle'); } catch (_) {}
       style.updateGeoJsonSource(id: 'pending-src', data: _emptyGeoJson);
     }
 
     // --- Veil (onLeave overlay) ---
     _updateVeil(style, alarmProv);
 
-    // --- Alarm circles: debounced rebuild (only these need layer recreation) ---
+    // --- Alarm circles: debounced rebuild ---
     _radiusLayerVersion++;
     final v = _radiusLayerVersion;
-    final alarmCircles = <({String id, double lng, double lat, double radiusMeters, bool active, bool isTime})>[];
+    final alarmCircles = <({String id, double lng, double lat, double radiusMeters, bool active, bool isTime, bool isLeave})>[];
     for (int i = 0; i < alarmProv.alarmPoints.length; i++) {
       final p = alarmProv.alarmPoints[i];
       double radius = p.radiusMeters;
@@ -279,7 +279,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       if (isTime && p.timeTrigger != null) {
         radius = math.max(200.0, (_speedKmh / 3.6) * p.timeTrigger!.inSeconds.toDouble());
       }
-      alarmCircles.add((id: 'alarm-$i', lng: p.longitude, lat: p.latitude, radiusMeters: radius, active: p.isActive, isTime: isTime));
+      alarmCircles.add((id: 'alarm-$i', lng: p.longitude, lat: p.latitude, radiusMeters: radius, active: p.isActive, isTime: isTime, isLeave: p.zoneTrigger == ZoneTrigger.onLeave));
     }
     _radiusDebounce?.cancel();
     _radiusDebounce = Timer(const Duration(milliseconds: 50), () {
@@ -289,15 +289,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     });
   }
 
-  String _polygonGeoJson(double lng, double lat, double radiusMeters) {
+  String _pointGeoJson(double lng, double lat) {
     return jsonEncode({
       'type': 'FeatureCollection',
       'features': [{
         'type': 'Feature',
-        'geometry': {
-          'type': 'Polygon',
-          'coordinates': [_geoCircle(lng, lat, radiusMeters)],
-        },
+        'geometry': {'type': 'Point', 'coordinates': [lng, lat]},
         'properties': {},
       }],
     });
@@ -348,49 +345,52 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     );
   }
 
-  /// Rebuild ONLY alarm circle layers (not fast/pending — those use persistent sources).
-  /// All circles use polygon approach (FillStyleLayer + LineStyleLayer) for consistency
-  /// with the veil hole geometry. No more CircleStyleLayer.
-  Future<void> _rebuildRadiusLayers(StyleController style, List<({String id, double lng, double lat, double radiusMeters, bool active, bool isTime})> circles, int version) async {
+  /// Rebuild ONLY alarm circle layers using per-alarm CircleStyleLayer with
+  /// literal interpolate expression (the ONLY approach that produces perfect
+  /// geometric circles — see docs/vector-map-radius-circles.md).
+  /// onLeave alarms are SKIPPED — the veil hole provides their visual boundary.
+  Future<void> _rebuildRadiusLayers(StyleController style, List<({String id, double lng, double lat, double radiusMeters, bool active, bool isTime, bool isLeave})> circles, int version) async {
     // Remove old alarm layers and sources
     for (int i = 0; i < 20; i++) {
       final id = 'alarm-$i';
-      try { await style.removeLayer('radius-fill-$id'); } catch (_) {}
-      try { await style.removeLayer('radius-line-$id'); } catch (_) {}
-      try { await style.removeSource('radius-src-$id'); } catch (_) {}
+      try { await style.removeLayer('radius-circle-$id'); } catch (_) {}
+      try { await style.removeSource('radius-pt-$id'); } catch (_) {}
     }
 
     if (version != _radiusLayerVersion) return;
 
     for (final c in circles) {
       if (version != _radiusLayerVersion) return;
+      // onLeave alarms: the veil hole provides the visual — skip CircleStyleLayer
+      // to avoid double circle (veil polygon vs CircleStyleLayer mismatch)
+      if (c.isLeave) continue;
 
+      final basePx = c.radiusMeters / (156543.03392 * math.cos(c.lat * math.pi / 180));
       final String fillColor = c.isTime
-          ? (c.active ? '#FF9800' : '#9E9E9E')
-          : (c.active ? '#FF0000' : '#9E9E9E');
-      final double fillOpacity = c.active ? 0.12 : 0.05;
+          ? (c.active ? 'rgba(255,152,0,0.10)' : 'rgba(158,158,158,0.05)')
+          : (c.active ? 'rgba(255,0,0,0.12)' : 'rgba(158,158,158,0.05)');
       final String strokeColor = c.isTime
           ? (c.active ? 'rgba(255,152,0,0.7)' : 'rgba(158,158,158,0.3)')
           : (c.active ? 'rgba(255,0,0,0.6)' : 'rgba(158,158,158,0.3)');
-      final strokeWidth = c.active ? 3.0 : 1.5;
+      final strokeWidth = c.active ? 2.0 : 1.0;
 
       try {
         await style.addSource(GeoJsonSource(
-          id: 'radius-src-${c.id}',
-          data: _polygonGeoJson(c.lng, c.lat, c.radiusMeters),
+          id: 'radius-pt-${c.id}',
+          data: _pointGeoJson(c.lng, c.lat),
         ));
-        await style.addLayer(FillStyleLayer(
-          id: 'radius-fill-${c.id}',
-          sourceId: 'radius-src-${c.id}',
-          paint: { 'fill-color': fillColor, 'fill-opacity': fillOpacity },
-        ));
-        await style.addLayer(LineStyleLayer(
-          id: 'radius-line-${c.id}',
-          sourceId: 'radius-src-${c.id}',
+        await style.addLayer(CircleStyleLayer(
+          id: 'radius-circle-${c.id}',
+          sourceId: 'radius-pt-${c.id}',
           paint: {
-            'line-color': strokeColor,
-            'line-width': strokeWidth,
-            if (c.isTime) 'line-dasharray': [3.0, 2.0],
+            'circle-radius': [
+              'interpolate', ['exponential', 2.0], ['zoom'],
+              0.0, basePx,
+              22.0, basePx * 4194304.0,
+            ],
+            'circle-color': fillColor,
+            'circle-stroke-color': strokeColor,
+            'circle-stroke-width': strokeWidth,
           },
         ));
       } catch (e) {
@@ -445,9 +445,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     final lat = position.lat.toDouble();
     final lng = position.lng.toDouble();
     final alarmProv = context.read<AlarmProvider>();
-    // Ensure pending circle layers exist
-    final style = _controller?.style;
-    if (style != null) _ensurePendingLayers(style);
     final existing = _findTappedAlarm(lat, lng, alarmProv);
     if (existing != null) {
       setState(() {
@@ -749,11 +746,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               initialRadius: _fastAssignRadiusMeters,
               onRadiusChanged: (v) => setState(() => _fastAssignRadiusMeters = v),
               onZoneTriggerChanged: (v) => setState(() => _fastAssignZoneTrigger = v),
-              onTriggerTypeChanged: (v) {
-                setState(() => _fastAssignTriggerType = v);
-                // Force layer recreation with new colors/dash style
-                _fastLayersCreated = false;
-              },
+              onTriggerTypeChanged: (v) => setState(() => _fastAssignTriggerType = v),
               onTimeChanged: (v) => setState(() => _fastAssignTimeMinutes = v),
               onSave: (name, triggerType, zoneTrigger, timeMinutes) {
                 _confirmFastAssign();
@@ -765,7 +758,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     );
   }
 
-  /// 64-point polygon circle for dashed border LineStyleLayer.
+  /// 64-point polygon circle for veil hole geometry.
   static List<List<double>> _geoCircle(double lng, double lat, double radiusMeters) {
     const segments = 64;
     final coords = <List<double>>[];
