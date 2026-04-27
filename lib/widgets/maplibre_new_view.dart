@@ -46,11 +46,14 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   int _fastAssignTimeMinutes = 10;
   Offset? _fastAssignScreenCenter;
   bool _isDraggingRadius = false;
+  int? _dragPointerId; // Track single pointer to avoid multitouch chaos
   double _currentZoom = 13;
   double _speedKmh = 0;
   Position? _pendingTapPoint;
   double _pendingRadius = 500;
   Position? _userPos;
+  bool _fastLayersCreated = false;
+  TriggerType? _lastFastLayerType;
 
   static const _styleUrls = {
     'liberty': 'https://tiles.openfreemap.org/styles/liberty',
@@ -152,74 +155,151 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     }
   }
 
-  /// Per-alarm CircleStyleLayer approach.
-  /// Each alarm gets its own source + layer with literal interpolate expression
-  /// for smooth native zoom scaling. Layers are recreated when data changes.
+  /// Radius circle version tracker for stale async rebuild detection.
   int _radiusLayerVersion = 0;
   Timer? _radiusDebounce;
 
+  static const _emptyGeoJson = '{"type":"FeatureCollection","features":[]}';
+
   Future<void> _initRadiusLayer(StyleController style) async {
     // Inverted veil source for onLeave triggers
-    await style.addSource(GeoJsonSource(
-      id: 'veil-src',
-      data: '{"type":"FeatureCollection","features":[]}',
-    ));
+    await style.addSource(GeoJsonSource(id: 'veil-src', data: _emptyGeoJson));
     await style.addLayer(FillStyleLayer(
       id: 'veil-fill',
       sourceId: 'veil-src',
-      paint: {
-        'fill-color': '#FF0000',
-        'fill-opacity': 0.15,
-      },
+      paint: { 'fill-color': '#FF0000', 'fill-opacity': 0.15 },
     ));
+    // Persistent source for fast assign circle (updated via updateGeoJsonSource)
+    await style.addSource(GeoJsonSource(id: 'fast-src', data: _emptyGeoJson));
+    // Persistent source for pending tap circle
+    await style.addSource(GeoJsonSource(id: 'pending-src', data: _emptyGeoJson));
     _radiusLayerReady = true;
     DebugConsole.log('VECTOR: radius layer system ready');
   }
 
-  /// Sync radius circles — recreate per-alarm CircleStyleLayers.
+  /// Create/recreate fast assign circle layers (only when triggerType changes).
+  Future<void> _ensureFastLayers(StyleController style) async {
+    if (_fastLayersCreated && _lastFastLayerType == _fastAssignTriggerType) return;
+    // Remove old layers
+    try { await style.removeLayer('fast-fill'); } catch (_) {}
+    try { await style.removeLayer('fast-line'); } catch (_) {}
+
+    final isTime = _fastAssignTriggerType == TriggerType.time;
+    await style.addLayer(FillStyleLayer(
+      id: 'fast-fill',
+      sourceId: 'fast-src',
+      paint: {
+        'fill-color': isTime ? '#FF9800' : '#FF0000',
+        'fill-opacity': 0.12,
+      },
+    ));
+    await style.addLayer(LineStyleLayer(
+      id: 'fast-line',
+      sourceId: 'fast-src',
+      paint: {
+        'line-color': isTime ? 'rgba(255,152,0,0.7)' : 'rgba(255,0,0,0.6)',
+        'line-width': 3.0,
+        if (isTime) 'line-dasharray': [3.0, 2.0],
+      },
+    ));
+    _lastFastLayerType = _fastAssignTriggerType;
+    _fastLayersCreated = true;
+  }
+
+  /// Create pending tap circle layers (always distance-based style).
+  Future<void> _ensurePendingLayers(StyleController style) async {
+    try { await style.removeLayer('pending-fill'); } catch (_) {}
+    try { await style.removeLayer('pending-line'); } catch (_) {}
+    await style.addLayer(FillStyleLayer(
+      id: 'pending-fill',
+      sourceId: 'pending-src',
+      paint: { 'fill-color': '#FF0000', 'fill-opacity': 0.12 },
+    ));
+    await style.addLayer(LineStyleLayer(
+      id: 'pending-line',
+      sourceId: 'pending-src',
+      paint: {
+        'line-color': 'rgba(255,0,0,0.6)',
+        'line-width': 3.0,
+      },
+    ));
+  }
+
+  /// Sync radius circles.
+  /// Fast assign + pending use persistent sources (instant updateGeoJsonSource).
+  /// Alarm circles use debounced layer rebuild (only when alarms change).
   void _syncRadiusSource(AlarmProvider alarmProv) {
     if (!_radiusLayerReady) return;
     final style = _controller?.style;
     if (style == null) return;
 
-    // Increment version to track which layers are current
-    _radiusLayerVersion++;
-    final v = _radiusLayerVersion;
-
-    // Collect all circles to render
-    final circles = <({String id, double lng, double lat, double radiusMeters, bool active, bool isTime})>[];
-
-    for (int i = 0; i < alarmProv.alarmPoints.length; i++) {
-      final p = alarmProv.alarmPoints[i];
-      double radius = p.radiusMeters;
-      final isTime = p.triggerType == TriggerType.time;
-      if (isTime && p.timeTrigger != null) {
-        final speedMs = _speedKmh / 3.6;
-        radius = math.max(200.0, speedMs * p.timeTrigger!.inSeconds.toDouble());
-      }
-      circles.add((id: 'alarm-$i', lng: p.longitude, lat: p.latitude, radiusMeters: radius, active: p.isActive, isTime: isTime));
-    }
+    // --- Fast assign circle: instant source update ---
     if (_isFastAssigning) {
       final isTime = _fastAssignTriggerType == TriggerType.time;
       double fastRadius = _fastAssignRadiusMeters;
       if (isTime) {
         fastRadius = math.max(200.0, (_speedKmh / 3.6) * _fastAssignTimeMinutes * 60);
       }
-      circles.add((id: 'fast', lng: _fastAssignLng, lat: _fastAssignLat, radiusMeters: fastRadius, active: true, isTime: isTime));
-    }
-    if (_pendingTapPoint != null) {
-      circles.add((id: 'pending', lng: _pendingTapPoint!.lng.toDouble(), lat: _pendingTapPoint!.lat.toDouble(), radiusMeters: _pendingRadius, active: true, isTime: false));
+      // Ensure layers exist (async but fire-and-forget — only runs when type changes)
+      _ensureFastLayers(style);
+      // Update source data instantly (no layer recreation!)
+      style.updateGeoJsonSource(
+        id: 'fast-src',
+        data: _polygonGeoJson(_fastAssignLng, _fastAssignLat, fastRadius),
+      );
+    } else {
+      style.updateGeoJsonSource(id: 'fast-src', data: _emptyGeoJson);
     }
 
-    // Update inverted veil for onLeave alarms (immediate, uses updateGeoJsonSource)
+    // --- Pending tap circle: instant source update ---
+    if (_pendingTapPoint != null) {
+      style.updateGeoJsonSource(
+        id: 'pending-src',
+        data: _polygonGeoJson(
+          _pendingTapPoint!.lng.toDouble(),
+          _pendingTapPoint!.lat.toDouble(),
+          _pendingRadius,
+        ),
+      );
+    } else {
+      style.updateGeoJsonSource(id: 'pending-src', data: _emptyGeoJson);
+    }
+
+    // --- Veil (onLeave overlay) ---
     _updateVeil(style, alarmProv);
 
-    // Debounce layer rebuild to batch rapid slider/drag changes
-    _radiusDebounce?.cancel();
-    _radiusDebounce = Timer(const Duration(milliseconds: 16), () {
-      if (v == _radiusLayerVersion) {
-        _rebuildRadiusLayers(style, circles, v);
+    // --- Alarm circles: debounced rebuild (only these need layer recreation) ---
+    _radiusLayerVersion++;
+    final v = _radiusLayerVersion;
+    final alarmCircles = <({String id, double lng, double lat, double radiusMeters, bool active, bool isTime})>[];
+    for (int i = 0; i < alarmProv.alarmPoints.length; i++) {
+      final p = alarmProv.alarmPoints[i];
+      double radius = p.radiusMeters;
+      final isTime = p.triggerType == TriggerType.time;
+      if (isTime && p.timeTrigger != null) {
+        radius = math.max(200.0, (_speedKmh / 3.6) * p.timeTrigger!.inSeconds.toDouble());
       }
+      alarmCircles.add((id: 'alarm-$i', lng: p.longitude, lat: p.latitude, radiusMeters: radius, active: p.isActive, isTime: isTime));
+    }
+    _radiusDebounce?.cancel();
+    _radiusDebounce = Timer(const Duration(milliseconds: 50), () {
+      if (v == _radiusLayerVersion) {
+        _rebuildRadiusLayers(style, alarmCircles, v);
+      }
+    });
+  }
+
+  String _polygonGeoJson(double lng, double lat, double radiusMeters) {
+    return jsonEncode({
+      'type': 'FeatureCollection',
+      'features': [{
+        'type': 'Feature',
+        'geometry': {
+          'type': 'Polygon',
+          'coordinates': [_geoCircle(lng, lat, radiusMeters)],
+        },
+        'properties': {},
+      }],
     });
   }
 
@@ -268,98 +348,51 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     );
   }
 
+  /// Rebuild ONLY alarm circle layers (not fast/pending — those use persistent sources).
+  /// All circles use polygon approach (FillStyleLayer + LineStyleLayer) for consistency
+  /// with the veil hole geometry. No more CircleStyleLayer.
   Future<void> _rebuildRadiusLayers(StyleController style, List<({String id, double lng, double lat, double radiusMeters, bool active, bool isTime})> circles, int version) async {
-    // Remove old radius layers and sources (try/catch — may not exist)
-    final ids = ['fast', 'pending', ...List.generate(20, (i) => 'alarm-$i')];
-    for (final id in ids) {
-      try { await style.removeLayer('radius-circle-$id'); } catch (_) {}
-      try { await style.removeLayer('radius-dashline-$id'); } catch (_) {}
-      try { await style.removeSource('radius-pt-$id'); } catch (_) {}
-      try { await style.removeSource('radius-dash-$id'); } catch (_) {}
+    // Remove old alarm layers and sources
+    for (int i = 0; i < 20; i++) {
+      final id = 'alarm-$i';
+      try { await style.removeLayer('radius-fill-$id'); } catch (_) {}
+      try { await style.removeLayer('radius-line-$id'); } catch (_) {}
+      try { await style.removeSource('radius-src-$id'); } catch (_) {}
     }
 
-    if (version != _radiusLayerVersion) return; // stale
+    if (version != _radiusLayerVersion) return;
 
     for (final c in circles) {
       if (version != _radiusLayerVersion) return;
 
-      final basePx = c.radiusMeters / (156543.03392 * math.cos(c.lat * math.pi / 180));
-      final String fillColor;
-      final String strokeColor;
-      if (c.isTime) {
-        fillColor = c.active ? 'rgba(255,152,0,0.10)' : 'rgba(158,158,158,0.05)';
-        strokeColor = c.active ? 'rgba(255,152,0,0.7)' : 'rgba(158,158,158,0.3)';
-      } else {
-        fillColor = c.active ? 'rgba(255,0,0,0.12)' : 'rgba(158,158,158,0.05)';
-        strokeColor = c.active ? 'rgba(255,0,0,0.6)' : 'rgba(158,158,158,0.3)';
-      }
-      final strokeWidth = c.active ? 2.0 : 1.0;
+      final String fillColor = c.isTime
+          ? (c.active ? '#FF9800' : '#9E9E9E')
+          : (c.active ? '#FF0000' : '#9E9E9E');
+      final double fillOpacity = c.active ? 0.12 : 0.05;
+      final String strokeColor = c.isTime
+          ? (c.active ? 'rgba(255,152,0,0.7)' : 'rgba(158,158,158,0.3)')
+          : (c.active ? 'rgba(255,0,0,0.6)' : 'rgba(158,158,158,0.3)');
+      final strokeWidth = c.active ? 3.0 : 1.5;
 
       try {
-        if (c.isTime) {
-          // Time-based: polygon only (fill + dashed border) — no CircleStyleLayer
-          // This avoids the "double circle" where CircleStyleLayer and polygon don't align
-          await style.addSource(GeoJsonSource(
-            id: 'radius-dash-${c.id}',
-            data: jsonEncode({
-              'type': 'FeatureCollection',
-              'features': [{
-                'type': 'Feature',
-                'geometry': {
-                  'type': 'Polygon',
-                  'coordinates': [_geoCircle(c.lng, c.lat, c.radiusMeters)],
-                },
-                'properties': {},
-              }],
-            }),
-          ));
-          // Polygon fill
-          await style.addLayer(FillStyleLayer(
-            id: 'radius-circle-${c.id}',
-            sourceId: 'radius-dash-${c.id}',
-            paint: {
-              'fill-color': c.active ? '#FF9800' : '#9E9E9E',
-              'fill-opacity': c.active ? 0.10 : 0.05,
-            },
-          ));
-          // Dashed border
-          await style.addLayer(LineStyleLayer(
-            id: 'radius-dashline-${c.id}',
-            sourceId: 'radius-dash-${c.id}',
-            paint: {
-              'line-color': strokeColor,
-              'line-width': strokeWidth + 1,
-              'line-dasharray': [3.0, 2.0],
-            },
-          ));
-        } else {
-          // Distance-based: CircleStyleLayer with interpolated radius (perfect circle)
-          await style.addSource(GeoJsonSource(
-            id: 'radius-pt-${c.id}',
-            data: jsonEncode({
-              'type': 'FeatureCollection',
-              'features': [{
-                'type': 'Feature',
-                'geometry': {'type': 'Point', 'coordinates': [c.lng, c.lat]},
-                'properties': {},
-              }],
-            }),
-          ));
-          await style.addLayer(CircleStyleLayer(
-            id: 'radius-circle-${c.id}',
-            sourceId: 'radius-pt-${c.id}',
-            paint: {
-              'circle-radius': [
-                'interpolate', ['exponential', 2.0], ['zoom'],
-                0.0, basePx,
-                22.0, basePx * 4194304.0,
-              ],
-              'circle-color': fillColor,
-              'circle-stroke-color': strokeColor,
-              'circle-stroke-width': strokeWidth,
-            },
-          ));
-        }
+        await style.addSource(GeoJsonSource(
+          id: 'radius-src-${c.id}',
+          data: _polygonGeoJson(c.lng, c.lat, c.radiusMeters),
+        ));
+        await style.addLayer(FillStyleLayer(
+          id: 'radius-fill-${c.id}',
+          sourceId: 'radius-src-${c.id}',
+          paint: { 'fill-color': fillColor, 'fill-opacity': fillOpacity },
+        ));
+        await style.addLayer(LineStyleLayer(
+          id: 'radius-line-${c.id}',
+          sourceId: 'radius-src-${c.id}',
+          paint: {
+            'line-color': strokeColor,
+            'line-width': strokeWidth,
+            if (c.isTime) 'line-dasharray': [3.0, 2.0],
+          },
+        ));
       } catch (e) {
         DebugConsole.log('VECTOR: radius layer error for ${c.id}: $e');
       }
@@ -412,6 +445,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     final lat = position.lat.toDouble();
     final lng = position.lng.toDouble();
     final alarmProv = context.read<AlarmProvider>();
+    // Ensure pending circle layers exist
+    final style = _controller?.style;
+    if (style != null) _ensurePendingLayers(style);
     final existing = _findTappedAlarm(lat, lng, alarmProv);
     if (existing != null) {
       setState(() {
@@ -484,10 +520,13 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
 
   void _cancelFastAssign() {
     DebugConsole.log('FAST_ASSIGN: cancelled');
+    // Clear fast circle source
+    _controller?.style?.updateGeoJsonSource(id: 'fast-src', data: _emptyGeoJson);
     setState(() {
       _isFastAssigning = false;
       _fastAssignScreenCenter = null;
       _isDraggingRadius = false;
+      _dragPointerId = null;
       _fastAssignTriggerType = TriggerType.distance;
       _fastAssignZoneTrigger = ZoneTrigger.onEntry;
       _fastAssignTimeMinutes = 10;
@@ -668,44 +707,36 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                   )
                 : const SizedBox.shrink(),
           ),
-        // Radius drag overlay for vector map
+        // Radius drag overlay for vector map — blocks map gestures
         if (_isFastAssigning && _fastAssignScreenCenter != null)
           Positioned.fill(
             child: Listener(
               behavior: HitTestBehavior.opaque,
               onPointerDown: (e) {
                 if (_fastAssignScreenCenter == null) return;
-                final dist = (e.localPosition - _fastAssignScreenCenter!).distance;
-                final metersPerPx = 156543.03392 * math.cos(_fastAssignLat * math.pi / 180) / math.pow(2, _currentZoom);
-                final currentRadius = _fastAssignTriggerType == TriggerType.time
-                    ? math.max(200.0, (_speedKmh / 3.6) * _fastAssignTimeMinutes * 60)
-                    : _fastAssignRadiusMeters;
-                final radiusPx = currentRadius / metersPerPx;
-                if (dist <= radiusPx * 1.5) {
-                  _isDraggingRadius = true;
-                  DebugConsole.log('VECTOR_DRAG: start dist=${dist.round()} radiusPx=${radiusPx.round()} type=$_fastAssignTriggerType');
-                }
+                // Track this pointer — ignore all others
+                _dragPointerId = e.pointer;
+                _isDraggingRadius = true;
+                DebugConsole.log('VECTOR_DRAG: start pointer=${e.pointer}');
               },
               onPointerMove: (e) {
                 if (!_isDraggingRadius || _fastAssignScreenCenter == null) return;
+                if (e.pointer != _dragPointerId) return; // ignore other fingers
                 final dist = (e.localPosition - _fastAssignScreenCenter!).distance;
                 if (_fastAssignTriggerType == TriggerType.distance) {
                   final metersPerPx = 156543.03392 * math.cos(_fastAssignLat * math.pi / 180) / math.pow(2, _currentZoom);
                   final meters = (dist * metersPerPx).clamp(100.0, 5000.0);
                   setState(() => _fastAssignRadiusMeters = meters);
-                  DebugConsole.log('VECTOR_DRAG: dist=${dist.round()}px → ${meters.round()}m');
                 } else {
-                  // Time mode: drag distance → minutes directly
                   final minutes = (dist * 0.3).clamp(5.0, 120.0).round();
                   setState(() => _fastAssignTimeMinutes = minutes);
-                  DebugConsole.log('VECTOR_DRAG: dist=${dist.round()}px → ${minutes}min');
                 }
               },
-              onPointerUp: (_) {
-                if (_isDraggingRadius) {
-                  DebugConsole.log('VECTOR_DRAG: end');
-                  _isDraggingRadius = false;
-                }
+              onPointerUp: (e) {
+                if (e.pointer != _dragPointerId) return;
+                DebugConsole.log('VECTOR_DRAG: end');
+                _isDraggingRadius = false;
+                _dragPointerId = null;
               },
               child: const SizedBox.expand(),
             ),
@@ -718,7 +749,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               initialRadius: _fastAssignRadiusMeters,
               onRadiusChanged: (v) => setState(() => _fastAssignRadiusMeters = v),
               onZoneTriggerChanged: (v) => setState(() => _fastAssignZoneTrigger = v),
-              onTriggerTypeChanged: (v) => setState(() => _fastAssignTriggerType = v),
+              onTriggerTypeChanged: (v) {
+                setState(() => _fastAssignTriggerType = v);
+                // Force layer recreation with new colors/dash style
+                _fastLayersCreated = false;
+              },
               onTimeChanged: (v) => setState(() => _fastAssignTimeMinutes = v),
               onSave: (name, triggerType, zoneTrigger, timeMinutes) {
                 _confirmFastAssign();
