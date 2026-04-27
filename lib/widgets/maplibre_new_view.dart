@@ -21,6 +21,7 @@ import '../services/location_service.dart';
 import '../services/alarm_service.dart';
 import '../services/notification_service.dart';
 import '../services/debug_console.dart';
+import '../widgets/scale_bar.dart';
 
 class MaplibreNewView extends StatefulWidget {
   final GlobalKey<ScaffoldState> scaffoldKey;
@@ -39,6 +40,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   double _fastAssignLat = 0;
   double _fastAssignLng = 0;
   double _fastAssignRadiusMeters = 500;
+  Offset? _fastAssignScreenCenter; // screen position of circle center
+  bool _isDraggingRadius = false;
   double _currentZoom = 13;
   Position? _pendingTapPoint;
   double _pendingRadius = 500;
@@ -312,15 +315,47 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     DebugConsole.log('VECTOR LONG PRESS: lat=${position.lat}, lng=${position.lng}');
     final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
     if (haptic) Vibration.vibrate(duration: 30);
+
+    // Estimate screen position of the long-press point from camera state.
+    // MapLibre 0.2.2 doesn't expose latLngToScreenPoint, so we calculate from
+    // the camera center and zoom level.
+    Offset? screenCenter;
+    final cam = _controller?.camera;
+    if (cam != null) {
+      final box = context.findRenderObject() as RenderBox?;
+      if (box != null) {
+        final size = box.size;
+        final camLat = cam.center?.lat.toDouble() ?? 47.5;
+        final camLng = cam.center?.lng.toDouble() ?? 19.0;
+        final zoom = cam.zoom ?? _currentZoom;
+        final metersPerPx = 156543.03392 * math.cos(camLat * math.pi / 180) / math.pow(2, zoom);
+        // Approximate pixel offset from camera center
+        final dLng = (position.lng.toDouble() - camLng);
+        final dLat = (position.lat.toDouble() - camLat);
+        final dx = dLng * math.cos(camLat * math.pi / 180) * (111320.0 / metersPerPx);
+        final dy = -dLat * (110540.0 / metersPerPx);
+        screenCenter = Offset(size.width / 2 + dx, size.height / 2 + dy);
+      }
+    }
+
+    DebugConsole.log('FAST_ASSIGN: activated at ($screenCenter), lat=${position.lat.toStringAsFixed(4)}, lng=${position.lng.toStringAsFixed(4)}');
     setState(() {
       _isFastAssigning = true;
       _fastAssignLat = position.lat.toDouble();
       _fastAssignLng = position.lng.toDouble();
       _fastAssignRadiusMeters = 500;
+      _fastAssignScreenCenter = screenCenter;
     });
   }
 
-  void _cancelFastAssign() => setState(() => _isFastAssigning = false);
+  void _cancelFastAssign() {
+    DebugConsole.log('FAST_ASSIGN: cancelled');
+    setState(() {
+      _isFastAssigning = false;
+      _fastAssignScreenCenter = null;
+      _isDraggingRadius = false;
+    });
+  }
 
   void _confirmFastAssign() {
     final alarmProv = context.read<AlarmProvider>();
@@ -390,8 +425,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               _onTap(event.point);
             } else if (event is MapEventLongClick) {
               _onLongPress(event.point);
-            } else if (event is MapEventCameraIdle) {
-              _currentZoom = _controller?.camera?.zoom ?? _currentZoom;
+            } else if (event is MapEventMoveCamera || event is MapEventCameraIdle) {
+              final newZoom = _controller?.camera?.zoom ?? _currentZoom;
+              if ((newZoom - _currentZoom).abs() > 0.05) {
+                setState(() => _currentZoom = newZoom);
+              }
             }
           },
           layers: [
@@ -432,6 +470,17 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
           ],
         ),
         const OfflineIndicator(),
+        // Scale bar — bottom left
+        AnimatedPositioned(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          bottom: _isFastAssigning ? 180 : 24,
+          left: 12,
+          child: ScaleBar(
+            zoom: _currentZoom,
+            latitude: _userPos?.lat.toDouble() ?? 47.5,
+          ),
+        ),
         // Debug button - top right
         Positioned(
           top: MediaQuery.of(context).padding.top + 12,
@@ -479,15 +528,20 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                       _controller?.moveCamera(
                         center: Position(result.longitude, result.latitude), zoom: 14);
                     },
+                    onClose: () => context.read<MapProvider>().toggleSearch(),
                   )
                 : const SizedBox.shrink(),
           ),
+        // Fast assign card — ABOVE everything, handles its own swipe
         if (_isFastAssigning)
           Positioned(
             bottom: 0, left: 0, right: 0,
             child: _VectorFastAssignCard(
               initialRadius: _fastAssignRadiusMeters,
-              onRadiusChanged: (v) => setState(() => _fastAssignRadiusMeters = v),
+              onRadiusChanged: (v) {
+                DebugConsole.log('FAST_ASSIGN: slider radius=${v.round()}m');
+                setState(() => _fastAssignRadiusMeters = v);
+              },
               onSave: _confirmFastAssign,
               onCancel: _cancelFastAssign,
             ),
@@ -497,7 +551,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   }
 }
 
-/// Vector map fast assign card — own state to avoid parent rebuild on slider drag.
+/// Vector map fast assign card with swipe gestures.
+/// Swipe up: expand. Swipe down: collapse → cancel.
 class _VectorFastAssignCard extends StatefulWidget {
   final double initialRadius;
   final ValueChanged<double> onRadiusChanged;
@@ -517,6 +572,9 @@ class _VectorFastAssignCard extends StatefulWidget {
 
 class _VectorFastAssignCardState extends State<_VectorFastAssignCard> {
   late double _radius;
+  double _dragOffset = 0;
+  static const double _collapsedHeight = 180;
+  static const double _expandedExtra = 80;
 
   @override
   void initState() {
@@ -524,55 +582,118 @@ class _VectorFastAssignCardState extends State<_VectorFastAssignCard> {
     _radius = widget.initialRadius;
   }
 
+  double get _expandFraction => (_dragOffset.abs() / _expandedExtra).clamp(0.0, 1.0);
+  bool get _isExpanded => _expandFraction > 0.3;
+
+  void _snapToPosition() {
+    setState(() {
+      if (_dragOffset < -_expandedExtra * 0.3) {
+        _dragOffset = -_expandedExtra;
+      } else if (_dragOffset > 40) {
+        widget.onCancel();
+        return;
+      } else {
+        _dragOffset = 0;
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bottomPad = MediaQuery.of(context).padding.bottom;
+    final cardHeight = _collapsedHeight + (_expandFraction * _expandedExtra);
 
-    return Material(
-      color: Colors.transparent,
-      child: Container(
-        padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + bottomPad),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1a1a2e) : Colors.white,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 20, offset: const Offset(0, -4))],
-        ),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Row(children: [
-            const Icon(Icons.location_on, color: Colors.red, size: 28),
-            const SizedBox(width: 8),
-            const Expanded(child: Text('Fast Assign',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
-            Text('${_radius.round()}m',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.red[700])),
-          ]),
-          const SizedBox(height: 8),
-          Slider(
-            value: _radius, min: 100, max: 5000, divisions: 49,
-            activeColor: Colors.red,
-            onChanged: (v) {
-              setState(() => _radius = v);
-              widget.onRadiusChanged(v);
-            },
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onVerticalDragUpdate: (d) => setState(() => _dragOffset += d.delta.dy),
+      onVerticalDragEnd: (_) => _snapToPosition(),
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          height: cardHeight + bottomPad + 16,
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1a1a2e) : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 20, offset: const Offset(0, -4))],
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('100m', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
-                Text('5km', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
-              ],
+          child: Column(children: [
+            // Drag handle
+            GestureDetector(
+              onTap: () => setState(() {
+                _dragOffset = _isExpanded ? 0 : -_expandedExtra;
+              }),
+              child: Padding(
+                padding: const EdgeInsets.only(top: 8, bottom: 4),
+                child: Container(
+                  width: 40, height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[400],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          Row(children: [
-            Expanded(child: OutlinedButton(onPressed: widget.onCancel, child: Text(tr('cancel')))),
-            const SizedBox(width: 8),
-            Expanded(child: FilledButton(onPressed: widget.onSave, child: Text(tr('save')))),
+            // Scrollable content
+            Expanded(
+              child: ClipRect(
+                child: SingleChildScrollView(
+                  physics: const NeverScrollableScrollPhysics(),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 4, 12, 0),
+                      child: Row(children: [
+                        const Icon(Icons.location_on, color: Colors.red, size: 28),
+                        const SizedBox(width: 8),
+                        const Expanded(child: Text('Fast Assign',
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+                        Text('${_radius.round()}m',
+                            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.red[700])),
+                        IconButton(
+                          icon: Icon(_isExpanded ? Icons.expand_more : Icons.expand_less, size: 24),
+                          onPressed: () => setState(() {
+                            _dragOffset = _isExpanded ? 0 : -_expandedExtra;
+                          }),
+                        ),
+                      ]),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Slider(
+                        value: _radius, min: 100, max: 5000, divisions: 49,
+                        activeColor: Colors.red,
+                        onChanged: (v) {
+                          setState(() => _radius = v);
+                          widget.onRadiusChanged(v);
+                        },
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('100m', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+                          Text('5km', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ]),
+                ),
+              ),
+            ),
+            // Bottom buttons — ALWAYS visible, fixed
+            Padding(
+              padding: EdgeInsets.fromLTRB(20, 0, 20, 16 + bottomPad),
+              child: Row(children: [
+                Expanded(child: OutlinedButton(onPressed: widget.onCancel, child: Text(tr('cancel')))),
+                const SizedBox(width: 8),
+                Expanded(child: FilledButton(onPressed: widget.onSave, child: Text(tr('save')))),
+              ]),
+            ),
           ]),
-        ]),
+        ),
       ),
     );
   }

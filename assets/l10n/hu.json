@@ -48,5 +48,9 @@
   "open_settings": "Beállítások megnyitása",
   "play": "Lejátszás",
   "on_entry": "Belépéskor",
-  "on_leave": "Kilépéskor"
+  "on_leave": "Kilépéskor",
+  "reset_all": "Összes törlése",
+  "reset_all_confirm": "Törlöd mind a {} alarm pontot a térképről?",
+  "points": "pont",
+  "edit_alarm": "Alarm szerkesztése"
 }

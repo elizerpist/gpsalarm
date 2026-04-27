@@ -26,6 +26,8 @@ class MapControls extends StatelessWidget {
         : Colors.white.withOpacity(0.92);
     final iconColor = isDark ? Colors.white : Colors.grey[800]!;
 
+    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+
     return Stack(
       children: [
         // Hamburger - top left
@@ -40,7 +42,7 @@ class MapControls extends StatelessWidget {
         ),
         // Zoom buttons - right side above FAB
         Positioned(
-          bottom: 140,
+          bottom: 140 + keyboardHeight,
           right: 16,
           child: Column(
             children: [
@@ -60,7 +62,7 @@ class MapControls extends StatelessWidget {
         ),
         // My location button
         Positioned(
-          bottom: 92,
+          bottom: 92 + keyboardHeight,
           right: 16,
           child: _ControlButton(
             onTap: onMyLocation,
@@ -68,15 +70,16 @@ class MapControls extends StatelessWidget {
             child: Icon(Icons.my_location, color: iconColor, size: 22),
           ),
         ),
-        // FAB - bottom right
-        Positioned(
-          bottom: 24,
-          right: 16,
-          child: GestureDetector(
-            onTap: onSearchTap,
-            child: Container(
-              width: 56,
-              height: 56,
+        // FAB - bottom right (hidden when search is active — pill takes over)
+        if (!searchActive)
+          Positioned(
+            bottom: 24 + keyboardHeight,
+            right: 16,
+            child: GestureDetector(
+              onTap: onSearchTap,
+              child: Container(
+                width: 56,
+                height: 56,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: searchActive

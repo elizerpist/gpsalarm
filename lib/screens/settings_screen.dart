@@ -126,6 +126,16 @@ class SettingsDrawer extends StatelessWidget {
               subtitle: settings.locale == 'hu' ? 'Magyar' : 'English',
               onTap: () => _toggleLanguage(context, settingsProv),
             ),
+            const Spacer(),
+            const Divider(height: 1, indent: 20, endIndent: 20),
+            _MenuItem(
+              icon: Icons.delete_sweep,
+              title: tr('reset_all'),
+              subtitle: '${alarmProv.alarmPoints.length} ${tr('points')}',
+              color: Colors.red,
+              onTap: () => _confirmResetAll(context, alarmProv),
+            ),
+            const SizedBox(height: 8),
           ],
         ),
       ),
@@ -182,6 +192,32 @@ class SettingsDrawer extends StatelessWidget {
         .updateSettings(settingsProv.settings.copyWith(locale: newLocale));
     context.setLocale(Locale(newLocale));
   }
+
+  void _confirmResetAll(BuildContext context, AlarmProvider alarmProv) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        icon: const Icon(Icons.warning_amber, color: Colors.red, size: 40),
+        title: Text(tr('reset_all')),
+        content: Text(tr('reset_all_confirm', args: [alarmProv.alarmPoints.length.toString()])),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(tr('cancel')),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () {
+              alarmProv.clearAll();
+              Navigator.pop(context); // dialog
+              Navigator.pop(context); // drawer
+            },
+            child: Text(tr('delete')),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _MenuItem extends StatelessWidget {
@@ -189,22 +225,24 @@ class _MenuItem extends StatelessWidget {
   final String title;
   final String subtitle;
   final VoidCallback onTap;
+  final Color? color;
 
   const _MenuItem({
     required this.icon,
     required this.title,
     required this.subtitle,
     required this.onTap,
+    this.color,
   });
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: Icon(icon, size: 22),
-      title: Text(title, style: const TextStyle(fontSize: 14)),
+      leading: Icon(icon, size: 22, color: color),
+      title: Text(title, style: TextStyle(fontSize: 14, color: color)),
       subtitle:
-          Text(subtitle, style: TextStyle(fontSize: 11, color: Colors.grey[500])),
-      trailing: Icon(Icons.chevron_right, size: 18, color: Colors.grey[400]),
+          Text(subtitle, style: TextStyle(fontSize: 11, color: color?.withOpacity(0.7) ?? Colors.grey[500])),
+      trailing: Icon(Icons.chevron_right, size: 18, color: color?.withOpacity(0.5) ?? Colors.grey[400]),
       onTap: onTap,
     );
   }

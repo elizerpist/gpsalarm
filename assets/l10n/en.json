@@ -48,5 +48,9 @@
   "open_settings": "Open Settings",
   "play": "Play",
   "on_entry": "On entry",
-  "on_leave": "On leave"
+  "on_leave": "On leave",
+  "reset_all": "Delete all",
+  "reset_all_confirm": "Delete all {} alarm points from the map?",
+  "points": "points",
+  "edit_alarm": "Edit alarm"
 }

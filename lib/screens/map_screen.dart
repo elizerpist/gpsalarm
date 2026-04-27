@@ -27,6 +27,7 @@ import 'settings_screen.dart';
 import '../services/debug_console.dart';
 import '../widgets/maplibre_new_view.dart';
 import '../widgets/offline_indicator.dart';
+import '../widgets/scale_bar.dart';
 import '../services/cached_tile_provider.dart';
 
 class MapScreen extends StatefulWidget {
@@ -50,11 +51,17 @@ class _MapScreenState extends State<MapScreen> {
   LatLng? _fastAssignCenter;
   double _fastAssignRadiusMeters = 500;
   bool _isFastAssigning = false;
+  ZoneTrigger _fastAssignZoneTrigger = ZoneTrigger.onEntry;
+  TriggerType _triggerTypeForFastAssign = TriggerType.distance;
+  int _fastAssignTimeMinutes = 10;
   Offset? _fastAssignStartOffset; // screen position of long press
   // Long press timer for custom detection
   Timer? _longPressTimer;
   Offset? _pointerDownPos;
   bool _longPressTriggered = false;
+
+  double _rasterZoom = 13;
+  double _speedKmh = 0;
 
   // Frame timing
   int _frameCount = 0;
@@ -113,6 +120,10 @@ class _MapScreenState extends State<MapScreen> {
           DebugConsole.log('GPS: ${newPos.latitude.toStringAsFixed(4)}, ${newPos.longitude.toStringAsFixed(4)}');
         }
         _checkAlarms(position.latitude, position.longitude);
+        final newSpeed = _locationService.averageSpeedKmh;
+        if ((newSpeed - _speedKmh).abs() > 0.5) {
+          setState(() => _speedKmh = newSpeed);
+        }
       });
     }
   }
@@ -211,6 +222,7 @@ class _MapScreenState extends State<MapScreen> {
     if (mapProvider == MapTileProvider.vector && !kIsWeb) {
       return Scaffold(
         key: _scaffoldKey,
+        resizeToAvoidBottomInset: false,
         body: MaplibreNewView(scaffoldKey: _scaffoldKey),
         drawer: const SettingsDrawer(),
       );
@@ -222,15 +234,16 @@ class _MapScreenState extends State<MapScreen> {
 
     return Scaffold(
       key: _scaffoldKey,
+      resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
           // Long press gesture layer on top of map
           Listener(
             behavior: HitTestBehavior.translucent,
-            onPointerDown: _isFastAssigning ? null : _onPointerDown,
-            onPointerMove: _isFastAssigning ? null : _onPointerMove,
-            onPointerUp: _isFastAssigning ? null : _onPointerUp,
-            onPointerCancel: _isFastAssigning ? null : (_) {
+            onPointerDown: _onPointerDown,
+            onPointerMove: _onPointerMove,
+            onPointerUp: _onPointerUp,
+            onPointerCancel: (_) {
               _activePointers = (_activePointers - 1).clamp(0, 99);
               _cancelLongPressTimer();
             },
@@ -239,8 +252,10 @@ class _MapScreenState extends State<MapScreen> {
               options: MapOptions(
                 initialCenter: context.read<MapProvider>().center,
                 initialZoom: context.read<MapProvider>().zoom,
-                interactionOptions: const InteractionOptions(
-                  flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+                interactionOptions: InteractionOptions(
+                  flags: _isDraggingRadius
+                      ? InteractiveFlag.none
+                      : InteractiveFlag.all & ~InteractiveFlag.rotate,
                 ),
                 onTap: _isFastAssigning
                     ? null
@@ -248,6 +263,10 @@ class _MapScreenState extends State<MapScreen> {
                 onPositionChanged: (position, hasGesture) {
                   if (hasGesture) {
                     _cancelLongPressTimer();
+                  }
+                  final z = position.zoom;
+                  if (z != null && (z - _rasterZoom).abs() > 0.05) {
+                    setState(() => _rasterZoom = z);
                   }
                 },
               ),
@@ -261,13 +280,16 @@ class _MapScreenState extends State<MapScreen> {
                   DebugConsole.log('Tile error z=${tile.coordinates.z} x=${tile.coordinates.x} y=${tile.coordinates.y}: $error');
                 },
               ),
-              // Radius circles - only rebuilds when alarms change
+              // Radius circles — distance-based (solid)
               Consumer<AlarmProvider>(
                 builder: (_, alarmProv, __) => CircleLayer(
                   circles: [
                     ...alarmProv.alarmPoints
-                        .map((p) => buildRadiusCircle(p)),
-                    if (_isFastAssigning && _fastAssignCenter != null)
+                        .where((p) => p.zoneTrigger != ZoneTrigger.onLeave && p.triggerType == TriggerType.distance)
+                        .map((p) => buildRadiusCircle(p, speedKmh: _speedKmh)),
+                    if (_isFastAssigning && _fastAssignCenter != null
+                        && _fastAssignZoneTrigger != ZoneTrigger.onLeave
+                        && _triggerTypeForFastAssign == TriggerType.distance)
                       CircleMarker(
                         point: _fastAssignCenter!,
                         radius: _fastAssignRadiusMeters,
@@ -278,6 +300,58 @@ class _MapScreenState extends State<MapScreen> {
                       ),
                   ],
                 ),
+              ),
+              // Radius circles — time-based (orange dashed)
+              Consumer<AlarmProvider>(
+                builder: (_, alarmProv, __) {
+                  final timePolygons = <Polygon>[
+                    ...alarmProv.alarmPoints
+                        .where((p) => p.zoneTrigger != ZoneTrigger.onLeave && p.triggerType == TriggerType.time)
+                        .map((p) => buildTimeTriggerCircle(
+                          LatLng(p.latitude, p.longitude),
+                          effectiveRadius(p, _speedKmh),
+                          isActive: p.isActive,
+                        )),
+                    if (_isFastAssigning && _fastAssignCenter != null
+                        && _fastAssignZoneTrigger != ZoneTrigger.onLeave
+                        && _triggerTypeForFastAssign == TriggerType.time)
+                      buildTimeTriggerCircle(
+                        _fastAssignCenter!,
+                        max(200.0, (_speedKmh / 3.6) * _fastAssignTimeMinutes * 60),
+                      ),
+                  ];
+                  return timePolygons.isEmpty
+                      ? const SizedBox.shrink()
+                      : PolygonLayer(polygons: timePolygons);
+                },
+              ),
+              // Inverted radius — single veil with holes for ALL onLeave circles
+              Consumer<AlarmProvider>(
+                builder: (_, alarmProv, __) {
+                  final leaveAlarms = alarmProv.alarmPoints
+                      .where((p) => p.zoneTrigger == ZoneTrigger.onLeave)
+                      .toList();
+                  final hasFastLeave = _isFastAssigning && _fastAssignCenter != null && _fastAssignZoneTrigger == ZoneTrigger.onLeave;
+                  if (leaveAlarms.isEmpty && !hasFastLeave) return const SizedBox.shrink();
+
+                  final holes = <List<LatLng>>[
+                    for (final p in leaveAlarms)
+                      buildCirclePoints(LatLng(p.latitude, p.longitude), p.radiusMeters),
+                    if (hasFastLeave)
+                      buildCirclePoints(_fastAssignCenter!, _fastAssignRadiusMeters),
+                  ];
+
+                  return PolygonLayer(polygons: [
+                    Polygon(
+                      points: const [LatLng(-85, -180), LatLng(-85, 180), LatLng(85, 180), LatLng(85, -180)],
+                      holePointsList: holes,
+                      color: Colors.red.withOpacity(0.15),
+                      borderColor: Colors.red.withOpacity(0.6),
+                      borderStrokeWidth: 2,
+                      isFilled: true,
+                    ),
+                  ]);
+                },
               ),
               // Pin markers - rebuilds only on alarm or GPS change
               Consumer<AlarmProvider>(
@@ -308,11 +382,10 @@ class _MapScreenState extends State<MapScreen> {
                         Marker(
                           point: _fastAssignCenter!,
                           width: 40,
-                          height: 40,
-                          // Icon tip at y=32 in 40px box → alignment y = (32-20)/20 = 0.6
-                          alignment: const Alignment(0, 0.6),
+                          height: 50,
+                          alignment: const Alignment(0, 0.28),
                           child: const Icon(Icons.location_on,
-                              color: Colors.red, size: 32),
+                              color: Colors.red, size: 36),
                         ),
                     ],
                   ),
@@ -324,6 +397,18 @@ class _MapScreenState extends State<MapScreen> {
           // (swipe handled by Listener above)
           // Offline indicator
           const OfflineIndicator(),
+          // Scale bar — bottom left
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+            bottom: _isFastAssigning ? 180 : 24,
+            left: 12,
+            child: ScaleBar(
+              zoom: _rasterZoom,
+              latitude: _userPosition.value?.latitude ?? 47.5,
+              speedKmh: _speedKmh,
+            ),
+          ),
           // Debug button - top right
           Positioned(
             top: MediaQuery.of(context).padding.top + 12,
@@ -377,6 +462,7 @@ class _MapScreenState extends State<MapScreen> {
                           14.0,
                         );
                       },
+                      onClose: () => context.read<MapProvider>().toggleSearch(),
                     )
                   : const SizedBox.shrink(),
             ),
@@ -387,6 +473,9 @@ class _MapScreenState extends State<MapScreen> {
               child: _FastAssignCard(
                 initialRadius: _fastAssignRadiusMeters,
                 onRadiusChanged: (v) => setState(() => _fastAssignRadiusMeters = v),
+                onZoneTriggerChanged: (v) => setState(() => _fastAssignZoneTrigger = v),
+                onTriggerTypeChanged: (v) => setState(() => _triggerTypeForFastAssign = v),
+                onTimeChanged: (v) => setState(() => _fastAssignTimeMinutes = v),
                 onSave: _saveFastAssign,
                 onCancel: _cancelFastAssign,
               ),
@@ -398,15 +487,38 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   int _activePointers = 0;
+  bool _isDraggingRadius = false;
+
+  /// Get the screen position of the fast assign circle center.
+  Offset? _getCircleCenterScreen() {
+    if (_fastAssignCenter == null) return null;
+    final screenPt = _mapController.camera.latLngToScreenPoint(_fastAssignCenter!);
+    return Offset(screenPt.x.toDouble(), screenPt.y.toDouble());
+  }
 
   void _onPointerDown(PointerDownEvent event) {
     _activePointers++;
-    // Multi-touch (pinch zoom) — cancel long press
     if (_activePointers > 1) {
       _cancelLongPressTimer();
       return;
     }
-    if (_isFastAssigning) return;
+
+    // Fast assign mode: check if touch is inside the radius circle
+    if (_isFastAssigning && _fastAssignCenter != null) {
+      final center = _getCircleCenterScreen();
+      if (center != null) {
+        final dist = (event.localPosition - center).distance;
+        final radiusPx = _fastAssignRadiusMeters / _pixelsToMeters(1);
+        if (dist <= radiusPx * 1.3) {
+          _isDraggingRadius = true;
+          DebugConsole.log('RADIUS_DRAG: start dist=${dist.round()} radiusPx=${radiusPx.round()}');
+          return;
+        }
+      }
+      return; // outside circle — let map handle pan
+    }
+
+    // Normal mode: long press detection
     _pointerDownPos = event.position;
     _longPressTriggered = false;
     _longPressTimer = Timer(const Duration(milliseconds: 500), () {
@@ -416,38 +528,49 @@ class _MapScreenState extends State<MapScreen> {
           event.localPosition.dx, event.localPosition.dy);
       final latLng = _mapController.camera.pointToLatLng(screenPoint);
       DebugConsole.log('LONG PRESS START at ${latLng.latitude.toStringAsFixed(4)}, ${latLng.longitude.toStringAsFixed(4)}');
-      // Haptic feedback
       final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
-      if (haptic) {
-        Vibration.vibrate(duration: 30);
-      }
+      if (haptic) Vibration.vibrate(duration: 30);
       _handleLongPress(context, latLng, event.position);
     });
   }
 
   void _onPointerMove(PointerMoveEvent event) {
-    // If long press not yet triggered, check if moved too far (cancel)
-    if (!_longPressTriggered && _pointerDownPos != null) {
-      final dist = (event.position - _pointerDownPos!).distance;
-      if (dist > 20) {
-        _cancelLongPressTimer();
+    // Radius drag mode
+    if (_isDraggingRadius && _fastAssignCenter != null) {
+      final center = _getCircleCenterScreen();
+      if (center != null) {
+        final dist = (event.localPosition - center).distance;
+        final meters = _pixelsToMeters(dist).clamp(100.0, 5000.0);
+        setState(() => _fastAssignRadiusMeters = meters);
       }
       return;
     }
-    // Long press active — update radius based on swipe distance
+
+    // Long press not yet triggered — check if moved too far
+    if (!_longPressTriggered && _pointerDownPos != null) {
+      final dist = (event.position - _pointerDownPos!).distance;
+      if (dist > 20) _cancelLongPressTimer();
+      return;
+    }
+
+    // Initial long press swipe — update radius
     if (_isFastAssigning && _fastAssignStartOffset != null) {
       final dx = event.position.dx - _fastAssignStartOffset!.dx;
       final dy = event.position.dy - _fastAssignStartOffset!.dy;
       final pixelDist = sqrt(dx * dx + dy * dy);
       final meters = _pixelsToMeters(pixelDist).clamp(100.0, 5000.0);
       setState(() => _fastAssignRadiusMeters = meters);
-      DebugConsole.log('SWIPE radius: ${meters.round()}m (${pixelDist.round()}px)');
     }
   }
 
   void _onPointerUp(PointerUpEvent event) {
     _activePointers = (_activePointers - 1).clamp(0, 99);
     _cancelLongPressTimer();
+    if (_isDraggingRadius) {
+      DebugConsole.log('RADIUS_DRAG: end radius=${_fastAssignRadiusMeters.round()}m');
+      _isDraggingRadius = false;
+      return;
+    }
     if (_longPressTriggered && _isFastAssigning) {
       DebugConsole.log('LONG PRESS RELEASED — radius: ${_fastAssignRadiusMeters.round()}m');
     }
@@ -522,6 +645,9 @@ class _MapScreenState extends State<MapScreen> {
       _isFastAssigning = false;
       _fastAssignCenter = null;
       _fastAssignRadiusMeters = 500;
+      _fastAssignZoneTrigger = ZoneTrigger.onEntry;
+      _triggerTypeForFastAssign = TriggerType.distance;
+      _fastAssignTimeMinutes = 10;
       _fastAssignStartOffset = null;
       _longPressTriggered = false;
       _pointerDownPos = null;
@@ -603,12 +729,18 @@ class _MapScreenState extends State<MapScreen> {
 class _FastAssignCard extends StatefulWidget {
   final double initialRadius;
   final ValueChanged<double> onRadiusChanged;
+  final ValueChanged<ZoneTrigger> onZoneTriggerChanged;
+  final ValueChanged<TriggerType> onTriggerTypeChanged;
+  final ValueChanged<int> onTimeChanged;
   final void Function(String? name, TriggerType triggerType, ZoneTrigger zoneTrigger, int timeMinutes) onSave;
   final VoidCallback onCancel;
 
   const _FastAssignCard({
     required this.initialRadius,
     required this.onRadiusChanged,
+    required this.onZoneTriggerChanged,
+    required this.onTriggerTypeChanged,
+    required this.onTimeChanged,
     required this.onSave,
     required this.onCancel,
   });
@@ -619,7 +751,9 @@ class _FastAssignCard extends StatefulWidget {
 
 class _FastAssignCardState extends State<_FastAssignCard> {
   late double _radius;
-  bool _expanded = false;
+  double _dragOffset = 0; // 0 = collapsed, negative = expanded upward
+  static const double _collapsedHeight = 180;
+  static const double _expandedExtra = 80; // just enough for name field
   final _nameController = TextEditingController();
   TriggerType _triggerType = TriggerType.distance;
   ZoneTrigger _zoneTrigger = ZoneTrigger.onEntry;
@@ -637,27 +771,49 @@ class _FastAssignCardState extends State<_FastAssignCard> {
     super.dispose();
   }
 
+  double get _expandFraction => (_dragOffset.abs() / _expandedExtra).clamp(0.0, 1.0);
+  bool get _isExpanded => _expandFraction > 0.3;
+
+  void _snapToPosition() {
+    setState(() {
+      if (_dragOffset < -_expandedExtra * 0.3) {
+        _dragOffset = -_expandedExtra; // snap to expanded
+      } else if (_dragOffset > 40) {
+        widget.onCancel(); // swipe down past threshold → cancel
+        return;
+      } else {
+        _dragOffset = 0; // snap to collapsed
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bottomPad = MediaQuery.of(context).padding.bottom;
+    final cardHeight = _collapsedHeight + (_expandFraction * _expandedExtra);
 
-    return Material(
-      color: Colors.transparent,
-      child: Container(
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1a1a2e) : Colors.white,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 20, offset: const Offset(0, -4))],
-        ),
-        child: AnimatedSize(
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeInOut,
-          alignment: Alignment.topCenter,
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            // Drag handle — tap to expand/collapse
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onVerticalDragUpdate: (d) {
+        setState(() => _dragOffset += d.delta.dy);
+      },
+      onVerticalDragEnd: (_) => _snapToPosition(),
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          height: cardHeight + bottomPad + 16,
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1a1a2e) : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 20, offset: const Offset(0, -4))],
+          ),
+          child: Column(children: [
+            // Drag handle
             GestureDetector(
-              onTap: () => setState(() => _expanded = !_expanded),
+              onTap: () => setState(() {
+                _dragOffset = _isExpanded ? 0 : -_expandedExtra;
+              }),
               child: Padding(
                 padding: const EdgeInsets.only(top: 8, bottom: 4),
                 child: Container(
@@ -669,92 +825,107 @@ class _FastAssignCardState extends State<_FastAssignCard> {
                 ),
               ),
             ),
-            // Compact header: icon + "Fast Assign" + radius + expand chevron
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 4, 12, 0),
-              child: Row(children: [
-                const Icon(Icons.location_on, color: Colors.red, size: 28),
-                const SizedBox(width: 8),
-                const Expanded(child: Text('Fast Assign',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
-                Text('${_radius.round()}m',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.red[700])),
-                IconButton(
-                  icon: Icon(_expanded ? Icons.expand_more : Icons.expand_less, size: 24),
-                  onPressed: () => setState(() => _expanded = !_expanded),
-                ),
-              ]),
-            ),
-            // Slider — always visible
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Slider(
-                value: _radius, min: 100, max: 5000, divisions: 49,
-                activeColor: Colors.red,
-                onChanged: (v) {
-                  setState(() => _radius = v);
-                  widget.onRadiusChanged(v);
-                },
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('100m', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
-                  Text('5km', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
-                ],
-              ),
-            ),
-            // Expanded section
-            if (_expanded) ...[
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: TextField(
-                  controller: _nameController,
-                  decoration: InputDecoration(labelText: tr('name_optional')),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(tr('trigger_type'),
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-                  const SizedBox(height: 8),
-                  Row(children: [
-                    _chip(tr('distance'), Icons.straighten, _triggerType == TriggerType.distance,
-                        () => setState(() => _triggerType = TriggerType.distance)),
-                    const SizedBox(width: 8),
-                    _chip(tr('time'), Icons.timer, _triggerType == TriggerType.time,
-                        () => setState(() => _triggerType = TriggerType.time)),
-                  ]),
-                  if (_triggerType == TriggerType.time) ...[
+            // Scrollable content area (expands/collapses)
+            Expanded(
+              child: ClipRect(
+                child: SingleChildScrollView(
+                  physics: const NeverScrollableScrollPhysics(),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    // Header with toggle buttons
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 8, 0),
+                      child: Row(children: [
+                        const Icon(Icons.location_on, color: Colors.red, size: 24),
+                        const SizedBox(width: 6),
+                        Text('${_radius.round()}m',
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.red[700])),
+                        const Spacer(),
+                        // Distance/Time toggle
+                        _toggleIcon(
+                          icon: _triggerType == TriggerType.distance ? Icons.straighten : Icons.timer,
+                          tooltip: _triggerType == TriggerType.distance ? tr('distance') : tr('time'),
+                          active: _triggerType == TriggerType.time,
+                          onTap: () {
+                            final next = _triggerType == TriggerType.distance
+                                ? TriggerType.time : TriggerType.distance;
+                            setState(() => _triggerType = next);
+                            widget.onTriggerTypeChanged(next);
+                          },
+                        ),
+                        const SizedBox(width: 4),
+                        // Entry/Leave toggle
+                        _toggleIcon(
+                          icon: _zoneTrigger == ZoneTrigger.onEntry ? Icons.login : Icons.logout,
+                          tooltip: _zoneTrigger == ZoneTrigger.onEntry ? tr('on_entry') : tr('on_leave'),
+                          active: _zoneTrigger == ZoneTrigger.onLeave,
+                          onTap: () {
+                            final next = _zoneTrigger == ZoneTrigger.onEntry
+                                ? ZoneTrigger.onLeave : ZoneTrigger.onEntry;
+                            setState(() => _zoneTrigger = next);
+                            widget.onZoneTriggerChanged(next);
+                          },
+                        ),
+                        IconButton(
+                          icon: Icon(_isExpanded ? Icons.expand_more : Icons.expand_less, size: 22),
+                          onPressed: () => setState(() {
+                            _dragOffset = _isExpanded ? 0 : -_expandedExtra;
+                          }),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ]),
+                    ),
+                    // Slider
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: _triggerType == TriggerType.distance
+                          ? Slider(
+                              value: _radius, min: 100, max: 5000, divisions: 49,
+                              activeColor: Colors.red,
+                              onChanged: (v) {
+                                setState(() => _radius = v);
+                                widget.onRadiusChanged(v);
+                              },
+                            )
+                          : Slider(
+                              value: _timeMinutes.toDouble(), min: 5, max: 120, divisions: 23,
+                              activeColor: Colors.orange,
+                              onChanged: (v) {
+                                setState(() => _timeMinutes = v.round());
+                                widget.onTimeChanged(v.round());
+                              },
+                            ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: _triggerType == TriggerType.distance
+                            ? [
+                                Text('100m', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+                                Text('5km', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+                              ]
+                            : [
+                                Text('5 min', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+                                Text('$_timeMinutes min', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.orange[700])),
+                                Text('120 min', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+                              ],
+                      ),
+                    ),
+                    // Expanded content
+                    const SizedBox(height: 8),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: TextField(
+                        controller: _nameController,
+                        decoration: InputDecoration(labelText: tr('name_optional')),
+                      ),
+                    ),
                     const SizedBox(height: 12),
-                    Row(children: [
-                      Expanded(child: Slider(
-                        value: _timeMinutes.toDouble(), min: 5, max: 120, divisions: 23,
-                        onChanged: (v) => setState(() => _timeMinutes = v.round()),
-                      )),
-                      Text('$_timeMinutes min',
-                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                    ]),
-                  ],
-                  const SizedBox(height: 12),
-                  Row(children: [
-                    _chip(tr('on_entry'), Icons.login, _zoneTrigger == ZoneTrigger.onEntry,
-                        () => setState(() => _zoneTrigger = ZoneTrigger.onEntry)),
-                    const SizedBox(width: 8),
-                    _chip(tr('on_leave'), Icons.logout, _zoneTrigger == ZoneTrigger.onLeave,
-                        () => setState(() => _zoneTrigger = ZoneTrigger.onLeave)),
                   ]),
-                ]),
+                ),
               ),
-            ],
-            const SizedBox(height: 12),
-            // Buttons — always visible
+            ),
+            // Bottom buttons — ALWAYS visible, fixed position
             Padding(
               padding: EdgeInsets.fromLTRB(20, 0, 20, 16 + bottomPad),
               child: Row(children: [
@@ -778,29 +949,36 @@ class _FastAssignCardState extends State<_FastAssignCard> {
     );
   }
 
-  Widget _chip(String label, IconData icon, bool selected, VoidCallback onTap) {
-    return Expanded(
+  Widget _toggleIcon({
+    required IconData icon,
+    required String tooltip,
+    required bool active,
+    required VoidCallback onTap,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Tooltip(
+      message: tooltip,
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10),
+          width: 36, height: 36,
           decoration: BoxDecoration(
-            color: selected ? Theme.of(context).colorScheme.primaryContainer : Colors.transparent,
-            border: Border.all(
-              color: selected ? Theme.of(context).colorScheme.primary : Colors.grey[300]!,
-              width: selected ? 2 : 1,
-            ),
+            color: active
+                ? Theme.of(context).colorScheme.primary.withOpacity(0.15)
+                : (isDark ? Colors.grey[800] : Colors.grey[200]),
             borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: active
+                  ? Theme.of(context).colorScheme.primary
+                  : Colors.transparent,
+              width: 1.5,
+            ),
           ),
-          child: Column(children: [
-            Icon(icon, color: selected ? Theme.of(context).colorScheme.primary : Colors.grey),
-            const SizedBox(height: 4),
-            Text(label, style: TextStyle(
-              fontSize: 12,
-              fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-              color: selected ? Theme.of(context).colorScheme.primary : Colors.grey,
-            )),
-          ]),
+          child: Icon(icon, size: 18,
+            color: active
+                ? Theme.of(context).colorScheme.primary
+                : (isDark ? Colors.grey[400] : Colors.grey[600]),
+          ),
         ),
       ),
     );

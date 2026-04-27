@@ -72,6 +72,14 @@ class AlarmProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void clearAll() {
+    final count = _alarmPoints.length;
+    _alarmPoints.clear();
+    _saveAll();
+    DebugConsole.log('All alarms cleared ($count points)');
+    notifyListeners();
+  }
+
   void updateAlarmPoint(AlarmPoint updated) {
     final index = _alarmPoints.indexWhere((p) => p.id == updated.id);
     if (index != -1) {

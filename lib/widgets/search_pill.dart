@@ -4,20 +4,37 @@ import 'package:easy_localization/easy_localization.dart';
 import '../providers/map_provider.dart';
 import '../services/geocoding_service.dart';
 
+/// Search pill that expands from the FAB position (bottom-right) to the left.
+/// Sits at the same height as the FAB (bottom: 24).
 class SearchPill extends StatefulWidget {
   final void Function(GeocodingResult) onResultSelected;
+  final VoidCallback? onClose;
 
-  const SearchPill({super.key, required this.onResultSelected});
+  const SearchPill({super.key, required this.onResultSelected, this.onClose});
 
   @override
   State<SearchPill> createState() => _SearchPillState();
 }
 
-class _SearchPillState extends State<SearchPill> {
+class _SearchPillState extends State<SearchPill> with SingleTickerProviderStateMixin {
   final TextEditingController _controller = TextEditingController();
+  late final AnimationController _expandCtrl;
+  late final Animation<double> _expandAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _expandCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    )..addListener(() => setState(() {}));
+    _expandAnim = CurvedAnimation(parent: _expandCtrl, curve: Curves.easeOutCubic);
+    _expandCtrl.forward();
+  }
 
   @override
   void dispose() {
+    _expandCtrl.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -26,18 +43,27 @@ class _SearchPillState extends State<SearchPill> {
   Widget build(BuildContext context) {
     final mapProv = context.watch<MapProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+    final screenWidth = MediaQuery.of(context).size.width;
+
+    // FAB: 56px wide, right: 16. Collapsed = FAB left edge. Expanded = left: 16.
+    final collapsedLeft = screenWidth - 56 - 16;
+    const expandedLeft = 16.0;
+    final left = collapsedLeft + (expandedLeft - collapsedLeft) * _expandAnim.value;
 
     return Positioned(
-      bottom: 90,
-      left: 16,
-      right: 80,
+      bottom: 24 + keyboardHeight,
+      left: left,
+      right: 16,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Input bar — same height as FAB (56px)
           Container(
+            height: 56,
             decoration: BoxDecoration(
               color: isDark ? Colors.grey[900] : Colors.white,
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withOpacity(0.15),
@@ -53,19 +79,23 @@ class _SearchPillState extends State<SearchPill> {
                 Icon(Icons.search, color: Colors.grey[500], size: 20),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    autofocus: true,
-                    decoration: InputDecoration(
-                      hintText: tr('search_city'),
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      contentPadding: EdgeInsets.zero,
-                      isDense: true,
-                      hintStyle: TextStyle(color: Colors.grey[400]),
+                  child: Opacity(
+                    opacity: _expandAnim.value.clamp(0.3, 1.0),
+                    child: TextField(
+                      controller: _controller,
+                      autofocus: true,
+                      style: const TextStyle(fontSize: 16),
+                      decoration: InputDecoration(
+                        hintText: tr('search_city'),
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                        isDense: false,
+                        hintStyle: TextStyle(color: Colors.grey[400]),
+                      ),
+                      onChanged: (query) => mapProv.search(query),
                     ),
-                    onChanged: (query) => mapProv.search(query),
                   ),
                 ),
                 if (_controller.text.isNotEmpty)
@@ -74,14 +104,33 @@ class _SearchPillState extends State<SearchPill> {
                       _controller.clear();
                       mapProv.search('');
                     },
-                    child:
-                        Icon(Icons.close, color: Colors.grey[400], size: 20),
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Icon(Icons.close, color: Colors.grey[400], size: 20),
+                    ),
                   ),
-                const SizedBox(width: 12),
+                // Close search button (takes FAB's place)
+                GestureDetector(
+                  onTap: widget.onClose,
+                  child: Container(
+                    width: 40, height: 40,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFFF5252), Color(0xFFC62828)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.close, color: Colors.white, size: 20),
+                  ),
+                ),
+                const SizedBox(width: 4),
               ],
             ),
           ),
-          if (mapProv.searchResults.isNotEmpty)
+          // Results dropdown
+          if (mapProv.searchResults.isNotEmpty && _expandAnim.value > 0.8)
             Container(
               margin: const EdgeInsets.only(top: 6),
               decoration: BoxDecoration(
