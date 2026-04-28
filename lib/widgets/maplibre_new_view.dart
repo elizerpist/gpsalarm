@@ -51,6 +51,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   double _currentZoom = 13;
   double _speedKmh = 0;
   Position? _userPos;
+  Offset? _lastPointerDownPos; // captured from Listener before map processes event
+  Offset? _assignScreenCenter; // screen pos cached at assign start
   // Overlay radius notifier — drives CustomPainter repaint without setState
   final ValueNotifier<double> _radiusNotifier = ValueNotifier(500);
   // Speed interpolation
@@ -462,6 +464,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   }
 
   void _startAssign(double lat, double lng, {AlarmPoint? existing}) {
+    // Use the screen position from the pointer event that triggered this
+    _assignScreenCenter = _lastPointerDownPos;
     setState(() {
       _isAssigning = true;
       _assignExisting = existing;
@@ -487,6 +491,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     setState(() {
       _isAssigning = false;
       _assignExisting = null;
+      _assignScreenCenter = null;
       _isDraggingRadius = false;
       _dragPointerId = null;
       _assignTriggerType = TriggerType.distance;
@@ -539,25 +544,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     return (active: active, inactive: inactive);
   }
 
-  /// Calculate assign point screen position from current camera state.
-  /// Recalculated every build to stay in sync with camera.
-  Offset? get _assignScreenPos {
-    if (!_isAssigning) return null;
-    final cam = _controller?.camera;
-    if (cam == null) return null;
-    final box = context.findRenderObject() as RenderBox?;
-    if (box == null) return null;
-    final size = box.size;
-    final camLat = cam.center?.lat.toDouble() ?? 47.5;
-    final camLng = cam.center?.lng.toDouble() ?? 19.0;
-    final zoom = cam.zoom ?? _currentZoom;
-    final metersPerPx = 156543.03392 * math.cos(camLat * math.pi / 180) / math.pow(2, zoom);
-    final dLng = (_assignLng - camLng);
-    final dLat = (_assignLat - camLat);
-    final dx = dLng * math.cos(camLat * math.pi / 180) * (111320.0 / metersPerPx);
-    final dy = -dLat * (110540.0 / metersPerPx);
-    return Offset(size.width / 2 + dx, size.height / 2 + dy);
-  }
 
 
   @override
@@ -629,6 +615,15 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             ],
           ],
         ),
+        // Capture pointer position before map processes it
+        if (!_isAssigning)
+          Positioned.fill(
+            child: Listener(
+              behavior: HitTestBehavior.translucent,
+              onPointerDown: (e) => _lastPointerDownPos = e.localPosition,
+              child: const SizedBox.expand(),
+            ),
+          ),
         const OfflineIndicator(),
         // Scale bar — bottom left
         Positioned(
@@ -715,21 +710,21 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                 : const SizedBox.shrink(),
           ),
         // Radius drag overlay — blocks map gestures, 60fps via ValueNotifier
-        if (_isAssigning && _assignScreenPos != null)
+        if (_isAssigning && _assignScreenCenter != null)
           Positioned.fill(
             child: RepaintBoundary(
               child: Listener(
                 behavior: HitTestBehavior.opaque,
                 onPointerDown: (e) {
-                  if (_assignScreenPos == null) return;
+                  if (_assignScreenCenter == null) return;
                   _dragPointerId = e.pointer;
                   _isDraggingRadius = true;
                   _dragLogCounter = 0;
                 },
                 onPointerMove: (e) {
-                  if (!_isDraggingRadius || _assignScreenPos == null) return;
+                  if (!_isDraggingRadius || _assignScreenCenter == null) return;
                   if (e.pointer != _dragPointerId) return;
-                  final dist = (e.localPosition - _assignScreenPos!).distance;
+                  final dist = (e.localPosition - _assignScreenCenter!).distance;
                   if (_assignTriggerType == TriggerType.distance) {
                     final metersPerPx = 156543.03392 * math.cos(_assignLat * math.pi / 180) / math.pow(2, _currentZoom);
                     _assignRadius = (dist * metersPerPx).clamp(100.0, 5000.0);
@@ -747,9 +742,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                   _dragPointerId = null;
                 },
                 child: CustomPaint(
-                  painter: _assignScreenPos != null && _assignZoneTrigger != ZoneTrigger.onLeave
+                  painter: _assignScreenCenter != null && _assignZoneTrigger != ZoneTrigger.onLeave
                       ? _RadiusOverlayPainter(
-                          center: _assignScreenPos!,
+                          center: _assignScreenCenter!,
                           radiusNotifier: _radiusNotifier,
                           isTime: _assignTriggerType == TriggerType.time,
                         )
