@@ -493,18 +493,14 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     final camLng = cam.center!.lng.toDouble();
     final zoom = cam.zoom ?? _currentZoom;
     final metersPerPx = 156543.03392 * math.cos(camLat * math.pi / 180) / math.pow(2, zoom);
-    // Camera center is at the center of the VISIBLE map area
-    // (between status bar and navigation bar), not the widget center
-    final padTop = MediaQuery.of(context).padding.top;
-    final padBot = MediaQuery.of(context).padding.bottom;
-    final mapCenterX = size.width / 2;
-    final mapCenterY = (padTop + size.height - padBot) / 2;
-    final dx = screenPos.dx - mapCenterX;
-    final dy = screenPos.dy - mapCenterY;
+    // Camera center is at widget center — no padding adjustment needed
+    // (MapLibre renders at the PlatformView's logical pixel center)
+    final dx = screenPos.dx - size.width / 2;
+    final dy = screenPos.dy - size.height / 2;
     final dLng = dx * metersPerPx / (111320.0 * math.cos(camLat * math.pi / 180));
     final dLat = -dy * metersPerPx / 110540.0;
     final result = (lat: camLat + dLat, lng: camLng + dLng);
-    DebugConsole.log('S2G: sX=${screenPos.dx.round()} sY=${screenPos.dy.round()} w=${size.width.round()} h=${size.height.round()} padT=${padTop.round()} padB=${padBot.round()} mapCY=${mapCenterY.round()} dx=${dx.round()} dy=${dy.round()} → (${result.lat.toStringAsFixed(4)},${result.lng.toStringAsFixed(4)})');
+    DebugConsole.log('S2G: sX=${screenPos.dx.round()} sY=${screenPos.dy.round()} w=${size.width.round()} h=${size.height.round()} cx=${(size.width/2).round()} cy=${(size.height/2).round()} dx=${dx.round()} dy=${dy.round()} → (${result.lat.toStringAsFixed(4)},${result.lng.toStringAsFixed(4)})');
     return result;
   }
 
@@ -558,10 +554,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       }
     }
 
-    // Assign point (new or editing) — always red
-    if (_isAssigning) {
-      active.add(Point(coordinates: Position(_assignLng, _assignLat)));
-    }
+    // Assign pin is drawn in the Flutter overlay (not MarkerLayer)
+    // to avoid geo conversion offset — both pin and circle use screen coords
 
     return (active: active, inactive: inactive);
   }
@@ -915,6 +909,19 @@ class _RadiusOverlayPainter extends CustomPainter {
     } else {
       canvas.drawCircle(center, radiusPx, strokePaint);
     }
+
+    // Pin marker at circle center — drawn in overlay to match screen coords
+    final pinColor = isTime ? const Color(0xFFFF9800) : const Color(0xFFFF0000);
+    final pinSize = 28.0;
+    // Pin body (teardrop shape)
+    final pinPath = Path();
+    pinPath.addOval(Rect.fromCircle(center: Offset(center.dx, center.dy - pinSize * 0.35), radius: pinSize * 0.35));
+    pinPath.moveTo(center.dx - pinSize * 0.22, center.dy - pinSize * 0.15);
+    pinPath.quadraticBezierTo(center.dx, center.dy + pinSize * 0.45, center.dx + pinSize * 0.22, center.dy - pinSize * 0.15);
+    pinPath.close();
+    canvas.drawPath(pinPath, Paint()..color = pinColor);
+    // White dot in center of pin head
+    canvas.drawCircle(Offset(center.dx, center.dy - pinSize * 0.35), pinSize * 0.14, Paint()..color = const Color(0xFFFFFFFF));
   }
 
   @override
