@@ -558,8 +558,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             if (haptic) Vibration.vibrate(duration: 30);
             _assignScreenCenter = details.localPosition;
             _isDraggingRadius = true;
-            // Use MapLibre's native projection (JNI → fromScreenLocation) for exact geo
-            final geo = _controller?.toLngLatSync(details.localPosition);
+            // Native fromScreenLocation expects physical pixels; Flutter gives logical
+            final dpr = MediaQuery.devicePixelRatioOf(context);
+            final geo = _controller?.toLngLatSync(details.localPosition * dpr);
             if (geo != null) {
               _startAssign(geo.lat.toDouble(), geo.lng.toDouble());
             } else {
