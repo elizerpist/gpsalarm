@@ -53,6 +53,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   Position? _userPos;
   Offset? _lastPointerDownPos; // captured from Listener before map processes event
   Offset? _assignScreenCenter; // screen pos cached at assign start
+  Position? _pendingLongClickGeo; // geo from MapEventLongClick (more accurate than _screenToGeo)
   // Overlay radius notifier — drives CustomPainter repaint without setState
   final ValueNotifier<double> _radiusNotifier = ValueNotifier(500);
   // Speed interpolation
@@ -580,10 +581,18 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             if (haptic) Vibration.vibrate(duration: 30);
             _assignScreenCenter = details.localPosition;
             _isDraggingRadius = true;
-            // Convert screen position to geo coordinates
-            final geo = _screenToGeo(details.localPosition);
-            if (geo != null) {
-              _startAssign(geo.lat, geo.lng);
+            // Use MapLibre's geo position if available (accurate), otherwise fallback
+            if (_pendingLongClickGeo != null) {
+              final p = _pendingLongClickGeo!;
+              DebugConsole.log('GD_LONG_START: using MapLibre geo ${p.lat},${p.lng}');
+              _startAssign(p.lat.toDouble(), p.lng.toDouble());
+              _pendingLongClickGeo = null;
+            } else {
+              final geo = _screenToGeo(details.localPosition);
+              DebugConsole.log('GD_LONG_START: using _screenToGeo fallback');
+              if (geo != null) {
+                _startAssign(geo.lat, geo.lng);
+              }
             }
           },
           onLongPressMoveUpdate: !_isAssigning ? null : (details) {
@@ -614,6 +623,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             onEvent: (event) {
               if (event is MapEventClick) {
                 _onTap(event.point);
+              } else if (event is MapEventLongClick) {
+                // Save accurate geo position — GestureDetector handles the swipe,
+                // but MapLibre gives us precise lat/lng from the native layer
+                _pendingLongClickGeo = event.point;
+                DebugConsole.log('MAP_LONGCLICK: lat=${event.point.lat} lng=${event.point.lng}');
               } else if (event is MapEventMoveCamera || event is MapEventCameraIdle) {
                 final newZoom = _controller?.camera?.zoom ?? _currentZoom;
                 if ((newZoom - _currentZoom).abs() > 0.05) {
