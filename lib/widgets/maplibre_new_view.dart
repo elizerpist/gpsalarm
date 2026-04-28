@@ -53,7 +53,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   Position? _userPos;
   Offset? _lastPointerDownPos;
   Offset? _assignScreenCenter;
-  Position? _pendingLongClickGeo; // exact geo from MapEventLongClick (~400ms)
   // Overlay radius notifier — drives CustomPainter repaint without setState
   final ValueNotifier<double> _radiusNotifier = ValueNotifier(500);
   // Speed interpolation
@@ -552,21 +551,18 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
 
     return Stack(
       children: [
-        // GestureDetector for immediate swipe, MapEventLongClick for exact geo
+        // GestureDetector for immediate swipe + native projection for exact geo
         GestureDetector(
           onLongPressStart: _isAssigning ? null : (details) {
             final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
             if (haptic) Vibration.vibrate(duration: 30);
             _assignScreenCenter = details.localPosition;
             _isDraggingRadius = true;
-            // Use MapLibre's geo if it arrived (~400ms), otherwise defer
-            if (_pendingLongClickGeo != null) {
-              final p = _pendingLongClickGeo!;
-              _pendingLongClickGeo = null;
-              _startAssign(p.lat.toDouble(), p.lng.toDouble());
+            // Use MapLibre's native projection (JNI → fromScreenLocation) for exact geo
+            final geo = _controller?.toLngLatSync(details.localPosition);
+            if (geo != null) {
+              _startAssign(geo.lat.toDouble(), geo.lng.toDouble());
             } else {
-              // MapLibre geo hasn't arrived yet — start with placeholder,
-              // it will be corrected when MapEventLongClick fires
               _startAssign(
                 _controller?.camera?.center?.lat.toDouble() ?? 0,
                 _controller?.camera?.center?.lng.toDouble() ?? 0,
@@ -600,16 +596,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             onEvent: (event) {
               if (event is MapEventClick) {
                 _onTap(event.point);
-              } else if (event is MapEventLongClick) {
-                // Fires ~400ms — before GestureDetector's 500ms
-                _pendingLongClickGeo = event.point;
-                // If assign already started (GestureDetector was faster), update geo
-                if (_isAssigning) {
-                  setState(() {
-                    _assignLat = event.point.lat.toDouble();
-                    _assignLng = event.point.lng.toDouble();
-                  });
-                }
               } else if (event is MapEventMoveCamera || event is MapEventCameraIdle) {
                 final newZoom = _controller?.camera?.zoom ?? _currentZoom;
                 if ((newZoom - _currentZoom).abs() > 0.05) {
