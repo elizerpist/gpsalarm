@@ -493,14 +493,18 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     final camLng = cam.center!.lng.toDouble();
     final zoom = cam.zoom ?? _currentZoom;
     final metersPerPx = 156543.03392 * math.cos(camLat * math.pi / 180) / math.pow(2, zoom);
-    final dx = screenPos.dx - size.width / 2;
-    final dy = screenPos.dy - size.height / 2;
+    // Camera center is at the center of the VISIBLE map area
+    // (between status bar and navigation bar), not the widget center
+    final padTop = MediaQuery.of(context).padding.top;
+    final padBot = MediaQuery.of(context).padding.bottom;
+    final mapCenterX = size.width / 2;
+    final mapCenterY = (padTop + size.height - padBot) / 2;
+    final dx = screenPos.dx - mapCenterX;
+    final dy = screenPos.dy - mapCenterY;
     final dLng = dx * metersPerPx / (111320.0 * math.cos(camLat * math.pi / 180));
     final dLat = -dy * metersPerPx / 110540.0;
     final result = (lat: camLat + dLat, lng: camLng + dLng);
-    final padTop = MediaQuery.of(context).padding.top;
-    final padBot = MediaQuery.of(context).padding.bottom;
-    DebugConsole.log('S2G: sX=${screenPos.dx.round()} sY=${screenPos.dy.round()} w=${size.width.round()} h=${size.height.round()} padT=${padTop.round()} padB=${padBot.round()} cam=(${camLat.toStringAsFixed(4)},${camLng.toStringAsFixed(4)}) z=$zoom dx=${dx.round()} dy=${dy.round()} mpp=${metersPerPx.toStringAsFixed(2)} → (${result.lat.toStringAsFixed(4)},${result.lng.toStringAsFixed(4)})');
+    DebugConsole.log('S2G: sX=${screenPos.dx.round()} sY=${screenPos.dy.round()} w=${size.width.round()} h=${size.height.round()} padT=${padTop.round()} padB=${padBot.round()} mapCY=${mapCenterY.round()} dx=${dx.round()} dy=${dy.round()} → (${result.lat.toStringAsFixed(4)},${result.lng.toStringAsFixed(4)})');
     return result;
   }
 
