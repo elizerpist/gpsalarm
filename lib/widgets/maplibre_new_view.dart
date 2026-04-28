@@ -355,15 +355,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       final r = _assignTriggerType == TriggerType.time
           ? math.max(200.0, (_speedKmh / 3.6) * _assignTimeMinutes * 60)
           : _assignRadius;
-      final circle = _geoCircle(_assignLng, _assignLat, r);
-      // Log veil circle's geo extent for comparison with overlay pixel radius
-      final northLat = circle.map((c) => c[1]).reduce(math.max);
-      final centerLat = _assignLat;
-      final deltaLatDeg = northLat - centerLat;
-      final actualZoom = _controller?.camera?.zoom ?? _currentZoom;
-      final geoRadiusPx = deltaLatDeg * math.pi / 180 / math.cos(centerLat * math.pi / 180) * 256 * math.pow(2, actualZoom) / (2 * math.pi);
-      DebugConsole.log('VEIL_GEO: ${r.round()}m → geoPx=${geoRadiusPx.toStringAsFixed(1)} northLat=${northLat.toStringAsFixed(6)} centerLat=${centerLat.toStringAsFixed(6)} deltaLat=${deltaLatDeg.toStringAsFixed(6)} zoom=${actualZoom.toStringAsFixed(2)}');
-      holes.add(circle);
+      holes.add(_geoCircle(_assignLng, _assignLat, r));
     }
 
     final coords = <List<List<double>>>[
@@ -400,12 +392,13 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     if (version != _radiusLayerVersion) return;
 
     for (final c in circles) {
-      if (c.isLeave) continue;
-
       final basePx = c.radiusMeters / (156543.03392 * math.cos(c.lat * math.pi / 180));
-      final String fillColor = c.isTime
-          ? (c.active ? 'rgba(255,152,0,0.10)' : 'rgba(158,158,158,0.05)')
-          : (c.active ? 'rgba(255,0,0,0.12)' : 'rgba(158,158,158,0.05)');
+      // onLeave: veil provides fill, but we still add stroke-only circle for border
+      final String fillColor = c.isLeave
+          ? 'rgba(0,0,0,0)'
+          : (c.isTime
+              ? (c.active ? 'rgba(255,152,0,0.10)' : 'rgba(158,158,158,0.05)')
+              : (c.active ? 'rgba(255,0,0,0.12)' : 'rgba(158,158,158,0.05)'));
       final String strokeColor = c.isTime
           ? (c.active ? 'rgba(255,152,0,0.7)' : 'rgba(158,158,158,0.3)')
           : (c.active ? 'rgba(255,0,0,0.6)' : 'rgba(158,158,158,0.3)');
@@ -566,9 +559,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     }
     final actualZoom = _controller?.camera?.zoom ?? _currentZoom;
     final metersPerPx = 156543.03392 * math.cos(_assignLat * math.pi / 180) / math.pow(2, actualZoom);
-    final px = radius / metersPerPx;
-    DebugConsole.log('RADIUS_PX: ${radius.round()}m → ${px.toStringAsFixed(1)}px zoom=${actualZoom.toStringAsFixed(2)} _currentZoom=${_currentZoom.toStringAsFixed(2)} lat=${_assignLat.toStringAsFixed(4)} mPerPx=${metersPerPx.toStringAsFixed(3)}');
-    return px;
+    return radius / metersPerPx;
   }
 
   // Build separate marker point lists for active (red) and inactive (grey) pins
