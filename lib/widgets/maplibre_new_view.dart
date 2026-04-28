@@ -376,7 +376,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     if (version != _radiusLayerVersion) return;
 
     for (final c in circles) {
-      if (version != _radiusLayerVersion) return;
       // onLeave alarms: the veil hole provides the visual — skip CircleStyleLayer
       // to avoid double circle (veil polygon vs CircleStyleLayer mismatch)
       if (c.isLeave) continue;
@@ -465,10 +464,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
 
   /// Find closest alarm within the pin's visual tap area (zoom-dependent).
   AlarmPoint? _findTappedAlarm(double tapLat, double tapLng, AlarmProvider alarmProv) {
-    // Pin is ~32px tall (160 icon * 0.2 scale), anchor at bottom.
-    // Allow tapping within 30px of the anchor point.
+    // Pin is ~64px tall (160 icon * 0.4 scale), anchor at bottom.
+    // Allow tapping within 40px of the anchor point.
     final metersPerPx = 156543.03392 * math.cos(tapLat * math.pi / 180) / math.pow(2, _currentZoom);
-    final thresholdMeters = math.max(50.0, 30 * metersPerPx);
+    final thresholdMeters = math.max(50.0, 40 * metersPerPx);
     AlarmPoint? closest;
     double closestDist = double.infinity;
     for (final p in alarmProv.alarmPoints) {
@@ -637,7 +636,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               MarkerLayer(
                 points: markers.active,
                 iconImage: 'pin-red',
-                iconSize: 0.2,
+                iconSize: 0.4,
                 iconAnchor: IconAnchor.bottom,
                 iconAllowOverlap: true,
               ),
@@ -645,7 +644,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               MarkerLayer(
                 points: markers.inactive,
                 iconImage: 'pin-grey',
-                iconSize: 0.2,
+                iconSize: 0.4,
                 iconAnchor: IconAnchor.bottom,
                 iconAllowOverlap: true,
               ),
