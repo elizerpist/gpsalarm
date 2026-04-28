@@ -781,11 +781,13 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                   _dragPointerId = null;
                 },
                 child: CustomPaint(
-                  painter: _assignScreenCenter != null && _assignZoneTrigger != ZoneTrigger.onLeave
+                  painter: _assignScreenCenter != null && _assignZoneTrigger != ZoneTrigger.onLeave && _assignExisting == null
                       ? _RadiusOverlayPainter(
                           center: _assignScreenCenter!,
                           radiusNotifier: _radiusNotifier,
                           isTime: _assignTriggerType == TriggerType.time,
+                          radiusMeters: _assignRadius,
+                          timeMinutes: _assignTimeMinutes,
                         )
                       : null,
                   child: const SizedBox.expand(),
@@ -854,11 +856,15 @@ class _RadiusOverlayPainter extends CustomPainter {
   final Offset center;
   final ValueNotifier<double> radiusNotifier;
   final bool isTime;
+  final double radiusMeters;
+  final int timeMinutes;
 
   _RadiusOverlayPainter({
     required this.center,
     required this.radiusNotifier,
     required this.isTime,
+    required this.radiusMeters,
+    required this.timeMinutes,
   }) : super(repaint: radiusNotifier);
 
   @override
@@ -888,18 +894,46 @@ class _RadiusOverlayPainter extends CustomPainter {
       canvas.drawCircle(center, radiusPx, strokePaint);
     }
 
-    // Pin marker at circle center — drawn in overlay to match screen coords
+    // Pin marker at circle center — same Material icon as saved pins
     final pinColor = isTime ? const Color(0xFFFF9800) : const Color(0xFFFF0000);
-    final pinSize = 28.0;
-    // Pin body (teardrop shape)
-    final pinPath = Path();
-    pinPath.addOval(Rect.fromCircle(center: Offset(center.dx, center.dy - pinSize * 0.35), radius: pinSize * 0.35));
-    pinPath.moveTo(center.dx - pinSize * 0.22, center.dy - pinSize * 0.15);
-    pinPath.quadraticBezierTo(center.dx, center.dy + pinSize * 0.45, center.dx + pinSize * 0.22, center.dy - pinSize * 0.15);
-    pinPath.close();
-    canvas.drawPath(pinPath, Paint()..color = pinColor);
-    // White dot in center of pin head
-    canvas.drawCircle(Offset(center.dx, center.dy - pinSize * 0.35), pinSize * 0.14, Paint()..color = const Color(0xFFFFFFFF));
+    const pinSize = 48.0;
+    final tp = TextPainter(textDirection: TextDirection.ltr)
+      ..text = TextSpan(
+        text: String.fromCharCode(Icons.location_on.codePoint),
+        style: TextStyle(
+          fontSize: pinSize,
+          fontFamily: Icons.location_on.fontFamily,
+          package: Icons.location_on.fontPackage,
+          color: pinColor,
+        ),
+      )
+      ..layout();
+    tp.paint(canvas, Offset(center.dx - pinSize / 2, center.dy - pinSize));
+
+    // Distance/time chip below pin — matching raster map style
+    final chipText = isTime
+        ? '${timeMinutes}min'
+        : (radiusMeters >= 1000
+            ? '${(radiusMeters / 1000).toStringAsFixed(1)}km'
+            : '${radiusMeters.round()}m');
+    final chipTp = TextPainter(textDirection: TextDirection.ltr)
+      ..text = TextSpan(
+        text: chipText,
+        style: const TextStyle(
+          color: Color(0xFFFFFFFF),
+          fontSize: 9,
+          fontWeight: FontWeight.bold,
+        ),
+      )
+      ..layout();
+    final chipW = chipTp.width + 8;
+    final chipH = chipTp.height + 2;
+    final chipRect = RRect.fromRectAndRadius(
+      Rect.fromCenter(center: Offset(center.dx, center.dy + chipH / 2 + 1), width: chipW, height: chipH),
+      const Radius.circular(4),
+    );
+    canvas.drawRRect(chipRect, Paint()..color = pinColor.withOpacity(0.8));
+    chipTp.paint(canvas, Offset(center.dx - chipTp.width / 2, center.dy + 1));
   }
 
   @override
