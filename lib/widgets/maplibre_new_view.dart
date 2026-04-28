@@ -199,6 +199,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   int _fastCircleVersion = 0;
   bool _fastCircleUpdating = false; // guard against concurrent async updates
   int _dragLogCounter = 0;
+  String _lastRadiusDataHash = ''; // skip rebuild if alarm data unchanged
 
   static const _emptyGeoJson = '{"type":"FeatureCollection","features":[]}';
 
@@ -290,8 +291,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     // --- Alarm circles: skip rebuild during drag (alarm data doesn't change) ---
     if (_isDraggingRadius) return;
 
-    _radiusLayerVersion++;
-    final v = _radiusLayerVersion;
     final alarmCircles = <({String id, double lng, double lat, double radiusMeters, bool active, bool isTime, bool isLeave})>[];
     for (int i = 0; i < alarmProv.alarmPoints.length; i++) {
       final p = alarmProv.alarmPoints[i];
@@ -302,14 +301,17 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       }
       alarmCircles.add((id: 'alarm-$i', lng: p.longitude, lat: p.latitude, radiusMeters: radius, active: p.isActive, isTime: isTime, isLeave: p.zoneTrigger == ZoneTrigger.onLeave));
     }
-    DebugConsole.log('SYNC_RADIUS: ${alarmCircles.length} circles, version=$v, dragging=$_isDraggingRadius');
+    // Skip rebuild if alarm data unchanged (prevents circle flash on map pan/zoom)
+    final dataHash = alarmCircles.map((c) => '${c.lng},${c.lat},${c.radiusMeters.toStringAsFixed(1)},${c.active},${c.isTime},${c.isLeave}').join('|');
+    if (dataHash == _lastRadiusDataHash) return;
+    _lastRadiusDataHash = dataHash;
+
+    _radiusLayerVersion++;
+    final v = _radiusLayerVersion;
     _radiusDebounce?.cancel();
     _radiusDebounce = Timer(const Duration(milliseconds: 200), () {
       if (v == _radiusLayerVersion) {
-        DebugConsole.log('REBUILD_TIMER: firing version=$v');
         _rebuildRadiusLayers(style, alarmCircles, v);
-      } else {
-        DebugConsole.log('REBUILD_TIMER: STALE version=$v current=$_radiusLayerVersion');
       }
     });
   }
@@ -375,24 +377,17 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   /// geometric circles — see docs/vector-map-radius-circles.md).
   /// onLeave alarms are SKIPPED — the veil hole provides their visual boundary.
   Future<void> _rebuildRadiusLayers(StyleController style, List<({String id, double lng, double lat, double radiusMeters, bool active, bool isTime, bool isLeave})> circles, int version) async {
-    DebugConsole.log('REBUILD_LAYERS: START ${circles.length} circles, version=$version');
     // Remove old alarm layers only (sources are pre-created at init)
     for (int i = 0; i < 20; i++) {
       final id = 'alarm-$i';
       try { await style.removeLayer('radius-label-$id'); } catch (_) {}
       try { await style.removeLayer('radius-circle-$id'); } catch (_) {}
-      // Update source to empty — source persists, only data changes
       style.updateGeoJsonSource(id: 'radius-pt-$id', data: _emptyGeoJson);
     }
-    DebugConsole.log('REBUILD_LAYERS: old layers removed, version check: $version == $_radiusLayerVersion');
 
-    if (version != _radiusLayerVersion) {
-      DebugConsole.log('REBUILD_LAYERS: ABORTED (stale)');
-      return;
-    }
+    if (version != _radiusLayerVersion) return;
 
     for (final c in circles) {
-      // onLeave alarms: the veil hole provides the visual — skip CircleStyleLayer
       if (c.isLeave) continue;
 
       final basePx = c.radiusMeters / (156543.03392 * math.cos(c.lat * math.pi / 180));
@@ -405,13 +400,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       final strokeWidth = c.active ? 2.0 : 1.0;
 
       try {
-        // Update pre-existing source data (source created at init, always available)
-        final srcId = 'radius-pt-${c.id}';
-        final geoJson = _pointGeoJson(c.lng, c.lat);
-        DebugConsole.log('REBUILD_LAYERS: updateSource $srcId lng=${c.lng} lat=${c.lat} r=${c.radiusMeters}m');
-        style.updateGeoJsonSource(id: srcId, data: geoJson);
-        // Circle layer — added on top (source guaranteed to exist)
-        DebugConsole.log('REBUILD_LAYERS: addLayer circle radius-circle-${c.id} basePx=${c.radiusMeters / (156543.03392 * math.cos(c.lat * math.pi / 180))}');
+        style.updateGeoJsonSource(
+          id: 'radius-pt-${c.id}',
+          data: _pointGeoJson(c.lng, c.lat),
+        );
         await style.addLayer(CircleStyleLayer(
           id: 'radius-circle-${c.id}',
           sourceId: 'radius-pt-${c.id}',
@@ -426,7 +418,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             'circle-stroke-width': strokeWidth,
           },
         ));
-        // Distance/time chip label — on top of circle
         final labelText = c.isTime
             ? '${(c.radiusMeters / 1000).toStringAsFixed(1)}km'
             : (c.radiusMeters >= 1000
@@ -440,25 +431,23 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
           sourceId: 'radius-pt-${c.id}',
           layout: {
             'text-field': labelText,
-            'text-size': 11,
-            'text-font': ['Noto Sans Regular'],
+            'text-size': 10,
+            'text-font': ['Noto Sans Bold'],
             'text-anchor': 'top',
-            'text-offset': [0.0, 1.2],
+            'text-offset': [0.0, 1.4],
             'text-allow-overlap': true,
           },
           paint: {
             'text-color': '#ffffff',
             'text-halo-color': labelColor,
-            'text-halo-width': 4,
+            'text-halo-width': 8,
             'text-halo-blur': 0,
           },
         ));
-        DebugConsole.log('REBUILD_LAYERS: addLayer symbol radius-label-${c.id}');
       } catch (e) {
-        DebugConsole.log('REBUILD_LAYERS: ERROR for ${c.id}: $e');
+        DebugConsole.log('VECTOR: radius layer error for ${c.id}: $e');
       }
     }
-    DebugConsole.log('REBUILD_LAYERS: DONE ${circles.length} circles processed');
   }
 
   /// Render a Material icon to PNG bytes using PictureRecorder.
