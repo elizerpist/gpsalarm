@@ -368,6 +368,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     // Remove old alarm layers and sources
     for (int i = 0; i < 20; i++) {
       final id = 'alarm-$i';
+      try { await style.removeLayer('radius-label-$id'); } catch (_) {}
       try { await style.removeLayer('radius-circle-$id'); } catch (_) {}
       try { await style.removeSource('radius-pt-$id'); } catch (_) {}
     }
@@ -408,6 +409,32 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             'circle-stroke-width': strokeWidth,
           },
         ));
+        // Distance/time chip label at circle center
+        final labelText = c.isTime
+            ? '${(c.radiusMeters / 1000).toStringAsFixed(1)}km'
+            : (c.radiusMeters >= 1000
+                ? '${(c.radiusMeters / 1000).toStringAsFixed(1)}km'
+                : '${c.radiusMeters.round()}m');
+        final labelColor = c.isTime
+            ? (c.active ? 'rgba(255,152,0,0.85)' : 'rgba(158,158,158,0.6)')
+            : (c.active ? 'rgba(255,0,0,0.85)' : 'rgba(158,158,158,0.6)');
+        await style.addLayer(SymbolStyleLayer(
+          id: 'radius-label-${c.id}',
+          sourceId: 'radius-pt-${c.id}',
+          layout: {
+            'text-field': labelText,
+            'text-size': 11,
+            'text-anchor': 'top',
+            'text-offset': [0.0, 1.2],
+            'text-allow-overlap': true,
+          },
+          paint: {
+            'text-color': '#ffffff',
+            'text-halo-color': labelColor,
+            'text-halo-width': 4,
+            'text-halo-blur': 0,
+          },
+        ));
       } catch (e) {
         DebugConsole.log('VECTOR: radius layer error for ${c.id}: $e');
       }
@@ -438,10 +465,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
 
   /// Find closest alarm within the pin's visual tap area (zoom-dependent).
   AlarmPoint? _findTappedAlarm(double tapLat, double tapLng, AlarmProvider alarmProv) {
-    // Pin is ~64px tall (160 icon * 0.4 scale), anchor at bottom.
-    // Allow tapping within 40px of the anchor point.
+    // Pin is ~32px tall (160 icon * 0.2 scale), anchor at bottom.
+    // Allow tapping within 30px of the anchor point.
     final metersPerPx = 156543.03392 * math.cos(tapLat * math.pi / 180) / math.pow(2, _currentZoom);
-    final thresholdMeters = math.max(50.0, 40 * metersPerPx);
+    final thresholdMeters = math.max(50.0, 30 * metersPerPx);
     AlarmPoint? closest;
     double closestDist = double.infinity;
     for (final p in alarmProv.alarmPoints) {
@@ -610,7 +637,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               MarkerLayer(
                 points: markers.active,
                 iconImage: 'pin-red',
-                iconSize: 0.4,
+                iconSize: 0.2,
                 iconAnchor: IconAnchor.bottom,
                 iconAllowOverlap: true,
               ),
@@ -618,7 +645,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               MarkerLayer(
                 points: markers.inactive,
                 iconImage: 'pin-grey',
-                iconSize: 0.35,
+                iconSize: 0.2,
                 iconAnchor: IconAnchor.bottom,
                 iconAllowOverlap: true,
               ),
@@ -896,7 +923,7 @@ class _RadiusOverlayPainter extends CustomPainter {
 
     // Pin marker at circle center — same Material icon as saved pins
     final pinColor = isTime ? const Color(0xFFFF9800) : const Color(0xFFFF0000);
-    const pinSize = 48.0;
+    const pinSize = 32.0;
     final tp = TextPainter(textDirection: ui.TextDirection.ltr)
       ..text = TextSpan(
         text: String.fromCharCode(Icons.location_on.codePoint),
