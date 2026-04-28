@@ -897,7 +897,7 @@ class _RadiusOverlayPainter extends CustomPainter {
     // Pin marker at circle center — same Material icon as saved pins
     final pinColor = isTime ? const Color(0xFFFF9800) : const Color(0xFFFF0000);
     const pinSize = 48.0;
-    final tp = TextPainter(textDirection: TextDirection.ltr)
+    final tp = TextPainter(textDirection: ui.TextDirection.ltr)
       ..text = TextSpan(
         text: String.fromCharCode(Icons.location_on.codePoint),
         style: TextStyle(
@@ -916,7 +916,7 @@ class _RadiusOverlayPainter extends CustomPainter {
         : (radiusMeters >= 1000
             ? '${(radiusMeters / 1000).toStringAsFixed(1)}km'
             : '${radiusMeters.round()}m');
-    final chipTp = TextPainter(textDirection: TextDirection.ltr)
+    final chipTp = TextPainter(textDirection: ui.TextDirection.ltr)
       ..text = TextSpan(
         text: chipText,
         style: const TextStyle(
