@@ -294,6 +294,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     final alarmCircles = <({String id, double lng, double lat, double radiusMeters, bool active, bool isTime, bool isLeave})>[];
     for (int i = 0; i < alarmProv.alarmPoints.length; i++) {
       final p = alarmProv.alarmPoints[i];
+      // Skip the alarm being edited — its overlay handles the visual
+      if (_isAssigning && _assignExisting != null && _assignExisting!.id == p.id) continue;
       double radius = p.radiusMeters;
       final isTime = p.triggerType == TriggerType.time;
       if (isTime && p.timeTrigger != null) {
@@ -303,7 +305,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     }
     // Skip rebuild if alarm data unchanged (prevents circle flash on map pan/zoom)
     final dataHash = alarmCircles.map((c) => '${c.lng},${c.lat},${c.radiusMeters.toStringAsFixed(1)},${c.active},${c.isTime},${c.isLeave}').join('|');
-    if (dataHash == _lastRadiusDataHash) return;
+    final editHash = _isAssigning ? 'e${_assignExisting?.id}' : '';
+    if ('$dataHash|$editHash' == _lastRadiusDataHash) return;
+    _lastRadiusDataHash = '$dataHash|$editHash';
     _lastRadiusDataHash = dataHash;
 
     _radiusLayerVersion++;
@@ -560,6 +564,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     final inactive = <Point>[];
 
     for (final p in alarmProv.alarmPoints) {
+      // Skip the alarm being edited — overlay draws its pin
+      if (_isAssigning && _assignExisting != null && _assignExisting!.id == p.id) continue;
       final point = Point(coordinates: Position(p.longitude, p.latitude));
       if (p.isActive) {
         active.add(point);
@@ -817,7 +823,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                   _dragPointerId = null;
                 },
                 child: CustomPaint(
-                  painter: _assignScreenCenter != null && _assignZoneTrigger != ZoneTrigger.onLeave && _assignExisting == null
+                  painter: _assignScreenCenter != null && _assignZoneTrigger != ZoneTrigger.onLeave
                       ? _RadiusOverlayPainter(
                           center: _assignScreenCenter!,
                           radiusNotifier: _radiusNotifier,
