@@ -306,16 +306,17 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     // Skip rebuild if alarm data unchanged (prevents circle flash on map pan/zoom)
     final dataHash = alarmCircles.map((c) => '${c.lng},${c.lat},${c.radiusMeters.toStringAsFixed(1)},${c.active},${c.isTime},${c.isLeave}').join('|');
     final editHash = _isAssigning ? 'e${_assignExisting?.id}' : '';
-    if ('$dataHash|$editHash' == _lastRadiusDataHash) return;
-    _lastRadiusDataHash = '$dataHash|$editHash';
-    _lastRadiusDataHash = dataHash;
+    final fullHash = '$dataHash|$editHash';
+    if (fullHash == _lastRadiusDataHash) return;
+    _lastRadiusDataHash = fullHash;
 
     _radiusLayerVersion++;
     final v = _radiusLayerVersion;
+    final dpr = MediaQuery.devicePixelRatioOf(context);
     _radiusDebounce?.cancel();
     _radiusDebounce = Timer(const Duration(milliseconds: 200), () {
       if (v == _radiusLayerVersion) {
-        _rebuildRadiusLayers(style, alarmCircles, v);
+        _rebuildRadiusLayers(style, alarmCircles, v, dpr);
       }
     });
   }
@@ -380,7 +381,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   /// literal interpolate expression (the ONLY approach that produces perfect
   /// geometric circles — see docs/vector-map-radius-circles.md).
   /// onLeave alarms are SKIPPED — the veil hole provides their visual boundary.
-  Future<void> _rebuildRadiusLayers(StyleController style, List<({String id, double lng, double lat, double radiusMeters, bool active, bool isTime, bool isLeave})> circles, int version) async {
+  Future<void> _rebuildRadiusLayers(StyleController style, List<({String id, double lng, double lat, double radiusMeters, bool active, bool isTime, bool isLeave})> circles, int version, double dpr) async {
     // Remove old alarm layers only (sources are pre-created at init)
     for (int i = 0; i < 20; i++) {
       final id = 'alarm-$i';
@@ -394,7 +395,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     for (final c in circles) {
       if (c.isLeave) continue;
 
-      final basePx = c.radiusMeters / (156543.03392 * math.cos(c.lat * math.pi / 180));
+      // MapLibre circle-radius is in physical pixels; basePx formula gives logical → multiply by DPR
+      final basePx = c.radiusMeters / (156543.03392 * math.cos(c.lat * math.pi / 180)) * dpr;
       final String fillColor = c.isTime
           ? (c.active ? 'rgba(255,152,0,0.10)' : 'rgba(158,158,158,0.05)')
           : (c.active ? 'rgba(255,0,0,0.12)' : 'rgba(158,158,158,0.05)');
