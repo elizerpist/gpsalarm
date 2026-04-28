@@ -498,7 +498,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     final dLng = dx * metersPerPx / (111320.0 * math.cos(camLat * math.pi / 180));
     final dLat = -dy * metersPerPx / 110540.0;
     final result = (lat: camLat + dLat, lng: camLng + dLng);
-    DebugConsole.log('SCREEN_TO_GEO: screen=$screenPos size=$size camCenter=($camLat,$camLng) zoom=$zoom dx=${dx.round()} dy=${dy.round()} → geo=(${result.lat.toStringAsFixed(4)},${result.lng.toStringAsFixed(4)})');
+    final padTop = MediaQuery.of(context).padding.top;
+    final padBot = MediaQuery.of(context).padding.bottom;
+    DebugConsole.log('S2G: sX=${screenPos.dx.round()} sY=${screenPos.dy.round()} w=${size.width.round()} h=${size.height.round()} padT=${padTop.round()} padB=${padBot.round()} cam=(${camLat.toStringAsFixed(4)},${camLng.toStringAsFixed(4)}) z=$zoom dx=${dx.round()} dy=${dy.round()} mpp=${metersPerPx.toStringAsFixed(2)} → (${result.lat.toStringAsFixed(4)},${result.lng.toStringAsFixed(4)})');
     return result;
   }
 
@@ -581,18 +583,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             if (haptic) Vibration.vibrate(duration: 30);
             _assignScreenCenter = details.localPosition;
             _isDraggingRadius = true;
-            // Use MapLibre's geo position if available (accurate), otherwise fallback
-            if (_pendingLongClickGeo != null) {
-              final p = _pendingLongClickGeo!;
-              DebugConsole.log('GD_LONG_START: using MapLibre geo ${p.lat},${p.lng}');
-              _startAssign(p.lat.toDouble(), p.lng.toDouble());
-              _pendingLongClickGeo = null;
-            } else {
-              final geo = _screenToGeo(details.localPosition);
-              DebugConsole.log('GD_LONG_START: using _screenToGeo fallback');
-              if (geo != null) {
-                _startAssign(geo.lat, geo.lng);
-              }
+            final geo = _screenToGeo(details.localPosition);
+            if (geo != null) {
+              _startAssign(geo.lat, geo.lng);
             }
           },
           onLongPressMoveUpdate: !_isAssigning ? null : (details) {
