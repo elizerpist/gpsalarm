@@ -130,23 +130,53 @@ In maplibre 0.2.2 on Android, **sources must be created during `onStyleLoaded`**
 
 ---
 
+## Problem 5: CircleStyleLayer circle smaller than Flutter overlay / veil
+
+### Symptom
+Same alarm, same radius (146m), same zoom — but the enter trigger's native `CircleStyleLayer` circle is visibly smaller than:
+- The Flutter overlay circle (during assign)
+- The veil hole (exit trigger, geo-polygon)
+
+### Root cause
+MapLibre's `circle-radius` is in **physical pixels** on Android. The `basePx` formula produces **logical pixels**. At DPR=2.63, the native circle was 2.63x smaller than expected.
+
+The veil (exit trigger) uses a geo-polygon in geographic coordinates, so it's not affected by the pixel ratio. The Flutter overlay operates in logical pixels. Only the CircleStyleLayer's pixel-based radius was wrong.
+
+### Solution
+Multiply `basePx` by `devicePixelRatio`:
+
+```dart
+final basePx = c.radiusMeters / (156543.03392 * cos(c.lat * π / 180)) * dpr;
+```
+
+### Commits
+- `216468d` — DPR multiplication for CircleStyleLayer basePx
+
+---
+
 ## Architecture summary
 
 ```
 During assign (long-press + drag):
-  ├── Pin + circle: Flutter overlay (_RadiusOverlayPainter)
+  ├── Pin + circle + chip: Flutter overlay (_RadiusOverlayPainter)
+  │   └── onLeave: pin+chip only (veil provides circle visual)
   ├── Geo coords: toLngLatSync(screenPos * dpr)
   └── Radius: pixel drag distance × metersPerPx
 
 After save:
   ├── Pin: MarkerLayer (iconImage: 'pin-red', iconSize: 0.4)
   ├── Circle: CircleStyleLayer on pre-created source
-  │   └── circle-radius: interpolate(exponential 2, zoom, basePx..basePx*2^22)
+  │   └── circle-radius: interpolate(exponential 2, zoom, basePx*dpr..basePx*dpr*2^22)
   └── Label: SymbolStyleLayer on same source
-      └── text-field: '500m', text-font: ['Noto Sans Regular']
+      └── text-field: '500m', text-font: ['Noto Sans Bold']
+
+DPR corrections needed:
+  ├── toLngLatSync(screenPos * dpr)     — screen→geo conversion
+  └── basePx * dpr                       — CircleStyleLayer radius
 
 Source lifecycle:
   onStyleLoaded → addSource('radius-pt-alarm-0'..'radius-pt-alarm-19')
   on rebuild    → updateGeoJsonSource (data only, source persists)
                 → removeLayer + addLayer (layers are ephemeral)
+  on save       → _lastRadiusDataHash = '' (force rebuild)
 ```
