@@ -496,7 +496,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     final dy = screenPos.dy - size.height / 2;
     final dLng = dx * metersPerPx / (111320.0 * math.cos(camLat * math.pi / 180));
     final dLat = -dy * metersPerPx / 110540.0;
-    return (lat: camLat + dLat, lng: camLng + dLng);
+    final result = (lat: camLat + dLat, lng: camLng + dLng);
+    DebugConsole.log('SCREEN_TO_GEO: screen=$screenPos size=$size camCenter=($camLat,$camLng) zoom=$zoom dx=${dx.round()} dy=${dy.round()} → geo=(${result.lat.toStringAsFixed(4)},${result.lng.toStringAsFixed(4)})');
+    return result;
   }
 
   void _cancelAssign() {
