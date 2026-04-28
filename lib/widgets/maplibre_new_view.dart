@@ -543,6 +543,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     } else if (alarmProv.canAddAlarm) {
       alarmProv.addAlarmPoint(alarm);
     }
+    // Force hash invalidation so rebuild happens immediately after cancel
+    _lastRadiusDataHash = '';
     _cancelAssign();
   }
 
@@ -823,11 +825,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                   _dragPointerId = null;
                 },
                 child: CustomPaint(
-                  painter: _assignScreenCenter != null && _assignZoneTrigger != ZoneTrigger.onLeave
+                  painter: _assignScreenCenter != null
                       ? _RadiusOverlayPainter(
                           center: _assignScreenCenter!,
                           radiusNotifier: _radiusNotifier,
                           isTime: _assignTriggerType == TriggerType.time,
+                          isLeave: _assignZoneTrigger == ZoneTrigger.onLeave,
                           radiusMeters: _assignRadius,
                           timeMinutes: _assignTimeMinutes,
                         )
@@ -898,6 +901,7 @@ class _RadiusOverlayPainter extends CustomPainter {
   final Offset center;
   final ValueNotifier<double> radiusNotifier;
   final bool isTime;
+  final bool isLeave;
   final double radiusMeters;
   final int timeMinutes;
 
@@ -905,6 +909,7 @@ class _RadiusOverlayPainter extends CustomPainter {
     required this.center,
     required this.radiusNotifier,
     required this.isTime,
+    this.isLeave = false,
     required this.radiusMeters,
     required this.timeMinutes,
   }) : super(repaint: radiusNotifier);
@@ -919,21 +924,20 @@ class _RadiusOverlayPainter extends CustomPainter {
         ? const Color(0xB3FF9800)
         : const Color(0x99FF0000);
 
-    // Fill
-    canvas.drawCircle(center, radiusPx, Paint()..color = fillColor);
-
-    // Stroke — dashed for time, solid for distance
-    final strokePaint = Paint()
-      ..color = strokeColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0;
-
-    if (isTime) {
-      final path = Path()..addOval(Rect.fromCircle(center: center, radius: radiusPx));
-      final dashed = dashPath(path, dashArray: CircularIntervalList<double>([8.0, 4.0]));
-      canvas.drawPath(dashed, strokePaint);
-    } else {
-      canvas.drawCircle(center, radiusPx, strokePaint);
+    // Circle fill + stroke — skip for onLeave (veil hole provides the visual)
+    if (!isLeave) {
+      canvas.drawCircle(center, radiusPx, Paint()..color = fillColor);
+      final strokePaint = Paint()
+        ..color = strokeColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0;
+      if (isTime) {
+        final path = Path()..addOval(Rect.fromCircle(center: center, radius: radiusPx));
+        final dashed = dashPath(path, dashArray: CircularIntervalList<double>([8.0, 4.0]));
+        canvas.drawPath(dashed, strokePaint);
+      } else {
+        canvas.drawCircle(center, radiusPx, strokePaint);
+      }
     }
 
     // Pin marker at circle center — same Material icon as saved pins
