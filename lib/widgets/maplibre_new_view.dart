@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:path_drawing/path_drawing.dart';
 import 'package:maplibre/maplibre.dart';
 import 'package:provider/provider.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -51,6 +52,14 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   double _currentZoom = 13;
   double _speedKmh = 0;
   Position? _userPos;
+  // Overlay radius notifier — drives CustomPainter repaint without setState
+  final ValueNotifier<double> _radiusNotifier = ValueNotifier(500);
+  // Speed interpolation
+  double _prevGpsSpeed = 0;
+  double _currentGpsSpeed = 0;
+  DateTime _prevGpsTime = DateTime.now();
+  DateTime _currentGpsTime = DateTime.now();
+  Timer? _speedInterpolTimer;
 
   static const _styleUrls = {
     'liberty': 'https://tiles.openfreemap.org/styles/liberty',
@@ -62,6 +71,31 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   void initState() {
     super.initState();
     _initLocation();
+    _startSpeedInterpolation();
+  }
+
+  /// 60fps speed interpolation between GPS ticks.
+  void _startSpeedInterpolation() {
+    _speedInterpolTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
+      if (!mounted) return;
+      final gpsInterval = _currentGpsTime.difference(_prevGpsTime).inMilliseconds;
+      double estimated;
+      if (gpsInterval <= 0) {
+        estimated = _currentGpsSpeed;
+      } else {
+        final accelPerMs = (_currentGpsSpeed - _prevGpsSpeed) / gpsInterval;
+        final elapsed = DateTime.now().difference(_currentGpsTime).inMilliseconds;
+        estimated = (_currentGpsSpeed + accelPerMs * elapsed).clamp(0.0, 300.0);
+        if (elapsed > gpsInterval * 2) estimated = _currentGpsSpeed;
+      }
+      if ((estimated - _speedKmh).abs() > 0.05) {
+        _speedKmh = estimated;
+        // Update overlay radius if time-based trigger is active
+        if (_isAssigning && _assignTriggerType == TriggerType.time) {
+          _radiusNotifier.value = _currentRadiusPx;
+        }
+      }
+    });
   }
 
   Future<void> _initLocation() async {
@@ -83,10 +117,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
           setState(() => _userPos = newPos);
         }
         _checkAlarms(position.latitude, position.longitude);
+        // Feed speed interpolation
         final newSpeed = _locationService.averageSpeedKmh;
-        if ((newSpeed - _speedKmh).abs() > 0.5) {
-          setState(() => _speedKmh = newSpeed);
-        }
+        _prevGpsSpeed = _currentGpsSpeed;
+        _prevGpsTime = _currentGpsTime;
+        _currentGpsSpeed = newSpeed;
+        _currentGpsTime = DateTime.now();
       });
     }
   }
@@ -127,6 +163,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   void dispose() {
     _radiusDebounce?.cancel();
     _fastCircleDebounce?.cancel();
+    _speedInterpolTimer?.cancel();
+    _radiusNotifier.dispose();
     _locationService.dispose();
     super.dispose();
   }
@@ -227,27 +265,16 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     // --- Fast assign circle ---
     // onLeave: skip CircleStyleLayer — the veil hole IS the visual boundary
     // During drag: skip native layer update — Flutter overlay circle provides instant feedback
-    final showFastCircle = _isAssigning && _assignZoneTrigger != ZoneTrigger.onLeave;
-    if (showFastCircle) {
-      // Native CircleStyleLayer update — debounced 100ms since Flutter overlay
-      // provides instant visual feedback, this only needs to catch up eventually
-      _fastCircleVersion++;
-      final fv = _fastCircleVersion;
-      _fastCircleDebounce?.cancel();
-      _fastCircleDebounce = Timer(const Duration(milliseconds: 100), () {
-        if (fv == _fastCircleVersion) {
-          _updateFastCircleLayer(style);
-        }
-      });
-    } else if (!showFastCircle) {
-      // Remove fast circle layer if it exists (not fast assigning, or onLeave mode)
-      _fastCircleDebounce?.cancel();
-      if (_fastCircleVersion > 0) {
-        _fastCircleVersion = 0;
-        _fastCircleUpdating = false;
-        try { style.removeLayer('fast-circle'); } catch (_) {}
-        style.updateGeoJsonSource(id: 'fast-src', data: _emptyGeoJson);
-      }
+    // --- Fast assign circle: Flutter overlay handles the visual during assign.
+    // Native CircleStyleLayer is NOT used during assign (causes double circle
+    // because overlay is at fixed screen position, native layer is geo-referenced).
+    // Clean up any leftover native layer when assigning.
+    _fastCircleDebounce?.cancel();
+    if (_fastCircleVersion > 0) {
+      _fastCircleVersion = 0;
+      _fastCircleUpdating = false;
+      try { style.removeLayer('fast-circle'); } catch (_) {}
+      style.updateGeoJsonSource(id: 'fast-src', data: _emptyGeoJson);
     }
 
     // --- Veil (onLeave overlay) — instant updateGeoJsonSource ---
@@ -464,6 +491,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       _assignTimeMinutes = existing?.timeTrigger?.inMinutes ?? 10;
       _assignScreenCenter = screenCenter;
     });
+    // Initialize overlay radius
+    _radiusNotifier.value = _currentRadiusPx;
   }
 
   void _onLongPress(Position position) {
@@ -686,56 +715,48 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                   )
                 : const SizedBox.shrink(),
           ),
-        // Radius drag overlay for vector map — blocks map gestures
+        // Radius drag overlay — blocks map gestures, 60fps via ValueNotifier
         if (_isAssigning && _assignScreenCenter != null)
           Positioned.fill(
-            child: Listener(
-              behavior: HitTestBehavior.opaque,
-              onPointerDown: (e) {
-                if (_assignScreenCenter == null) return;
-                // Track this pointer — ignore all others
-                _dragPointerId = e.pointer;
-                _isDraggingRadius = true;
-                _dragLogCounter = 0;
-                DebugConsole.log('VECTOR_DRAG: start pointer=${e.pointer}');
-              },
-              onPointerMove: (e) {
-                if (!_isDraggingRadius || _assignScreenCenter == null) return;
-                if (e.pointer != _dragPointerId) return; // ignore other fingers
-                final dist = (e.localPosition - _assignScreenCenter!).distance;
-                if (_assignTriggerType == TriggerType.distance) {
-                  final metersPerPx = 156543.03392 * math.cos(_assignLat * math.pi / 180) / math.pow(2, _currentZoom);
-                  final meters = (dist * metersPerPx).clamp(100.0, 5000.0);
-                  setState(() => _assignRadius = meters);
-                  // Throttled log: every 10th event
-                  if (++_dragLogCounter % 10 == 0) {
-                    DebugConsole.log('VECTOR_DRAG: ${dist.round()}px → ${meters.round()}m (updating=$_fastCircleUpdating)');
+            child: RepaintBoundary(
+              child: Listener(
+                behavior: HitTestBehavior.opaque,
+                onPointerDown: (e) {
+                  if (_assignScreenCenter == null) return;
+                  _dragPointerId = e.pointer;
+                  _isDraggingRadius = true;
+                  _dragLogCounter = 0;
+                },
+                onPointerMove: (e) {
+                  if (!_isDraggingRadius || _assignScreenCenter == null) return;
+                  if (e.pointer != _dragPointerId) return;
+                  final dist = (e.localPosition - _assignScreenCenter!).distance;
+                  if (_assignTriggerType == TriggerType.distance) {
+                    final metersPerPx = 156543.03392 * math.cos(_assignLat * math.pi / 180) / math.pow(2, _currentZoom);
+                    _assignRadius = (dist * metersPerPx).clamp(100.0, 5000.0);
+                  } else {
+                    _assignTimeMinutes = (dist * 0.3).clamp(5.0, 120.0).round();
                   }
-                } else {
-                  final minutes = (dist * 0.3).clamp(5.0, 120.0).round();
-                  setState(() => _assignTimeMinutes = minutes);
-                  if (++_dragLogCounter % 10 == 0) {
-                    DebugConsole.log('VECTOR_DRAG: ${dist.round()}px → ${minutes}min');
-                  }
-                }
-              },
-              onPointerUp: (e) {
-                if (e.pointer != _dragPointerId) return;
-                DebugConsole.log('VECTOR_DRAG: end');
-                _isDraggingRadius = false;
-                _dragPointerId = null;
-                // Force native CircleStyleLayer update on drag end
-                _fastCircleVersion = 0;
-              },
-              child: CustomPaint(
-                painter: _assignScreenCenter != null && _assignZoneTrigger != ZoneTrigger.onLeave
-                    ? _RadiusOverlayPainter(
-                        center: _assignScreenCenter!,
-                        radiusPx: _currentRadiusPx,
-                        isTime: _assignTriggerType == TriggerType.time,
-                      )
-                    : null,
-                child: const SizedBox.expand(),
+                  // Update overlay circle instantly (no widget rebuild)
+                  _radiusNotifier.value = _currentRadiusPx;
+                  // Sync slider in AlarmCard (setState only rebuilds card, not overlay)
+                  setState(() {});
+                },
+                onPointerUp: (e) {
+                  if (e.pointer != _dragPointerId) return;
+                  _isDraggingRadius = false;
+                  _dragPointerId = null;
+                },
+                child: CustomPaint(
+                  painter: _assignScreenCenter != null && _assignZoneTrigger != ZoneTrigger.onLeave
+                      ? _RadiusOverlayPainter(
+                          center: _assignScreenCenter!,
+                          radiusNotifier: _radiusNotifier,
+                          isTime: _assignTriggerType == TriggerType.time,
+                        )
+                      : null,
+                  child: const SizedBox.expand(),
+                ),
               ),
             ),
           ),
@@ -748,10 +769,16 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               longitude: _assignLng,
               existingPoint: _assignExisting,
               radius: _assignRadius,
-              onRadiusChanged: (v) => setState(() => _assignRadius = v),
+              onRadiusChanged: (v) {
+                setState(() => _assignRadius = v);
+                _radiusNotifier.value = _currentRadiusPx;
+              },
               onZoneTriggerChanged: (v) => setState(() => _assignZoneTrigger = v),
               onTriggerTypeChanged: (v) => setState(() => _assignTriggerType = v),
-              onTimeChanged: (v) => setState(() => _assignTimeMinutes = v),
+              onTimeChanged: (v) {
+                setState(() => _assignTimeMinutes = v);
+                _radiusNotifier.value = _currentRadiusPx;
+              },
               onSave: _saveAssign,
               onCancel: _cancelAssign,
               onDelete: _assignExisting != null ? () {
@@ -788,41 +815,48 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   }
 }
 
-/// Flutter-side circle painter for instant visual feedback during drag.
-/// Bypasses the native bridge entirely — drawn in Flutter's render pipeline at 60fps.
+/// Flutter-side circle painter driven by ValueNotifier for 60fps updates
+/// without widget rebuilds. Dashed border for time-based triggers.
 class _RadiusOverlayPainter extends CustomPainter {
   final Offset center;
-  final double radiusPx;
+  final ValueNotifier<double> radiusNotifier;
   final bool isTime;
 
   _RadiusOverlayPainter({
     required this.center,
-    required this.radiusPx,
+    required this.radiusNotifier,
     required this.isTime,
-  });
+  }) : super(repaint: radiusNotifier);
 
   @override
   void paint(Canvas canvas, Size size) {
+    final radiusPx = radiusNotifier.value;
     final fillColor = isTime
-        ? const Color(0x1AFF9800) // orange 10%
-        : const Color(0x1FFF0000); // red 12%
+        ? const Color(0x1AFF9800)
+        : const Color(0x1FFF0000);
     final strokeColor = isTime
-        ? const Color(0xB3FF9800) // orange 70%
-        : const Color(0x99FF0000); // red 60%
+        ? const Color(0xB3FF9800)
+        : const Color(0x99FF0000);
 
     // Fill
     canvas.drawCircle(center, radiusPx, Paint()..color = fillColor);
-    // Stroke
-    canvas.drawCircle(center, radiusPx, Paint()
+
+    // Stroke — dashed for time, solid for distance
+    final strokePaint = Paint()
       ..color = strokeColor
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0);
+      ..strokeWidth = 2.0;
+
+    if (isTime) {
+      final path = Path()..addOval(Rect.fromCircle(center: center, radius: radiusPx));
+      final dashed = dashPath(path, dashArray: CircularIntervalList<double>([8.0, 4.0]));
+      canvas.drawPath(dashed, strokePaint);
+    } else {
+      canvas.drawCircle(center, radiusPx, strokePaint);
+    }
   }
 
   @override
-  bool shouldRepaint(_RadiusOverlayPainter oldDelegate) =>
-      center != oldDelegate.center ||
-      radiusPx != oldDelegate.radiusPx ||
-      isTime != oldDelegate.isTime;
+  bool shouldRepaint(_RadiusOverlayPainter oldDelegate) => true;
 }
 
