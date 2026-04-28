@@ -8,7 +8,8 @@ Marker buildPinMarker({
   required VoidCallback onTap,
 }) {
   final isActive = point.isActive;
-  final color = isActive ? Colors.red : Colors.grey;
+  final isTime = point.triggerType == TriggerType.time;
+  final color = isActive ? (isTime ? Colors.orange : Colors.red) : Colors.grey;
   final label = point.triggerType == TriggerType.distance
       ? _formatDistance(point.radiusMeters)
       : '${point.timeTrigger?.inMinutes ?? 0}min';
@@ -39,6 +40,7 @@ Marker buildPinMarker({
             ),
             child: Text(
               label,
+              textAlign: TextAlign.center,
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 9,

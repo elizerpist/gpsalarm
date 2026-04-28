@@ -15,14 +15,13 @@ import '../providers/map_provider.dart';
 import '../providers/settings_provider.dart';
 import '../widgets/map_controls.dart';
 import '../widgets/search_pill.dart';
-import '../widgets/radius_popup.dart';
+import '../widgets/alarm_card.dart';
 import '../widgets/offline_indicator.dart';
 import '../services/location_service.dart';
 import '../services/alarm_service.dart';
 import '../services/notification_service.dart';
 import '../services/debug_console.dart';
 import '../widgets/scale_bar.dart';
-import '../widgets/fast_assign_card.dart';
 
 class MaplibreNewView extends StatefulWidget {
   final GlobalKey<ScaffoldState> scaffoldKey;
@@ -37,20 +36,20 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   bool _imagesRegistered = false;
   bool _radiusLayerReady = false;
   final LocationService _locationService = LocationService();
-  bool _isFastAssigning = false;
-  double _fastAssignLat = 0;
-  double _fastAssignLng = 0;
-  double _fastAssignRadiusMeters = 500;
-  TriggerType _fastAssignTriggerType = TriggerType.distance;
-  ZoneTrigger _fastAssignZoneTrigger = ZoneTrigger.onEntry;
-  int _fastAssignTimeMinutes = 10;
-  Offset? _fastAssignScreenCenter;
+  // Unified assign state
+  bool _isAssigning = false;
+  AlarmPoint? _assignExisting;
+  double _assignLat = 0;
+  double _assignLng = 0;
+  double _assignRadius = 500;
+  TriggerType _assignTriggerType = TriggerType.distance;
+  ZoneTrigger _assignZoneTrigger = ZoneTrigger.onEntry;
+  int _assignTimeMinutes = 10;
+  Offset? _assignScreenCenter;
   bool _isDraggingRadius = false;
-  int? _dragPointerId; // Track single pointer to avoid multitouch chaos
+  int? _dragPointerId;
   double _currentZoom = 13;
   double _speedKmh = 0;
-  Position? _pendingTapPoint;
-  double _pendingRadius = 500;
   Position? _userPos;
 
   static const _styleUrls = {
@@ -174,8 +173,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     ));
     // Persistent source for fast assign circle (updated via updateGeoJsonSource)
     await style.addSource(GeoJsonSource(id: 'fast-src', data: _emptyGeoJson));
-    // Persistent source for pending tap circle
-    await style.addSource(GeoJsonSource(id: 'pending-src', data: _emptyGeoJson));
     _radiusLayerReady = true;
     DebugConsole.log('VECTOR: radius layer system ready');
   }
@@ -190,15 +187,15 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     // Update point source position
     style.updateGeoJsonSource(
       id: 'fast-src',
-      data: _pointGeoJson(_fastAssignLng, _fastAssignLat),
+      data: _pointGeoJson(_assignLng, _assignLat),
     );
 
-    final isTime = _fastAssignTriggerType == TriggerType.time;
-    double radius = _fastAssignRadiusMeters;
+    final isTime = _assignTriggerType == TriggerType.time;
+    double radius = _assignRadius;
     if (isTime) {
-      radius = math.max(200.0, (_speedKmh / 3.6) * _fastAssignTimeMinutes * 60);
+      radius = math.max(200.0, (_speedKmh / 3.6) * _assignTimeMinutes * 60);
     }
-    final basePx = radius / (156543.03392 * math.cos(_fastAssignLat * math.pi / 180));
+    final basePx = radius / (156543.03392 * math.cos(_assignLat * math.pi / 180));
     final fillColor = isTime ? 'rgba(255,152,0,0.10)' : 'rgba(255,0,0,0.12)';
     final strokeColor = isTime ? 'rgba(255,152,0,0.7)' : 'rgba(255,0,0,0.6)';
 
@@ -219,29 +216,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     _fastCircleUpdating = false;
   }
 
-  /// Recreate pending tap CircleStyleLayer with current radius.
-  Future<void> _updatePendingCircleLayer(StyleController style) async {
-    try { await style.removeLayer('pending-circle'); } catch (_) {}
-
-    final lat = _pendingTapPoint!.lat.toDouble();
-    final basePx = _pendingRadius / (156543.03392 * math.cos(lat * math.pi / 180));
-
-    await style.addLayer(CircleStyleLayer(
-      id: 'pending-circle',
-      sourceId: 'pending-src',
-      paint: {
-        'circle-radius': [
-          'interpolate', ['exponential', 2.0], ['zoom'],
-          0.0, basePx,
-          22.0, basePx * 4194304.0,
-        ],
-        'circle-color': 'rgba(255,0,0,0.12)',
-        'circle-stroke-color': 'rgba(255,0,0,0.6)',
-        'circle-stroke-width': 2.0,
-      },
-    ));
-  }
-
   /// Sync radius circles.
   /// Fast assign + pending: dedicated CircleStyleLayer, debounced per-frame.
   /// Alarm circles: debounced rebuild, SKIPPED during drag (they don't change).
@@ -253,7 +227,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     // --- Fast assign circle ---
     // onLeave: skip CircleStyleLayer — the veil hole IS the visual boundary
     // During drag: skip native layer update — Flutter overlay circle provides instant feedback
-    final showFastCircle = _isFastAssigning && _fastAssignZoneTrigger != ZoneTrigger.onLeave;
+    final showFastCircle = _isAssigning && _assignZoneTrigger != ZoneTrigger.onLeave;
     if (showFastCircle) {
       // Native CircleStyleLayer update — debounced 100ms since Flutter overlay
       // provides instant visual feedback, this only needs to catch up eventually
@@ -274,21 +248,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
         try { style.removeLayer('fast-circle'); } catch (_) {}
         style.updateGeoJsonSource(id: 'fast-src', data: _emptyGeoJson);
       }
-    }
-
-    // --- Pending tap circle: debounced 16ms ---
-    if (_pendingTapPoint != null) {
-      style.updateGeoJsonSource(
-        id: 'pending-src',
-        data: _pointGeoJson(
-          _pendingTapPoint!.lng.toDouble(),
-          _pendingTapPoint!.lat.toDouble(),
-        ),
-      );
-      _updatePendingCircleLayer(style);
-    } else {
-      try { style.removeLayer('pending-circle'); } catch (_) {}
-      style.updateGeoJsonSource(id: 'pending-src', data: _emptyGeoJson);
     }
 
     // --- Veil (onLeave overlay) — instant updateGeoJsonSource ---
@@ -332,7 +291,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     final leaveAlarms = alarmProv.alarmPoints
         .where((p) => p.zoneTrigger == ZoneTrigger.onLeave)
         .toList();
-    final hasFastLeave = _isFastAssigning && _fastAssignZoneTrigger == ZoneTrigger.onLeave;
+    final hasFastLeave = _isAssigning && _assignZoneTrigger == ZoneTrigger.onLeave;
 
     if (leaveAlarms.isEmpty && !hasFastLeave) {
       style.updateGeoJsonSource(id: 'veil-src', data: '{"type":"FeatureCollection","features":[]}');
@@ -349,10 +308,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       holes.add(_geoCircle(p.longitude, p.latitude, r));
     }
     if (hasFastLeave) {
-      final r = _fastAssignTriggerType == TriggerType.time
-          ? math.max(200.0, (_speedKmh / 3.6) * _fastAssignTimeMinutes * 60)
-          : _fastAssignRadiusMeters;
-      holes.add(_geoCircle(_fastAssignLng, _fastAssignLat, r));
+      final r = _assignTriggerType == TriggerType.time
+          ? math.max(200.0, (_speedKmh / 3.6) * _assignTimeMinutes * 60)
+          : _assignRadius;
+      holes.add(_geoCircle(_assignLng, _assignLat, r));
     }
 
     final coords = <List<List<double>>>[
@@ -468,45 +427,15 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   }
 
   void _onTap(Position position) {
-    DebugConsole.log('VECTOR TAP: lat=${position.lat}, lng=${position.lng}, fastAssign=$_isFastAssigning');
-    if (_isFastAssigning) return;
+    if (_isAssigning) return;
     final lat = position.lat.toDouble();
     final lng = position.lng.toDouble();
     final alarmProv = context.read<AlarmProvider>();
     final existing = _findTappedAlarm(lat, lng, alarmProv);
-    if (existing != null) {
-      // Edit existing alarm — don't set _pendingTapPoint (alarm already has its own pin)
-      showModalBottomSheet(
-        context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
-        builder: (_) => RadiusPopup(
-          latitude: existing.latitude, longitude: existing.longitude, existingPoint: existing,
-        ),
-      );
-    } else {
-      setState(() {
-        _pendingTapPoint = position;
-        _pendingRadius = 500;
-      });
-      showModalBottomSheet(
-        context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
-        builder: (_) => RadiusPopup(
-          latitude: lat, longitude: lng,
-          onRadiusChanged: (v) { if (mounted) setState(() => _pendingRadius = v); },
-        ),
-      ).whenComplete(() {
-        if (mounted) setState(() => _pendingTapPoint = null);
-      });
-    }
+    _startAssign(lat, lng, existing: existing);
   }
 
-  void _onLongPress(Position position) {
-    DebugConsole.log('VECTOR LONG PRESS: lat=${position.lat}, lng=${position.lng}');
-    final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
-    if (haptic) Vibration.vibrate(duration: 30);
-
-    // Estimate screen position of the long-press point from camera state.
-    // MapLibre 0.2.2 doesn't expose latLngToScreenPoint, so we calculate from
-    // the camera center and zoom level.
+  void _startAssign(double lat, double lng, {AlarmPoint? existing}) {
     Offset? screenCenter;
     final cam = _controller?.camera;
     if (cam != null) {
@@ -517,69 +446,66 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
         final camLng = cam.center?.lng.toDouble() ?? 19.0;
         final zoom = cam.zoom ?? _currentZoom;
         final metersPerPx = 156543.03392 * math.cos(camLat * math.pi / 180) / math.pow(2, zoom);
-        // Approximate pixel offset from camera center
-        final dLng = (position.lng.toDouble() - camLng);
-        final dLat = (position.lat.toDouble() - camLat);
+        final dLng = (lng - camLng);
+        final dLat = (lat - camLat);
         final dx = dLng * math.cos(camLat * math.pi / 180) * (111320.0 / metersPerPx);
         final dy = -dLat * (110540.0 / metersPerPx);
         screenCenter = Offset(size.width / 2 + dx, size.height / 2 + dy);
       }
     }
-
-    DebugConsole.log('FAST_ASSIGN: activated at ($screenCenter), lat=${position.lat.toStringAsFixed(4)}, lng=${position.lng.toStringAsFixed(4)}');
     setState(() {
-      _isFastAssigning = true;
-      _isDraggingRadius = true; // Allow immediate swipe without lifting finger
-      _fastAssignLat = position.lat.toDouble();
-      _fastAssignLng = position.lng.toDouble();
-      _fastAssignRadiusMeters = 500;
-      _fastAssignScreenCenter = screenCenter;
+      _isAssigning = true;
+      _assignExisting = existing;
+      _assignLat = lat;
+      _assignLng = lng;
+      _assignRadius = existing?.radiusMeters ?? 500;
+      _assignTriggerType = existing?.triggerType ?? TriggerType.distance;
+      _assignZoneTrigger = existing?.zoneTrigger ?? ZoneTrigger.onEntry;
+      _assignTimeMinutes = existing?.timeTrigger?.inMinutes ?? 10;
+      _assignScreenCenter = screenCenter;
     });
   }
 
-  void _cancelFastAssign() {
-    DebugConsole.log('FAST_ASSIGN: cancelled');
-    // Clear fast circle source
+  void _onLongPress(Position position) {
+    final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
+    if (haptic) Vibration.vibrate(duration: 30);
+    _startAssign(position.lat.toDouble(), position.lng.toDouble());
+    _isDraggingRadius = true; // Allow immediate swipe without lifting finger
+  }
+
+  void _cancelAssign() {
     _controller?.style?.updateGeoJsonSource(id: 'fast-src', data: _emptyGeoJson);
     setState(() {
-      _isFastAssigning = false;
-      _fastAssignScreenCenter = null;
+      _isAssigning = false;
+      _assignExisting = null;
+      _assignScreenCenter = null;
       _isDraggingRadius = false;
       _dragPointerId = null;
-      _fastAssignTriggerType = TriggerType.distance;
-      _fastAssignZoneTrigger = ZoneTrigger.onEntry;
-      _fastAssignTimeMinutes = 10;
+      _assignTriggerType = TriggerType.distance;
+      _assignZoneTrigger = ZoneTrigger.onEntry;
+      _assignTimeMinutes = 10;
     });
   }
 
-  void _confirmFastAssign({bool isActive = true}) {
+  void _saveAssign(AlarmPoint alarm) {
     final alarmProv = context.read<AlarmProvider>();
-    if (alarmProv.canAddAlarm) {
-      alarmProv.addAlarmPoint(AlarmPoint(
-        id: const Uuid().v4(),
-        latitude: _fastAssignLat,
-        longitude: _fastAssignLng,
-        radiusMeters: _fastAssignRadiusMeters,
-        triggerType: _fastAssignTriggerType,
-        zoneTrigger: _fastAssignZoneTrigger,
-        isActive: isActive,
-        timeTrigger: _fastAssignTriggerType == TriggerType.time
-            ? Duration(minutes: _fastAssignTimeMinutes)
-            : null,
-      ));
+    if (_assignExisting != null) {
+      alarmProv.updateAlarmPoint(alarm);
+    } else if (alarmProv.canAddAlarm) {
+      alarmProv.addAlarmPoint(alarm);
     }
-    _cancelFastAssign();
+    _cancelAssign();
   }
 
 
   /// Current fast assign radius in screen pixels (for overlay painter).
   double get _currentRadiusPx {
-    final isTime = _fastAssignTriggerType == TriggerType.time;
-    double radius = _fastAssignRadiusMeters;
+    final isTime = _assignTriggerType == TriggerType.time;
+    double radius = _assignRadius;
     if (isTime) {
-      radius = math.max(200.0, (_speedKmh / 3.6) * _fastAssignTimeMinutes * 60);
+      radius = math.max(200.0, (_speedKmh / 3.6) * _assignTimeMinutes * 60);
     }
-    final metersPerPx = 156543.03392 * math.cos(_fastAssignLat * math.pi / 180) / math.pow(2, _currentZoom);
+    final metersPerPx = 156543.03392 * math.cos(_assignLat * math.pi / 180) / math.pow(2, _currentZoom);
     return radius / metersPerPx;
   }
 
@@ -597,14 +523,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       }
     }
 
-    // Pending tap point — always red
-    if (_pendingTapPoint != null) {
-      active.add(Point(coordinates: _pendingTapPoint!));
-    }
-
-    // Fast assign point — always red
-    if (_isFastAssigning) {
-      active.add(Point(coordinates: Position(_fastAssignLng, _fastAssignLat)));
+    // Assign point (new or editing) — always red
+    if (_isAssigning) {
+      active.add(Point(coordinates: Position(_assignLng, _assignLat)));
     }
 
     return (active: active, inactive: inactive);
@@ -710,7 +631,30 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             ),
           ),
         ),
-        if (!_isFastAssigning)
+        // Hamburger menu — always visible, cancels assign if active
+        Positioned(
+          top: MediaQuery.of(context).padding.top + 12,
+          left: 12,
+          child: GestureDetector(
+            onTap: () {
+              if (_isAssigning) _cancelAssign();
+              widget.scaffoldKey.currentState?.openDrawer();
+            },
+            child: Container(
+              width: 44, height: 44,
+              decoration: BoxDecoration(
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? Colors.grey[900]!.withOpacity(0.92)
+                    : Colors.white.withOpacity(0.92),
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 2))],
+              ),
+              child: Icon(Icons.menu, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.grey[800], size: 24),
+            ),
+          ),
+        ),
+        // Other controls — hidden during assign
+        if (!_isAssigning)
           Selector<MapProvider, bool>(
             selector: (_, p) => p.searchActive,
             builder: (_, searchActive, __) => MapControls(
@@ -728,7 +672,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               },
             ),
           ),
-        if (!_isFastAssigning)
+        if (!_isAssigning)
           Selector<MapProvider, bool>(
             selector: (_, p) => p.searchActive,
             builder: (_, searchActive, __) => searchActive
@@ -743,12 +687,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                 : const SizedBox.shrink(),
           ),
         // Radius drag overlay for vector map — blocks map gestures
-        if (_isFastAssigning && _fastAssignScreenCenter != null)
+        if (_isAssigning && _assignScreenCenter != null)
           Positioned.fill(
             child: Listener(
               behavior: HitTestBehavior.opaque,
               onPointerDown: (e) {
-                if (_fastAssignScreenCenter == null) return;
+                if (_assignScreenCenter == null) return;
                 // Track this pointer — ignore all others
                 _dragPointerId = e.pointer;
                 _isDraggingRadius = true;
@@ -756,20 +700,20 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                 DebugConsole.log('VECTOR_DRAG: start pointer=${e.pointer}');
               },
               onPointerMove: (e) {
-                if (!_isDraggingRadius || _fastAssignScreenCenter == null) return;
+                if (!_isDraggingRadius || _assignScreenCenter == null) return;
                 if (e.pointer != _dragPointerId) return; // ignore other fingers
-                final dist = (e.localPosition - _fastAssignScreenCenter!).distance;
-                if (_fastAssignTriggerType == TriggerType.distance) {
-                  final metersPerPx = 156543.03392 * math.cos(_fastAssignLat * math.pi / 180) / math.pow(2, _currentZoom);
+                final dist = (e.localPosition - _assignScreenCenter!).distance;
+                if (_assignTriggerType == TriggerType.distance) {
+                  final metersPerPx = 156543.03392 * math.cos(_assignLat * math.pi / 180) / math.pow(2, _currentZoom);
                   final meters = (dist * metersPerPx).clamp(100.0, 5000.0);
-                  setState(() => _fastAssignRadiusMeters = meters);
+                  setState(() => _assignRadius = meters);
                   // Throttled log: every 10th event
                   if (++_dragLogCounter % 10 == 0) {
                     DebugConsole.log('VECTOR_DRAG: ${dist.round()}px → ${meters.round()}m (updating=$_fastCircleUpdating)');
                   }
                 } else {
                   final minutes = (dist * 0.3).clamp(5.0, 120.0).round();
-                  setState(() => _fastAssignTimeMinutes = minutes);
+                  setState(() => _assignTimeMinutes = minutes);
                   if (++_dragLogCounter % 10 == 0) {
                     DebugConsole.log('VECTOR_DRAG: ${dist.round()}px → ${minutes}min');
                   }
@@ -784,31 +728,36 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                 _fastCircleVersion = 0;
               },
               child: CustomPaint(
-                painter: _fastAssignScreenCenter != null && _fastAssignZoneTrigger != ZoneTrigger.onLeave
+                painter: _assignScreenCenter != null && _assignZoneTrigger != ZoneTrigger.onLeave
                     ? _RadiusOverlayPainter(
-                        center: _fastAssignScreenCenter!,
+                        center: _assignScreenCenter!,
                         radiusPx: _currentRadiusPx,
-                        isTime: _fastAssignTriggerType == TriggerType.time,
+                        isTime: _assignTriggerType == TriggerType.time,
                       )
                     : null,
                 child: const SizedBox.expand(),
               ),
             ),
           ),
-        // Fast assign card — shared widget, same as raster map
-        if (_isFastAssigning)
+        // Alarm card — unified assign/edit (same widget as raster map)
+        if (_isAssigning)
           Positioned(
             bottom: 0, left: 0, right: 0,
-            child: FastAssignCard(
-              initialRadius: _fastAssignRadiusMeters,
-              onRadiusChanged: (v) => setState(() => _fastAssignRadiusMeters = v),
-              onZoneTriggerChanged: (v) => setState(() => _fastAssignZoneTrigger = v),
-              onTriggerTypeChanged: (v) => setState(() => _fastAssignTriggerType = v),
-              onTimeChanged: (v) => setState(() => _fastAssignTimeMinutes = v),
-              onSave: (name, triggerType, zoneTrigger, timeMinutes, isActive) {
-                _confirmFastAssign(isActive: isActive);
-              },
-              onCancel: _cancelFastAssign,
+            child: AlarmCard(
+              latitude: _assignLat,
+              longitude: _assignLng,
+              existingPoint: _assignExisting,
+              radius: _assignRadius,
+              onRadiusChanged: (v) => setState(() => _assignRadius = v),
+              onZoneTriggerChanged: (v) => setState(() => _assignZoneTrigger = v),
+              onTriggerTypeChanged: (v) => setState(() => _assignTriggerType = v),
+              onTimeChanged: (v) => setState(() => _assignTimeMinutes = v),
+              onSave: _saveAssign,
+              onCancel: _cancelAssign,
+              onDelete: _assignExisting != null ? () {
+                context.read<AlarmProvider>().removeAlarmPoint(_assignExisting!.id);
+                _cancelAssign();
+              } : null,
             ),
           ),
       ],
