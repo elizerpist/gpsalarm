@@ -355,7 +355,15 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       final r = _assignTriggerType == TriggerType.time
           ? math.max(200.0, (_speedKmh / 3.6) * _assignTimeMinutes * 60)
           : _assignRadius;
-      holes.add(_geoCircle(_assignLng, _assignLat, r));
+      final circle = _geoCircle(_assignLng, _assignLat, r);
+      // Log veil circle's geo extent for comparison with overlay pixel radius
+      final northLat = circle.map((c) => c[1]).reduce(math.max);
+      final centerLat = _assignLat;
+      final deltaLatDeg = northLat - centerLat;
+      final actualZoom = _controller?.camera?.zoom ?? _currentZoom;
+      final geoRadiusPx = deltaLatDeg * math.pi / 180 / math.cos(centerLat * math.pi / 180) * 256 * math.pow(2, actualZoom) / (2 * math.pi);
+      DebugConsole.log('VEIL_GEO: ${r.round()}m → geoPx=${geoRadiusPx.toStringAsFixed(1)} northLat=${northLat.toStringAsFixed(6)} centerLat=${centerLat.toStringAsFixed(6)} deltaLat=${deltaLatDeg.toStringAsFixed(6)} zoom=${actualZoom.toStringAsFixed(2)}');
+      holes.add(circle);
     }
 
     final coords = <List<List<double>>>[
@@ -556,8 +564,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     if (isTime) {
       radius = math.max(200.0, (_speedKmh / 3.6) * _assignTimeMinutes * 60);
     }
-    final metersPerPx = 156543.03392 * math.cos(_assignLat * math.pi / 180) / math.pow(2, _currentZoom);
-    return radius / metersPerPx;
+    final actualZoom = _controller?.camera?.zoom ?? _currentZoom;
+    final metersPerPx = 156543.03392 * math.cos(_assignLat * math.pi / 180) / math.pow(2, actualZoom);
+    final px = radius / metersPerPx;
+    DebugConsole.log('RADIUS_PX: ${radius.round()}m → ${px.toStringAsFixed(1)}px zoom=${actualZoom.toStringAsFixed(2)} _currentZoom=${_currentZoom.toStringAsFixed(2)} lat=${_assignLat.toStringAsFixed(4)} mPerPx=${metersPerPx.toStringAsFixed(3)}');
+    return px;
   }
 
   // Build separate marker point lists for active (red) and inactive (grey) pins
