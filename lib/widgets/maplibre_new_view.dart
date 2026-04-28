@@ -53,7 +53,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   Position? _userPos;
   Offset? _lastPointerDownPos; // captured from Listener before map processes event
   Offset? _assignScreenCenter; // screen pos cached at assign start
-  Position? _pendingLongClickGeo; // geo from MapEventLongClick (more accurate than _screenToGeo)
   // Overlay radius notifier — drives CustomPainter repaint without setState
   final ValueNotifier<double> _radiusNotifier = ValueNotifier(500);
   // Speed interpolation
@@ -482,30 +481,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     DebugConsole.log('ASSIGN_START: radiusPx=${_currentRadiusPx.toStringAsFixed(1)} radiusM=$_assignRadius');
   }
 
-  /// Convert screen position to geographic coordinates using camera state.
-  ({double lat, double lng})? _screenToGeo(Offset screenPos) {
-    final cam = _controller?.camera;
-    if (cam == null || cam.center == null) return null;
-    final box = context.findRenderObject() as RenderBox?;
-    if (box == null) return null;
-    final size = box.size;
-    final camLat = cam.center!.lat.toDouble();
-    final camLng = cam.center!.lng.toDouble();
-    final zoom = cam.zoom ?? _currentZoom;
-    final metersPerPx = 156543.03392 * math.cos(camLat * math.pi / 180) / math.pow(2, zoom);
-    // MapLibre native view renders behind the status bar, so its camera
-    // center is at (size.height + padTop) / 2, not size.height / 2.
-    // dx/dy in logical pixels, metersPerPx in physical → divide by DPR.
-    final padTop = MediaQuery.of(context).padding.top;
-    final dpr = MediaQuery.of(context).devicePixelRatio;
-    final dx = (screenPos.dx - size.width / 2) / dpr;
-    final dy = (screenPos.dy - (size.height + padTop) / 2) / dpr;
-    final dLng = dx * metersPerPx / (111320.0 * math.cos(camLat * math.pi / 180));
-    final dLat = -dy * metersPerPx / 110540.0;
-    final result = (lat: camLat + dLat, lng: camLng + dLng);
-    DebugConsole.log('S2G: sX=${screenPos.dx.round()} sY=${screenPos.dy.round()} w=${size.width.round()} h=${size.height.round()} cam=(${camLat.toStringAsFixed(4)},${camLng.toStringAsFixed(4)}) z=${zoom.toStringAsFixed(1)} dpr=${dpr.toStringAsFixed(2)} mpp=${metersPerPx.toStringAsFixed(2)} dx=${dx.round()} dy=${dy.round()} → (${result.lat.toStringAsFixed(4)},${result.lng.toStringAsFixed(4)})');
-    return result;
-  }
 
   void _cancelAssign() {
     _controller?.style?.updateGeoJsonSource(id: 'fast-src', data: _emptyGeoJson);
@@ -576,59 +551,32 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
 
     return Stack(
       children: [
-        // GestureDetector handles long press (Flutter owns the pointer from the start)
-        GestureDetector(
-          onLongPressStart: _isAssigning ? null : (details) {
-            DebugConsole.log('GD_LONG_START: localPos=${details.localPosition}');
-            final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
-            if (haptic) Vibration.vibrate(duration: 30);
-            _assignScreenCenter = details.localPosition;
-            _isDraggingRadius = true;
-            final geo = _screenToGeo(details.localPosition);
-            if (geo != null) {
-              _startAssign(geo.lat, geo.lng);
-            }
-          },
-          onLongPressMoveUpdate: !_isAssigning ? null : (details) {
-            if (!_isDraggingRadius || _assignScreenCenter == null) return;
-            final dist = (details.localPosition - _assignScreenCenter!).distance;
-            if (_assignTriggerType == TriggerType.distance) {
-              final metersPerPx = 156543.03392 * math.cos(_assignLat * math.pi / 180) / math.pow(2, _currentZoom);
-              _assignRadius = (dist * metersPerPx).clamp(100.0, 5000.0);
-            } else {
-              _assignTimeMinutes = (dist * 0.3).clamp(5.0, 120.0).round();
-            }
-            _radiusNotifier.value = _currentRadiusPx;
-            setState(() {}); // sync slider
-          },
-          onLongPressEnd: !_isAssigning ? null : (details) {
-            DebugConsole.log('GD_LONG_END: isDragging=$_isDraggingRadius radius=$_assignRadius');
-            _isDraggingRadius = false;
-          },
-          child: MapLibreMap(
-            key: ValueKey(styleUrl),
-            options: MapOptions(
-              initStyle: styleUrl,
-              initCenter: Position(19.0402, 47.4979),
-              initZoom: 13,
-            ),
-            onMapCreated: _onMapCreated,
-            onStyleLoaded: (style) => _registerImages(style),
-            onEvent: (event) {
-              if (event is MapEventClick) {
-                _onTap(event.point);
-              } else if (event is MapEventLongClick) {
-                // Save accurate geo position — GestureDetector handles the swipe,
-                // but MapLibre gives us precise lat/lng from the native layer
-                _pendingLongClickGeo = event.point;
-                DebugConsole.log('MAP_LONGCLICK: lat=${event.point.lat} lng=${event.point.lng}');
-              } else if (event is MapEventMoveCamera || event is MapEventCameraIdle) {
-                final newZoom = _controller?.camera?.zoom ?? _currentZoom;
-                if ((newZoom - _currentZoom).abs() > 0.05) {
-                  setState(() => _currentZoom = newZoom);
-                }
+        MapLibreMap(
+          key: ValueKey(styleUrl),
+          options: MapOptions(
+            initStyle: styleUrl,
+            initCenter: Position(19.0402, 47.4979),
+            initZoom: 13,
+          ),
+          onMapCreated: _onMapCreated,
+          onStyleLoaded: (style) => _registerImages(style),
+          onEvent: (event) {
+            if (event is MapEventClick) {
+              _onTap(event.point);
+            } else if (event is MapEventLongClick) {
+              // MapLibre gives us EXACT geo — no _screenToGeo needed
+              DebugConsole.log('MAP_LONGCLICK: lat=${event.point.lat} lng=${event.point.lng} lastPointer=$_lastPointerDownPos');
+              final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
+              if (haptic) Vibration.vibrate(duration: 30);
+              _assignScreenCenter = _lastPointerDownPos;
+              _startAssign(event.point.lat.toDouble(), event.point.lng.toDouble());
+            } else if (event is MapEventMoveCamera || event is MapEventCameraIdle) {
+              final newZoom = _controller?.camera?.zoom ?? _currentZoom;
+              if ((newZoom - _currentZoom).abs() > 0.05) {
+                setState(() => _currentZoom = newZoom);
               }
-            },
+            }
+          },
           layers: [
             // Pin markers
             if (_imagesRegistered && markers.active.isNotEmpty)
@@ -666,7 +614,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             ],
           ],
         ),
-        ), // close GestureDetector
         // Capture pointer position before map processes it
         if (!_isAssigning)
           Positioned.fill(
