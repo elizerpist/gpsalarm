@@ -455,6 +455,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   }
 
   void _onTap(Position position) {
+    DebugConsole.log('TAP: lat=${position.lat} lng=${position.lng} isAssigning=$_isAssigning lastPointer=$_lastPointerDownPos');
     if (_isAssigning) return;
     final lat = position.lat.toDouble();
     final lng = position.lng.toDouble();
@@ -464,8 +465,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   }
 
   void _startAssign(double lat, double lng, {AlarmPoint? existing}) {
-    // Use the screen position from the pointer event that triggered this
     _assignScreenCenter = _lastPointerDownPos;
+    DebugConsole.log('ASSIGN_START: lat=$lat lng=$lng lastPointer=$_lastPointerDownPos screenCenter=$_assignScreenCenter existing=${existing?.id}');
     setState(() {
       _isAssigning = true;
       _assignExisting = existing;
@@ -477,14 +478,14 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       _assignTimeMinutes = existing?.timeTrigger?.inMinutes ?? 10;
     });
     _radiusNotifier.value = _currentRadiusPx;
+    DebugConsole.log('ASSIGN_START: radiusPx=${_currentRadiusPx.toStringAsFixed(1)} radiusM=$_assignRadius');
   }
 
   void _onLongPress(Position position) {
+    DebugConsole.log('LONG_PRESS: lat=${position.lat} lng=${position.lng} lastPointer=$_lastPointerDownPos');
     final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
     if (haptic) Vibration.vibrate(duration: 30);
     _startAssign(position.lat.toDouble(), position.lng.toDouble());
-    // Don't set _isDraggingRadius here — the native PlatformView already owns
-    // this pointer. User must release and touch again to interact with overlay.
   }
 
   void _cancelAssign() {
@@ -621,7 +622,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
           Positioned.fill(
             child: Listener(
               behavior: HitTestBehavior.translucent,
-              onPointerDown: (e) => _lastPointerDownPos = e.localPosition,
+              onPointerDown: (e) {
+                _lastPointerDownPos = e.localPosition;
+                DebugConsole.log('CAPTURE_POINTER: pos=${e.localPosition} pointer=${e.pointer}');
+              },
               child: const SizedBox.expand(),
             ),
           ),
@@ -717,10 +721,13 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               child: Listener(
                 behavior: HitTestBehavior.opaque,
                 onPointerDown: (e) {
-                  if (_assignScreenCenter == null) return;
-                  // Only start radius drag if touch is inside/near the circle
+                  if (_assignScreenCenter == null) {
+                    DebugConsole.log('OVERLAY_DOWN: screenCenter is null!');
+                    return;
+                  }
                   final dist = (e.localPosition - _assignScreenCenter!).distance;
                   final radiusPx = _radiusNotifier.value;
+                  DebugConsole.log('OVERLAY_DOWN: pos=${e.localPosition} center=$_assignScreenCenter dist=${dist.round()} radiusPx=${radiusPx.round()} inside=${dist <= radiusPx * 1.5}');
                   if (dist <= radiusPx * 1.5) {
                     _dragPointerId = e.pointer;
                     _isDraggingRadius = true;
@@ -743,6 +750,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                   setState(() {});
                 },
                 onPointerUp: (e) {
+                  DebugConsole.log('OVERLAY_UP: pointer=${e.pointer} dragPointer=$_dragPointerId isDragging=$_isDraggingRadius');
                   if (e.pointer != _dragPointerId) return;
                   _isDraggingRadius = false;
                   _dragPointerId = null;
