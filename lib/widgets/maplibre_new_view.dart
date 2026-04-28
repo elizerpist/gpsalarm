@@ -493,12 +493,13 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     final camLng = cam.center!.lng.toDouble();
     final zoom = cam.zoom ?? _currentZoom;
     final metersPerPx = 156543.03392 * math.cos(camLat * math.pi / 180) / math.pow(2, zoom);
-    // Camera center is at widget center
-    // dx/dy are in logical pixels, metersPerPx is per physical pixel
-    // → divide by devicePixelRatio to convert logical→physical offset
+    // MapLibre native view renders behind the status bar, so its camera
+    // center is at (size.height + padTop) / 2, not size.height / 2.
+    // dx/dy in logical pixels, metersPerPx in physical → divide by DPR.
+    final padTop = MediaQuery.of(context).padding.top;
     final dpr = MediaQuery.of(context).devicePixelRatio;
     final dx = (screenPos.dx - size.width / 2) / dpr;
-    final dy = (screenPos.dy - size.height / 2) / dpr;
+    final dy = (screenPos.dy - (size.height + padTop) / 2) / dpr;
     final dLng = dx * metersPerPx / (111320.0 * math.cos(camLat * math.pi / 180));
     final dLat = -dy * metersPerPx / 110540.0;
     final result = (lat: camLat + dLat, lng: camLng + dLng);
