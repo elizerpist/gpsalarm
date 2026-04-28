@@ -483,7 +483,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
     if (haptic) Vibration.vibrate(duration: 30);
     _startAssign(position.lat.toDouble(), position.lng.toDouble());
-    _isDraggingRadius = true; // Allow immediate swipe without lifting finger
+    // Don't set _isDraggingRadius here — the native PlatformView already owns
+    // this pointer. User must release and touch again to interact with overlay.
   }
 
   void _cancelAssign() {
@@ -717,9 +718,14 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                 behavior: HitTestBehavior.opaque,
                 onPointerDown: (e) {
                   if (_assignScreenCenter == null) return;
-                  _dragPointerId = e.pointer;
-                  _isDraggingRadius = true;
-                  _dragLogCounter = 0;
+                  // Only start radius drag if touch is inside/near the circle
+                  final dist = (e.localPosition - _assignScreenCenter!).distance;
+                  final radiusPx = _radiusNotifier.value;
+                  if (dist <= radiusPx * 1.5) {
+                    _dragPointerId = e.pointer;
+                    _isDraggingRadius = true;
+                    _dragLogCounter = 0;
+                  }
                 },
                 onPointerMove: (e) {
                   if (!_isDraggingRadius || _assignScreenCenter == null) return;
