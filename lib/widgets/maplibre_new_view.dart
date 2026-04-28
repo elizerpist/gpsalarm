@@ -212,6 +212,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     ));
     // Persistent source for fast assign circle (updated via updateGeoJsonSource)
     await style.addSource(GeoJsonSource(id: 'fast-src', data: _emptyGeoJson));
+    // Pre-create alarm sources at init (style is guaranteed loaded here)
+    // Layers are added/removed dynamically, but sources persist — avoids
+    // silent addSource failures when style is transiently unavailable.
+    for (int i = 0; i < 20; i++) {
+      await style.addSource(GeoJsonSource(id: 'radius-pt-alarm-$i', data: _emptyGeoJson));
+    }
     _radiusLayerReady = true;
     DebugConsole.log('VECTOR: radius layer system ready');
   }
@@ -365,19 +371,19 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   /// geometric circles — see docs/vector-map-radius-circles.md).
   /// onLeave alarms are SKIPPED — the veil hole provides their visual boundary.
   Future<void> _rebuildRadiusLayers(StyleController style, List<({String id, double lng, double lat, double radiusMeters, bool active, bool isTime, bool isLeave})> circles, int version) async {
-    // Remove old alarm layers and sources
+    // Remove old alarm layers only (sources are pre-created at init)
     for (int i = 0; i < 20; i++) {
       final id = 'alarm-$i';
       try { await style.removeLayer('radius-label-$id'); } catch (_) {}
       try { await style.removeLayer('radius-circle-$id'); } catch (_) {}
-      try { await style.removeSource('radius-pt-$id'); } catch (_) {}
+      // Update source to empty — source persists, only data changes
+      style.updateGeoJsonSource(id: 'radius-pt-$id', data: _emptyGeoJson);
     }
 
     if (version != _radiusLayerVersion) return;
 
     for (final c in circles) {
       // onLeave alarms: the veil hole provides the visual — skip CircleStyleLayer
-      // to avoid double circle (veil polygon vs CircleStyleLayer mismatch)
       if (c.isLeave) continue;
 
       final basePx = c.radiusMeters / (156543.03392 * math.cos(c.lat * math.pi / 180));
@@ -390,10 +396,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       final strokeWidth = c.active ? 2.0 : 1.0;
 
       try {
-        await style.addSource(GeoJsonSource(
+        // Update pre-existing source data (source created at init, always available)
+        style.updateGeoJsonSource(
           id: 'radius-pt-${c.id}',
           data: _pointGeoJson(c.lng, c.lat),
-        ));
+        );
+        // Circle layer — added on top (source guaranteed to exist)
         await style.addLayer(CircleStyleLayer(
           id: 'radius-circle-${c.id}',
           sourceId: 'radius-pt-${c.id}',
@@ -408,7 +416,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             'circle-stroke-width': strokeWidth,
           },
         ));
-        // Distance/time chip label at circle center
+        // Distance/time chip label — on top of circle
         final labelText = c.isTime
             ? '${(c.radiusMeters / 1000).toStringAsFixed(1)}km'
             : (c.radiusMeters >= 1000
@@ -423,6 +431,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
           layout: {
             'text-field': labelText,
             'text-size': 11,
+            'text-font': ['Noto Sans Regular'],
             'text-anchor': 'top',
             'text-offset': [0.0, 1.2],
             'text-allow-overlap': true,
