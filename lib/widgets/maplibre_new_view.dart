@@ -500,7 +500,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     final dLng = dx * metersPerPx / (111320.0 * math.cos(camLat * math.pi / 180));
     final dLat = -dy * metersPerPx / 110540.0;
     final result = (lat: camLat + dLat, lng: camLng + dLng);
-    DebugConsole.log('S2G: sX=${screenPos.dx.round()} sY=${screenPos.dy.round()} w=${size.width.round()} h=${size.height.round()} cx=${(size.width/2).round()} cy=${(size.height/2).round()} dx=${dx.round()} dy=${dy.round()} → (${result.lat.toStringAsFixed(4)},${result.lng.toStringAsFixed(4)})');
+    final dpr = MediaQuery.of(context).devicePixelRatio;
+    DebugConsole.log('S2G: sX=${screenPos.dx.round()} sY=${screenPos.dy.round()} w=${size.width.round()} h=${size.height.round()} cam=(${camLat.toStringAsFixed(4)},${camLng.toStringAsFixed(4)}) z=${zoom.toStringAsFixed(1)} dpr=${dpr.toStringAsFixed(2)} mpp=${metersPerPx.toStringAsFixed(2)} dx=${dx.round()} dy=${dy.round()} → (${result.lat.toStringAsFixed(4)},${result.lng.toStringAsFixed(4)})');
     return result;
   }
 
