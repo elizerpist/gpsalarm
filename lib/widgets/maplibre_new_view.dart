@@ -544,8 +544,23 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     } else if (alarmProv.canAddAlarm) {
       alarmProv.addAlarmPoint(alarm);
     }
-    // Force hash invalidation so rebuild happens immediately after cancel
+    // Build native layers BEFORE hiding overlay to avoid flash gap
     _lastRadiusDataHash = '';
+    final style = _controller?.style;
+    if (style != null && _radiusLayerReady) {
+      final circles = <({String id, double lng, double lat, double radiusMeters, bool active, bool isTime, bool isLeave})>[];
+      for (int i = 0; i < alarmProv.alarmPoints.length; i++) {
+        final p = alarmProv.alarmPoints[i];
+        double r = p.radiusMeters;
+        if (p.triggerType == TriggerType.time && p.timeTrigger != null) {
+          r = math.max(200.0, (_speedKmh / 3.6) * p.timeTrigger!.inSeconds.toDouble());
+        }
+        circles.add((id: 'alarm-$i', lng: p.longitude, lat: p.latitude, radiusMeters: r, active: p.isActive, isTime: p.triggerType == TriggerType.time, isLeave: p.zoneTrigger == ZoneTrigger.onLeave));
+      }
+      _radiusLayerVersion++;
+      _rebuildRadiusLayers(style, circles, _radiusLayerVersion);
+      _lastRadiusDataHash = circles.map((c) => '${c.lng},${c.lat},${c.radiusMeters.toStringAsFixed(1)},${c.active},${c.isTime},${c.isLeave}').join('|');
+    }
     _cancelAssign();
   }
 
