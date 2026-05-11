@@ -59,6 +59,7 @@ class _MapScreenState extends State<MapScreen> {
   bool _longPressTriggered = false;
 
   double _rasterZoom = 13;
+  bool _rasterZoomInitialized = false;
   final ValueNotifier<double> _speedKmh = ValueNotifier(0);
 
   // Speed interpolation between GPS ticks
@@ -79,6 +80,15 @@ class _MapScreenState extends State<MapScreen> {
     DebugConsole.log('initState()');
     _initLocation();
     _startFrameMonitor();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_rasterZoomInitialized) {
+      _rasterZoomInitialized = true;
+      _rasterZoom = context.read<MapProvider>().zoom;
+    }
   }
 
   void _startFrameMonitor() {
@@ -323,6 +333,10 @@ class _MapScreenState extends State<MapScreen> {
                   if (z != null && (z - _rasterZoom).abs() > 0.05) {
                     setState(() => _rasterZoom = z);
                   }
+                  // Sync zoom/center to MapProvider for raster↔vector switch continuity
+                  final mp = context.read<MapProvider>();
+                  if (z != null) mp.updateZoomSilent(z);
+                  if (position.center != null) mp.updateCenterSilent(position.center!);
                 },
               ),
             children: [
@@ -714,8 +728,24 @@ class _MapScreenState extends State<MapScreen> {
   void _handleTap(BuildContext context, LatLng point) {
     if (_isAssigning) return;
     final alarmProv = context.read<AlarmProvider>();
-    final existing = alarmProv.findNearby(point.latitude, point.longitude);
-    _startAssign(point.latitude, point.longitude, existing: existing);
+    // Zoom-dependent tap threshold (pin is ~40px tall)
+    final metersPerPx = 156543.03392 * cos(point.latitude * pi / 180) / pow(2, _mapController.camera.zoom);
+    final thresholdMeters = max(50.0, 40 * metersPerPx);
+    AlarmPoint? existing;
+    double closestDist = double.infinity;
+    for (final p in alarmProv.alarmPoints) {
+      final dist = AlarmService.distanceMeters(point.latitude, point.longitude, p.latitude, p.longitude);
+      if (dist < thresholdMeters && dist < closestDist) {
+        existing = p;
+        closestDist = dist;
+      }
+    }
+    if (existing != null) {
+      // Use alarm's original coordinates to prevent position drift
+      _startAssign(existing.latitude, existing.longitude, existing: existing);
+    } else {
+      _startAssign(point.latitude, point.longitude);
+    }
   }
 
   /// Unified assign start — used by both tap and long press.

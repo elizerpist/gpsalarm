@@ -27,6 +27,12 @@ class MapProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Update zoom without notifying listeners (avoids rebuild loop during pan/zoom)
+  void updateZoomSilent(double zoom) => _zoom = zoom.clamp(3.0, 18.0);
+
+  /// Update center without notifying listeners
+  void updateCenterSilent(LatLng center) => _center = center;
+
   void zoomIn() => setZoom(_zoom + 1);
   void zoomOut() => setZoom(_zoom - 1);
 

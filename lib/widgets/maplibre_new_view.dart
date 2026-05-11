@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:path_drawing/path_drawing.dart';
 import 'package:maplibre/maplibre.dart';
+import 'package:latlong2/latlong.dart' show LatLng;
 import 'package:provider/provider.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:uuid/uuid.dart';
@@ -49,6 +50,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   bool _isDraggingRadius = false;
   int? _dragPointerId;
   double _currentZoom = 13;
+  bool _zoomInitialized = false;
   double _speedKmh = 0;
   Position? _userPos;
   Offset? _lastPointerDownPos;
@@ -73,6 +75,15 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     super.initState();
     _initLocation();
     _startSpeedInterpolation();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_zoomInitialized) {
+      _zoomInitialized = true;
+      _currentZoom = context.read<MapProvider>().zoom;
+    }
   }
 
   /// 60fps speed interpolation between GPS ticks.
@@ -508,15 +519,32 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   void _onTap(Position position) {
     DebugConsole.log('TAP: lat=${position.lat} lng=${position.lng} isAssigning=$_isAssigning lastPointer=$_lastPointerDownPos');
     if (_isAssigning) return;
-    final lat = position.lat.toDouble();
-    final lng = position.lng.toDouble();
+    final tapLat = position.lat.toDouble();
+    final tapLng = position.lng.toDouble();
     final alarmProv = context.read<AlarmProvider>();
-    final existing = _findTappedAlarm(lat, lng, alarmProv);
-    _startAssign(lat, lng, existing: existing);
+    final existing = _findTappedAlarm(tapLat, tapLng, alarmProv);
+    if (existing != null) {
+      // Use alarm's original coordinates, not tap coordinates (avoids pixel offset drift)
+      _startAssign(existing.latitude, existing.longitude, existing: existing);
+    } else {
+      _startAssign(tapLat, tapLng);
+    }
+  }
+
+  /// Project geo coordinates to screen position (inverse of toLngLatSync).
+  /// Returns null if controller not available.
+  Offset? _geoToScreen(double lat, double lng) {
+    final screen = _controller?.toScreenLocationSync(Position(lng, lat));
+    if (screen == null) return null;
+    // toScreenLocationSync returns physical pixels on Android; convert to logical
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    return screen / dpr;
   }
 
   void _startAssign(double lat, double lng, {AlarmPoint? existing}) {
-    _assignScreenCenter = _lastPointerDownPos;
+    _assignScreenCenter = existing != null
+        ? (_geoToScreen(existing.latitude, existing.longitude) ?? _lastPointerDownPos)
+        : _lastPointerDownPos;
     DebugConsole.log('ASSIGN_START: lat=$lat lng=$lng lastPointer=$_lastPointerDownPos screenCenter=$_assignScreenCenter existing=${existing?.id}');
     setState(() {
       _isAssigning = true;
@@ -665,8 +693,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             key: ValueKey(styleUrl),
             options: MapOptions(
               initStyle: styleUrl,
-              initCenter: Position(19.0402, 47.4979),
-              initZoom: 13,
+              initCenter: Position(
+                context.read<MapProvider>().center.longitude,
+                context.read<MapProvider>().center.latitude,
+              ),
+              initZoom: context.read<MapProvider>().zoom,
             ),
             onMapCreated: _onMapCreated,
             onStyleLoaded: (style) => _registerImages(style),
@@ -677,6 +708,16 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                 final newZoom = _controller?.camera?.zoom ?? _currentZoom;
                 if ((newZoom - _currentZoom).abs() > 0.05) {
                   setState(() => _currentZoom = newZoom);
+                }
+                // Sync zoom/center to MapProvider for raster↔vector switch continuity
+                final mp = context.read<MapProvider>();
+                mp.updateZoomSilent(newZoom);
+                final cam = _controller?.camera;
+                if (cam?.center != null) {
+                  mp.updateCenterSilent(LatLng(
+                    cam!.center.lat.toDouble(),
+                    cam.center.lng.toDouble(),
+                  ));
                 }
               }
             },
