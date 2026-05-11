@@ -62,6 +62,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   String? _assignMarkerKey;
   Size _assignMarkerSize = Size.zero;
   int _assignMarkerVersion = 0;
+  bool _closingAssignVisual = false;
+  Timer? _assignVisualClearTimer;
+  final Map<String, Uint8List> _markerBitmapCache = {};
+  final Map<String, Size> _markerSizeCache = {};
   // Overlay radius notifier — drives CustomPainter repaint without setState
   final ValueNotifier<double> _radiusNotifier = ValueNotifier(500);
   // Speed interpolation
@@ -192,6 +196,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   void dispose() {
     _radiusDebounce?.cancel();
     _fastCircleDebounce?.cancel();
+    _assignVisualClearTimer?.cancel();
     _speedInterpolTimer?.cancel();
     _radiusNotifier.dispose();
     _locationService.dispose();
@@ -233,10 +238,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   static const _emptyGeoJson = '{"type":"FeatureCollection","features":[]}';
 
   List<({String id, double lng, double lat, double radiusMeters, bool active, bool isTime, bool isLeave})>
-      _buildRadiusCircles(AlarmProvider alarmProv, {required bool excludeEditing}) {
+      _buildRadiusCircles(AlarmProvider alarmProv, {required bool excludeEditing, String? excludeAlarmId}) {
     final circles = <({String id, double lng, double lat, double radiusMeters, bool active, bool isTime, bool isLeave})>[];
     for (int i = 0; i < alarmProv.alarmPoints.length; i++) {
       final p = alarmProv.alarmPoints[i];
+      if (excludeAlarmId != null && p.id == excludeAlarmId) continue;
       if (excludeEditing && _isAssigning && _assignExisting != null && _assignExisting!.id == p.id) continue;
       double radius = p.radiusMeters;
       final isTime = p.triggerType == TriggerType.time;
@@ -427,7 +433,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     // Pre-render and register all marker bitmaps BEFORE removing old layers.
     // Image ids include the visual state so we never remove an image that an
     // existing layer is still using during the swap.
-    final markerImages = <String, Uint8List>{};
     final markerImageIds = <String, String>{};
     final markerLabels = <String, String>{};
     for (final c in circles) {
@@ -438,13 +443,13 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
           ? (c.active ? Colors.orange : Colors.grey)
           : (c.active ? Colors.red : Colors.grey);
       final imageId = 'alarm-marker-${c.id}-${labelText}-${markerColor.value}';
+      final cacheKey = '$labelText-${markerColor.value}-$_deviceDpr';
       markerImageIds[c.id] = imageId;
       markerLabels[c.id] = labelText;
-      markerImages[imageId] = await AlarmMarkerRenderer.render(
-        label: labelText, color: markerColor, dpr: _deviceDpr,
-      );
+      final markerPng = _markerBitmapCache[cacheKey] ??= await AlarmMarkerRenderer.render(
+          label: labelText, color: markerColor, dpr: _deviceDpr);
       try {
-        await style.addImage(imageId, markerImages[imageId]!);
+        await style.addImage(imageId, markerPng);
       } catch (_) {
         // The same visual image may already be registered from a previous swap.
       }
@@ -567,9 +572,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     final existing = _findTappedAlarm(tapLat, tapLng, alarmProv);
     if (existing != null) {
       // Use alarm's original coordinates, not tap coordinates (avoids pixel offset drift)
-      _startAssign(existing.latitude, existing.longitude, existing: existing);
+      unawaited(_startAssign(existing.latitude, existing.longitude, existing: existing));
     } else {
-      _startAssign(tapLat, tapLng);
+      unawaited(_startAssign(tapLat, tapLng));
     }
   }
 
@@ -600,18 +605,46 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     final key = '$label-${color.value}-$_deviceDpr';
     if (key == _assignMarkerKey && _assignMarkerPng != null) return;
     _assignMarkerKey = key;
-    _assignMarkerSize = AlarmMarkerRenderer.measureLogicalSize(label);
+    _assignMarkerSize = _markerSizeCache[key] ??= AlarmMarkerRenderer.measureLogicalSize(label);
+    final cached = _markerBitmapCache[key];
+    if (cached != null) {
+      _assignMarkerPng = cached;
+      return;
+    }
     final version = ++_assignMarkerVersion;
     AlarmMarkerRenderer.render(label: label, color: color, dpr: _deviceDpr).then((png) {
       if (!mounted || version != _assignMarkerVersion || _assignMarkerKey != key) return;
+      _markerBitmapCache[key] = png;
       setState(() => _assignMarkerPng = png);
     });
   }
 
-  void _startAssign(double lat, double lng, {AlarmPoint? existing}) {
+  Future<void> _hideExistingNativeAlarm(AlarmPoint existing) async {
+    _radiusDebounce?.cancel();
+    final alarmProv = context.read<AlarmProvider>();
+    final circles = _buildRadiusCircles(alarmProv, excludeEditing: true, excludeAlarmId: existing.id);
+    _radiusLayerVersion++;
+    _lastRadiusDataHash = _radiusHash(circles, editingId: existing.id);
+    final index = alarmProv.alarmPoints.indexWhere((p) => p.id == existing.id);
+    if (index < 0) return;
+    final style = _controller?.style;
+    if (style == null) return;
+    final id = 'alarm-$index';
+    try { await style.removeLayer('radius-label-$id'); } catch (_) {}
+    try { await style.removeLayer('radius-circle-$id'); } catch (_) {}
+    style.updateGeoJsonSource(id: 'radius-pt-$id', data: _emptyGeoJson);
+  }
+
+  Future<void> _startAssign(double lat, double lng, {AlarmPoint? existing}) async {
+    _assignVisualClearTimer?.cancel();
+    _closingAssignVisual = false;
     _assignScreenCenter = existing != null
         ? (_geoToScreen(existing.latitude, existing.longitude) ?? _lastPointerDownPos)
         : _lastPointerDownPos;
+    if (existing != null) {
+      await _hideExistingNativeAlarm(existing);
+      if (!mounted) return;
+    }
     setState(() {
       _isAssigning = true;
       _assignExisting = existing;
@@ -633,8 +666,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       DebugConsole.log('ASSIGN_START: updating veil immediately');
       _updateVeil(style, context.read<AlarmProvider>());
     }
-    // Force hash invalidation so native layers update for the edit state
-    _lastRadiusDataHash = '';
   }
 
 
@@ -659,15 +690,23 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
 
     setState(() {
       _isAssigning = false;
+      _closingAssignVisual = true;
       _assignExisting = null;
-      _assignScreenCenter = null;
-      _assignMarkerPng = null;
-      _assignMarkerKey = null;
       _isDraggingRadius = false;
       _dragPointerId = null;
-      _assignTriggerType = TriggerType.distance;
-      _assignZoneTrigger = ZoneTrigger.onEntry;
-      _assignTimeMinutes = 10;
+    });
+    _assignVisualClearTimer?.cancel();
+    _assignVisualClearTimer = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      setState(() {
+        _closingAssignVisual = false;
+        _assignScreenCenter = null;
+        _assignMarkerPng = null;
+        _assignMarkerKey = null;
+        _assignTriggerType = TriggerType.distance;
+        _assignZoneTrigger = ZoneTrigger.onEntry;
+        _assignTimeMinutes = 10;
+      });
     });
     _suppressRadiusSync = previousSuppress;
   }
@@ -763,12 +802,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             final dpr = MediaQuery.devicePixelRatioOf(context);
             final geo = _controller?.toLngLatSync(details.localPosition * dpr);
             if (geo != null) {
-              _startAssign(geo.lat.toDouble(), geo.lng.toDouble());
+              unawaited(_startAssign(geo.lat.toDouble(), geo.lng.toDouble()));
             } else {
-              _startAssign(
+              unawaited(_startAssign(
                 _controller?.camera?.center?.lat.toDouble() ?? 0,
                 _controller?.camera?.center?.lng.toDouble() ?? 0,
-              );
+              ));
             }
           },
           onLongPressMoveUpdate: !_isAssigning ? null : (details) {
@@ -977,12 +1016,13 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                 : const SizedBox.shrink(),
           ),
         // Radius drag overlay — blocks map gestures, 60fps via ValueNotifier
-        if (_isAssigning && _assignScreenCenter != null)
+        if ((_isAssigning || _closingAssignVisual) && _assignScreenCenter != null)
           Positioned.fill(
             child: RepaintBoundary(
               child: Listener(
-                behavior: HitTestBehavior.opaque,
+                behavior: _isAssigning ? HitTestBehavior.opaque : HitTestBehavior.translucent,
                 onPointerDown: (e) {
+                  if (!_isAssigning) return;
                   if (_assignScreenCenter == null) {
                     DebugConsole.log('OVERLAY_DOWN: screenCenter is null!');
                     return;
@@ -997,6 +1037,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                   }
                 },
                 onPointerMove: (e) {
+                  if (!_isAssigning) return;
                   if (!_isDraggingRadius || _assignScreenCenter == null) return;
                   if (e.pointer != _dragPointerId) return;
                   final dist = (e.localPosition - _assignScreenCenter!).distance;
@@ -1012,6 +1053,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                   setState(() {});
                 },
                 onPointerUp: (e) {
+                  if (!_isAssigning) return;
                   DebugConsole.log('OVERLAY_UP: pointer=${e.pointer} dragPointer=$_dragPointerId isDragging=$_isDraggingRadius');
                   if (e.pointer != _dragPointerId) return;
                   _isDraggingRadius = false;
@@ -1031,7 +1073,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               ),
             ),
           ),
-        if (_isAssigning && _assignScreenCenter != null && _assignMarkerPng != null)
+        if ((_isAssigning || _closingAssignVisual) && _assignScreenCenter != null && _assignMarkerPng != null)
           Positioned(
             left: _assignScreenCenter!.dx - _assignMarkerSize.width / 2,
             top: _assignScreenCenter!.dy - AlarmMarkerSpec.pinSize,
