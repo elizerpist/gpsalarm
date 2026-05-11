@@ -53,6 +53,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   int? _dragPointerId;
   double _currentZoom = 13;
   bool _zoomInitialized = false;
+  double _deviceDpr = 1.0;
   double _speedKmh = 0;
   Position? _userPos;
   Offset? _lastPointerDownPos;
@@ -82,10 +83,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _deviceDpr = MediaQuery.devicePixelRatioOf(context);
     if (!_zoomInitialized) {
       _zoomInitialized = true;
       _currentZoom = context.read<MapProvider>().zoom;
-      DebugConsole.log('VECTOR_INIT: zoom from MapProvider=${_currentZoom.toStringAsFixed(2)} center=${context.read<MapProvider>().center}');
+      DebugConsole.log('VECTOR_INIT: zoom from MapProvider=${_currentZoom.toStringAsFixed(2)} center=${context.read<MapProvider>().center} dpr=$_deviceDpr');
     }
   }
 
@@ -415,7 +417,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
           ? (c.active ? Colors.orange : Colors.grey)
           : (c.active ? Colors.red : Colors.grey);
       markerImages['alarm-marker-${c.id}'] = await AlarmMarkerRenderer.render(
-        label: labelText, color: markerColor, dpr: 1.0,
+        label: labelText, color: markerColor, dpr: _deviceDpr,
       );
     }
 
@@ -577,10 +579,38 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   }
 
 
-  void _cancelAssign() {
+  Future<void> _cancelAssign() async {
     DebugConsole.log('CANCEL_ASSIGN: isAssigning=$_isAssigning existing=${_assignExisting?.id}');
     _controller?.style?.updateGeoJsonSource(id: 'fast-src', data: _emptyGeoJson);
     final wasExisting = _assignExisting;
+
+    // If editing existing alarm: rebuild native layers BEFORE hiding overlay
+    if (wasExisting != null && _controller?.style != null && _radiusLayerReady) {
+      final style = _controller!.style!;
+      final alarmProv = context.read<AlarmProvider>();
+      // Temporarily clear edit state so rebuild includes the alarm again
+      _assignExisting = null;
+      _lastRadiusDataHash = '';
+      _updateVeil(style, alarmProv);
+      // Build circles for all alarms (including the one we were editing)
+      final circles = <({String id, double lng, double lat, double radiusMeters, bool active, bool isTime, bool isLeave})>[];
+      for (int i = 0; i < alarmProv.alarmPoints.length; i++) {
+        final p = alarmProv.alarmPoints[i];
+        double r = p.radiusMeters;
+        if (p.triggerType == TriggerType.time && p.timeTrigger != null) {
+          r = math.max(200.0, (_speedKmh / 3.6) * p.timeTrigger!.inSeconds.toDouble());
+        }
+        circles.add((id: 'alarm-$i', lng: p.longitude, lat: p.latitude, radiusMeters: r, active: p.isActive, isTime: p.triggerType == TriggerType.time, isLeave: p.zoneTrigger == ZoneTrigger.onLeave));
+      }
+      _radiusLayerVersion++;
+      await _rebuildRadiusLayers(style, circles, _radiusLayerVersion);
+      _lastRadiusDataHash = circles.map((c) => '${c.lng},${c.lat},${c.radiusMeters.toStringAsFixed(1)},${c.active},${c.isTime},${c.isLeave}').join('|');
+      await Future.delayed(const Duration(milliseconds: 100));
+    } else {
+      final style = _controller?.style;
+      if (style != null) _updateVeil(style, context.read<AlarmProvider>());
+    }
+
     setState(() {
       _isAssigning = false;
       _assignExisting = null;
@@ -591,16 +621,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       _assignZoneTrigger = ZoneTrigger.onEntry;
       _assignTimeMinutes = 10;
     });
-    // Immediately update veil to target state (don't wait for next build)
-    final style = _controller?.style;
-    if (style != null) {
-      DebugConsole.log('CANCEL_ASSIGN: updating veil immediately');
-      _updateVeil(style, context.read<AlarmProvider>());
-    }
-    // Force rebuild of native layers (edited alarm was excluded, needs to come back)
-    if (wasExisting != null) {
-      _lastRadiusDataHash = '';
-    }
   }
 
   Future<void> _saveAssign(AlarmPoint alarm) async {
@@ -627,6 +647,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       _radiusLayerVersion++;
       await _rebuildRadiusLayers(style, circles, _radiusLayerVersion);
       _lastRadiusDataHash = circles.map((c) => '${c.lng},${c.lat},${c.radiusMeters.toStringAsFixed(1)},${c.active},${c.isTime},${c.isLeave}').join('|');
+      // Wait 2 frames for MapLibre to render the native layers before hiding overlay
+      await Future.delayed(const Duration(milliseconds: 100));
     }
     _cancelAssign();
   }
@@ -983,7 +1005,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                 _radiusNotifier.value = _currentRadiusPx;
               },
               onSave: _saveAssign,
-              onCancel: _cancelAssign,
+              onCancel: () => _cancelAssign(),
               onDelete: _assignExisting != null ? () {
                 context.read<AlarmProvider>().removeAlarmPoint(_assignExisting!.id);
                 _cancelAssign();
