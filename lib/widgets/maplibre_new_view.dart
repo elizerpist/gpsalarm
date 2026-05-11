@@ -27,6 +27,18 @@ import '../services/debug_console.dart';
 import '../widgets/alarm_marker_renderer.dart';
 import '../widgets/scale_bar.dart';
 
+part 'maplibre_new_view/maplibre_assign_lifecycle.dart';
+part 'maplibre_new_view/maplibre_assign_marker.dart';
+part 'maplibre_new_view/maplibre_geometry.dart';
+part 'maplibre_new_view/maplibre_overlay_painter.dart';
+part 'maplibre_new_view/maplibre_radius_data.dart';
+part 'maplibre_new_view/maplibre_radius_layer_init.dart';
+part 'maplibre_new_view/maplibre_radius_layer_rebuild.dart';
+part 'maplibre_new_view/maplibre_radius_sync.dart';
+part 'maplibre_new_view/maplibre_style_urls.dart';
+part 'maplibre_new_view/maplibre_tap_handling.dart';
+part 'maplibre_new_view/maplibre_veil_layer.dart';
+
 class MaplibreNewView extends StatefulWidget {
   final GlobalKey<ScaffoldState> scaffoldKey;
   const MaplibreNewView({super.key, required this.scaffoldKey});
@@ -76,23 +88,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   DateTime _currentGpsTime = DateTime.now();
   Timer? _speedInterpolTimer;
 
-  static const _styleUrls = {
-    // OpenFreeMap
-    'liberty': 'https://tiles.openfreemap.org/styles/liberty',
-    'bright': 'https://tiles.openfreemap.org/styles/bright',
-    'positron': 'https://tiles.openfreemap.org/styles/positron',
-    // Versatiles
-    'versatiles-colorful': 'https://tiles.versatiles.org/assets/styles/colorful.json',
-    'versatiles-neutrino': 'https://tiles.versatiles.org/assets/styles/neutrino.json',
-    'versatiles-eclipse': 'https://tiles.versatiles.org/assets/styles/eclipse.json',
-    // Protomaps
-    'protomaps-light': 'https://api.protomaps.com/styles/v4/light/en.json',
-    'protomaps-dark': 'https://api.protomaps.com/styles/v4/dark/en.json',
-    'protomaps-grayscale': 'https://api.protomaps.com/styles/v4/grayscale/en.json',
-    'protomaps-white': 'https://api.protomaps.com/styles/v4/white/en.json',
-    'protomaps-black': 'https://api.protomaps.com/styles/v4/black/en.json',
-  };
-
   @override
   void initState() {
     super.initState();
@@ -129,7 +124,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
         _speedKmh = estimated;
         // Update overlay radius if time-based trigger is active
         if (_isAssigning && _assignTriggerType == TriggerType.time) {
-          _radiusNotifier.value = _currentRadiusPx;
+          _radiusNotifier.value = this._currentRadiusPx;
         }
       }
     });
@@ -228,7 +223,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       final greyPin = await _renderIconToPng(Icons.location_on, const Color(0xFF9E9E9E), 160);
       await style.addImage('pin-red', redPin);
       await style.addImage('pin-grey', greyPin);
-      await _initRadiusLayer(style);
+      await this._initRadiusLayer(style);
       _imagesRegistered = true;
       if (mounted) setState(() {});
       DebugConsole.log('VECTOR: images + radius layer registered');
@@ -247,584 +242,13 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   String _lastRadiusDataHash = ''; // skip rebuild if alarm data unchanged
   bool _suppressRadiusSync = false;
 
-  static const _emptyGeoJson = '{"type":"FeatureCollection","features":[]}';
-
-  List<({String id, double lng, double lat, double radiusMeters, bool active, bool isTime, bool isLeave})>
-      _buildRadiusCircles(AlarmProvider alarmProv, {required bool excludeEditing, String? excludeAlarmId}) {
-    final circles = <({String id, double lng, double lat, double radiusMeters, bool active, bool isTime, bool isLeave})>[];
-    for (int i = 0; i < alarmProv.alarmPoints.length; i++) {
-      final p = alarmProv.alarmPoints[i];
-      if (excludeAlarmId != null && p.id == excludeAlarmId) continue;
-      if (excludeEditing && _isAssigning && _assignExisting != null && _assignExisting!.id == p.id) continue;
-      double radius = p.radiusMeters;
-      final isTime = p.triggerType == TriggerType.time;
-      if (isTime && p.timeTrigger != null) {
-        radius = math.max(200.0, (_speedKmh / 3.6) * p.timeTrigger!.inSeconds.toDouble());
-      }
-      circles.add((id: 'alarm-$i', lng: p.longitude, lat: p.latitude, radiusMeters: radius, active: p.isActive, isTime: isTime, isLeave: p.zoneTrigger == ZoneTrigger.onLeave));
-    }
-    return circles;
-  }
-
-  String _radiusHash(List<({String id, double lng, double lat, double radiusMeters, bool active, bool isTime, bool isLeave})> circles, {String? editingId}) {
-    final dataHash = circles.map((c) => '${c.lng},${c.lat},${c.radiusMeters.toStringAsFixed(1)},${c.active},${c.isTime},${c.isLeave}').join('|');
-    return editingId == null ? dataHash : '$dataHash|e$editingId';
-  }
-
-  Future<void> _initRadiusLayer(StyleController style) async {
-    // Inverted veil source for onLeave triggers
-    await style.addSource(GeoJsonSource(id: 'veil-src', data: _emptyGeoJson));
-    await style.addLayer(FillStyleLayer(
-      id: 'veil-fill',
-      sourceId: 'veil-src',
-      paint: { 'fill-color': '#FF0000', 'fill-opacity': 0.15 },
-    ));
-    // Persistent source for fast assign circle (updated via updateGeoJsonSource)
-    await style.addSource(GeoJsonSource(id: 'fast-src', data: _emptyGeoJson));
-    // Pre-create alarm sources at init (style is guaranteed loaded here)
-    // Layers are added/removed dynamically, but sources persist — avoids
-    // silent addSource failures when style is transiently unavailable.
-    for (int i = 0; i < 20; i++) {
-      await style.addSource(GeoJsonSource(id: 'radius-pt-alarm-$i', data: _emptyGeoJson));
-    }
-    _radiusLayerReady = true;
-    DebugConsole.log('VECTOR: radius layer system ready');
-  }
-
-  /// Recreate fast assign CircleStyleLayer with current radius.
-  /// Only ONE layer to remove+add — much faster than rebuilding all alarms.
-  Future<void> _updateFastCircleLayer(StyleController style) async {
-    if (_fastCircleUpdating) return; // skip if previous update still in flight
-    _fastCircleUpdating = true;
-    try { await style.removeLayer('fast-circle'); } catch (_) {}
-
-    // Update point source position
-    style.updateGeoJsonSource(
-      id: 'fast-src',
-      data: _pointGeoJson(_assignLng, _assignLat),
-    );
-
-    final isTime = _assignTriggerType == TriggerType.time;
-    double radius = _assignRadius;
-    if (isTime) {
-      radius = math.max(200.0, (_speedKmh / 3.6) * _assignTimeMinutes * 60);
-    }
-    // 512px vector tile scale: basePx needs 2× vs 256px slippy-map formula
-    final basePx = 2 * radius / (156543.03392 * math.cos(_assignLat * math.pi / 180));
-    final fillColor = isTime ? 'rgba(255,152,0,0.10)' : 'rgba(255,0,0,0.12)';
-    final strokeColor = isTime ? 'rgba(255,152,0,0.7)' : 'rgba(255,0,0,0.6)';
-
-    await style.addLayer(CircleStyleLayer(
-      id: 'fast-circle',
-      sourceId: 'fast-src',
-      paint: {
-        'circle-radius': [
-          'interpolate', ['exponential', 2.0], ['zoom'],
-          0.0, basePx,
-          22.0, basePx * 4194304.0,
-        ],
-        'circle-color': fillColor,
-        'circle-stroke-color': strokeColor,
-        'circle-stroke-width': 2.0,
-      },
-    ));
-    _fastCircleUpdating = false;
-  }
-
-  /// Sync radius circles.
-  /// Fast assign + pending: dedicated CircleStyleLayer, debounced per-frame.
-  /// Alarm circles: debounced rebuild, SKIPPED during drag (they don't change).
-  void _syncRadiusSource(AlarmProvider alarmProv) {
-    if (_suppressRadiusSync) return;
-    if (!_radiusLayerReady) return;
-    final style = _controller?.style;
-    if (style == null) return;
-
-    // --- Fast assign circle ---
-    // onLeave: skip CircleStyleLayer — the veil hole IS the visual boundary
-    // During drag: skip native layer update — Flutter overlay circle provides instant feedback
-    // --- Fast assign circle: Flutter overlay handles the visual during assign.
-    // Native CircleStyleLayer is NOT used during assign (causes double circle
-    // because overlay is at fixed screen position, native layer is geo-referenced).
-    // Clean up any leftover native layer when assigning.
-    _fastCircleDebounce?.cancel();
-    if (_fastCircleVersion > 0) {
-      _fastCircleVersion = 0;
-      _fastCircleUpdating = false;
-      try { style.removeLayer('fast-circle'); } catch (_) {}
-      style.updateGeoJsonSource(id: 'fast-src', data: _emptyGeoJson);
-    }
-
-    // --- Veil (onLeave overlay) — instant updateGeoJsonSource ---
-    _updateVeil(style, alarmProv);
-
-    // --- Alarm circles: skip rebuild during drag (alarm data doesn't change) ---
-    if (_isDraggingRadius) return;
-
-    final alarmCircles = _buildRadiusCircles(alarmProv, excludeEditing: true);
-    // Skip rebuild if alarm data unchanged (prevents circle flash on map pan/zoom)
-    final fullHash = _radiusHash(
-      alarmCircles,
-      editingId: _isAssigning && _assignExisting != null ? _assignExisting!.id : null,
-    );
-    if (fullHash == _lastRadiusDataHash) return;
-    _lastRadiusDataHash = fullHash;
-
-    _radiusLayerVersion++;
-    final v = _radiusLayerVersion;
-    _radiusDebounce?.cancel();
-    _radiusDebounce = Timer(const Duration(milliseconds: 200), () {
-      if (v == _radiusLayerVersion) {
-        _rebuildRadiusLayers(style, alarmCircles, v);
-      }
-    });
-  }
-
-  String _pointGeoJson(double lng, double lat) {
-    return jsonEncode({
-      'type': 'FeatureCollection',
-      'features': [{
-        'type': 'Feature',
-        'geometry': {'type': 'Point', 'coordinates': [lng, lat]},
-        'properties': {},
-      }],
-    });
-  }
-
-  void _updateVeil(StyleController style, AlarmProvider alarmProv, {bool ignoreAssign = false}) {
-    final leaveAlarms = alarmProv.alarmPoints
-        .where((p) => p.zoneTrigger == ZoneTrigger.onLeave
-            && !(ignoreAssign == false && _isAssigning && _assignExisting?.id == p.id))
-        .toList();
-    final hasFastLeave = ignoreAssign == false && _isAssigning && _assignZoneTrigger == ZoneTrigger.onLeave;
-
-    if (leaveAlarms.isEmpty && !hasFastLeave) {
-      style.updateGeoJsonSource(id: 'veil-src', data: '{"type":"FeatureCollection","features":[]}');
-      return;
-    }
-
-    // World polygon with holes for each onLeave circle
-    final holes = <List<List<double>>>[];
-    for (final p in leaveAlarms) {
-      double r = p.radiusMeters;
-      if (p.triggerType == TriggerType.time && p.timeTrigger != null) {
-        r = math.max(200.0, (_speedKmh / 3.6) * p.timeTrigger!.inSeconds.toDouble());
-      }
-      holes.add(_geoCircle(p.longitude, p.latitude, r));
-    }
-    if (hasFastLeave) {
-      final r = _assignTriggerType == TriggerType.time
-          ? math.max(200.0, (_speedKmh / 3.6) * _assignTimeMinutes * 60)
-          : _assignRadius;
-      holes.add(_geoCircle(_assignLng, _assignLat, r));
-    }
-
-    final coords = <List<List<double>>>[
-      [[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]],
-      ...holes,
-    ];
-
-    style.updateGeoJsonSource(
-      id: 'veil-src',
-      data: jsonEncode({
-        'type': 'FeatureCollection',
-        'features': [{
-          'type': 'Feature',
-          'geometry': {'type': 'Polygon', 'coordinates': coords},
-          'properties': {},
-        }],
-      }),
-    );
-  }
-
-  /// Rebuild alarm circle + label layers using per-alarm CircleStyleLayer with
-  /// literal interpolate expression (see docs/vector-map-radius-circles.md).
-  /// onLeave alarms get stroke-only circle (transparent fill); the veil provides the fill.
-  Future<void> _rebuildRadiusLayers(StyleController style, List<({String id, double lng, double lat, double radiusMeters, bool active, bool isTime, bool isLeave})> circles, int version) async {
-    DebugConsole.log('REBUILD_LAYERS: START ${circles.length} circles v=$version');
-    // Pre-render and register all marker bitmaps BEFORE removing old layers.
-    // Image ids include the visual state so we never remove an image that an
-    // existing layer is still using during the swap.
-    final markerImageIds = <String, String>{};
-    final markerLabels = <String, String>{};
-    for (final c in circles) {
-      final labelText = c.isTime
-          ? '${(c.radiusMeters / 1000).toStringAsFixed(1)}km'
-          : AlarmMarkerRenderer.formatDistance(c.radiusMeters);
-      final markerColor = c.isTime
-          ? (c.active ? Colors.orange : Colors.grey)
-          : (c.active ? Colors.red : Colors.grey);
-      final imageId = 'alarm-marker-${c.id}-${labelText}-${markerColor.value}';
-      final cacheKey = '$labelText-${markerColor.value}-$_deviceDpr';
-      markerImageIds[c.id] = imageId;
-      markerLabels[c.id] = labelText;
-      var markerPng = _markerBitmapCache[cacheKey];
-      if (markerPng == null) {
-        markerPng = await AlarmMarkerRenderer.render(
-            label: labelText, color: markerColor, dpr: _deviceDpr);
-        _markerBitmapCache[cacheKey] = markerPng;
-      }
-      try {
-        await style.addImage(imageId, markerPng);
-      } catch (_) {
-        // The same visual image may already be registered from a previous swap.
-      }
-    }
-
-    if (version != _radiusLayerVersion) return;
-
-    // Now swap layers: remove old, add new (images already prepared)
-    for (int i = 0; i < 20; i++) {
-      final id = 'alarm-$i';
-      try { await style.removeLayer('radius-label-$id'); } catch (_) {}
-      try { await style.removeLayer('radius-circle-$id'); } catch (_) {}
-      style.updateGeoJsonSource(id: 'radius-pt-$id', data: _emptyGeoJson);
-    }
-
-    for (final c in circles) {
-      // 512px vector tile scale: basePx needs 2× vs 256px slippy-map formula
-      final basePx = 2 * c.radiusMeters / (156543.03392 * math.cos(c.lat * math.pi / 180));
-      // onLeave: veil provides fill, but we still add stroke-only circle for border
-      final String fillColor = c.isLeave
-          ? 'rgba(0,0,0,0)'
-          : (c.isTime
-              ? (c.active ? 'rgba(255,152,0,0.10)' : 'rgba(158,158,158,0.05)')
-              : (c.active ? 'rgba(255,0,0,0.12)' : 'rgba(158,158,158,0.05)'));
-      final String strokeColor = c.isTime
-          ? (c.active ? 'rgba(255,152,0,0.7)' : 'rgba(158,158,158,0.3)')
-          : (c.active ? 'rgba(255,0,0,0.6)' : 'rgba(158,158,158,0.3)');
-      final strokeWidth = c.active ? 2.0 : 1.0;
-
-      try {
-        style.updateGeoJsonSource(
-          id: 'radius-pt-${c.id}',
-          data: _pointGeoJson(c.lng, c.lat),
-        );
-        await style.addLayer(CircleStyleLayer(
-          id: 'radius-circle-${c.id}',
-          sourceId: 'radius-pt-${c.id}',
-          paint: {
-            'circle-radius': [
-              'interpolate', ['exponential', 2.0], ['zoom'],
-              0.0, basePx,
-              22.0, basePx * 4194304.0,
-            ],
-            'circle-color': fillColor,
-            'circle-stroke-color': strokeColor,
-            'circle-stroke-width': strokeWidth,
-          },
-        ));
-        // Composite pin+chip bitmap marker (pre-rendered above, matches raster design)
-        final imageId = markerImageIds[c.id];
-        if (imageId == null) continue;
-        // Offset: pin tip should be at geo point, but image has chip below pin.
-        // icon-anchor 'bottom' anchors chip bottom at geo, so shift down by
-        // the logical distance from chip bottom to pin tip.
-        final markerSize = AlarmMarkerRenderer.measureLogicalSize(markerLabels[c.id]!);
-        final pinTipCorrection = markerSize.height - AlarmMarkerSpec.pinSize;
-        await style.addLayer(SymbolStyleLayer(
-          id: 'radius-label-${c.id}',
-          sourceId: 'radius-pt-${c.id}',
-          layout: {
-            'icon-image': imageId,
-            'icon-size': 1.0,
-            'icon-anchor': 'bottom',
-            'icon-offset': [0.0, pinTipCorrection],
-            'icon-allow-overlap': true,
-          },
-        ));
-      } catch (e) {
-        DebugConsole.log('VECTOR: radius layer error for ${c.id}: $e');
-      }
-    }
-  }
-
-  /// Render a Material icon to PNG bytes using PictureRecorder.
-  static Future<Uint8List> _renderIconToPng(IconData icon, Color color, int size) async {
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, size.toDouble(), size.toDouble()));
-    final textPainter = TextPainter(textDirection: ui.TextDirection.ltr);
-    textPainter.text = TextSpan(
-      text: String.fromCharCode(icon.codePoint),
-      style: TextStyle(
-        fontSize: size.toDouble(),
-        fontFamily: icon.fontFamily,
-        package: icon.fontPackage,
-        color: color,
-      ),
-    );
-    textPainter.layout();
-    textPainter.paint(canvas, Offset.zero);
-    final picture = recorder.endRecording();
-    final img = await picture.toImage(size, size);
-    final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
-    return byteData!.buffer.asUint8List();
-  }
-
-  /// Find closest alarm within the pin's visual tap area (zoom-dependent).
-  AlarmPoint? _findTappedAlarm(double tapLat, double tapLng, AlarmProvider alarmProv) {
-    // Pin is ~64px tall (160 icon * 0.4 scale), anchor at bottom.
-    // Allow tapping within 40px of the anchor point.
-    final metersPerPx = _vectorMetersPerPx(tapLat, _currentZoom);
-    final thresholdMeters = math.max(50.0, 40 * metersPerPx);
-    AlarmPoint? closest;
-    double closestDist = double.infinity;
-    for (final p in alarmProv.alarmPoints) {
-      final dist = AlarmService.distanceMeters(tapLat, tapLng, p.latitude, p.longitude);
-      if (dist < thresholdMeters && dist < closestDist) {
-        closest = p;
-        closestDist = dist;
-      }
-    }
-    return closest;
-  }
-
-  void _onTap(Position position) {
-    DebugConsole.log('TAP: lat=${position.lat} lng=${position.lng} isAssigning=$_isAssigning lastPointer=$_lastPointerDownPos');
-    if (_isAssigning) return;
-    final tapLat = position.lat.toDouble();
-    final tapLng = position.lng.toDouble();
-    final alarmProv = context.read<AlarmProvider>();
-    final existing = _findTappedAlarm(tapLat, tapLng, alarmProv);
-    if (existing != null) {
-      // Use alarm's original coordinates, not tap coordinates (avoids pixel offset drift)
-      unawaited(_startAssign(existing.latitude, existing.longitude, existing: existing));
-    } else {
-      unawaited(_startAssign(tapLat, tapLng));
-    }
-  }
-
-  /// Project geo coordinates to screen position (inverse of toLngLatSync).
-  /// Returns null if controller not available.
-  Offset? _geoToScreen(double lat, double lng) {
-    final screen = _controller?.toScreenLocationSync(Position(lng, lat));
-    if (screen == null) return null;
-    // toScreenLocationSync returns physical pixels on Android; convert to logical
-    final dpr = MediaQuery.devicePixelRatioOf(context);
-    return screen / dpr;
-  }
-
-  String _assignMarkerLabel() {
-    if (_assignTriggerType == TriggerType.time) return '${_assignTimeMinutes}min';
-    return AlarmMarkerRenderer.formatDistance(_assignRadius);
-  }
-
-  Color _assignMarkerColor() {
-    if (_assignTriggerType == TriggerType.time) return Colors.orange;
-    return Colors.red;
-  }
-
-  void _refreshAssignMarker() {
-    if (!_isAssigning) return;
-    final label = _assignMarkerLabel();
-    final color = _assignMarkerColor();
-    final key = '$label-${color.value}-$_deviceDpr';
-    if (key == _assignMarkerKey && _assignMarkerPng != null) return;
-    _assignMarkerKey = key;
-    _assignMarkerSize = _markerSizeCache[key] ??= AlarmMarkerRenderer.measureLogicalSize(label);
-    final cached = _markerBitmapCache[key];
-    if (cached != null) {
-      _assignMarkerPng = cached;
-      return;
-    }
-    final version = ++_assignMarkerVersion;
-    AlarmMarkerRenderer.render(label: label, color: color, dpr: _deviceDpr).then((png) {
-      if (!mounted || version != _assignMarkerVersion || _assignMarkerKey != key) return;
-      _markerBitmapCache[key] = png;
-      setState(() => _assignMarkerPng = png);
-    });
-  }
-
-  Future<void> _hideExistingNativeAlarm(AlarmPoint existing) async {
-    _radiusDebounce?.cancel();
-    final alarmProv = context.read<AlarmProvider>();
-    final circles = _buildRadiusCircles(alarmProv, excludeEditing: true, excludeAlarmId: existing.id);
-    _radiusLayerVersion++;
-    _lastRadiusDataHash = _radiusHash(circles, editingId: existing.id);
-    final index = alarmProv.alarmPoints.indexWhere((p) => p.id == existing.id);
-    if (index < 0) return;
-    final style = _controller?.style;
-    if (style == null) return;
-    final id = 'alarm-$index';
-    try { await style.removeLayer('radius-label-$id'); } catch (_) {}
-    try { await style.removeLayer('radius-circle-$id'); } catch (_) {}
-    style.updateGeoJsonSource(id: 'radius-pt-$id', data: _emptyGeoJson);
-  }
-
-  void _beginClosingAssignVisual({required bool keepCircle}) {
-    _assignVisualClearTimer?.cancel();
-    setState(() {
-      _isAssigning = false;
-      _closingAssignVisual = true;
-      _closingAssignCircle = keepCircle;
-      _assignExisting = null;
-      _isDraggingRadius = false;
-      _dragPointerId = null;
-    });
-  }
-
-  void _finishClosingAssignCircle() {
-    if (!_closingAssignCircle || !mounted) return;
-    setState(() => _closingAssignCircle = false);
-  }
-
-  void _scheduleAssignVisualClear() {
-    _assignVisualClearTimer?.cancel();
-    _assignVisualClearTimer = Timer(const Duration(milliseconds: 1200), () {
-      if (!mounted) return;
-      setState(() {
-        _closingAssignVisual = false;
-        _closingAssignCircle = false;
-        _assignScreenCenter = null;
-        _assignMarkerPng = null;
-        _assignMarkerKey = null;
-        _assignTriggerType = TriggerType.distance;
-        _assignZoneTrigger = ZoneTrigger.onEntry;
-        _assignTimeMinutes = 10;
-      });
-    });
-  }
-
-  Future<void> _startAssign(double lat, double lng, {AlarmPoint? existing}) async {
-    _assignVisualClearTimer?.cancel();
-    _closingAssignVisual = false;
-    _assignScreenCenter = existing != null
-        ? (_geoToScreen(existing.latitude, existing.longitude) ?? _lastPointerDownPos)
-        : _lastPointerDownPos;
-    _assignExisting = existing;
-    _assignLat = lat;
-    _assignLng = lng;
-    _assignRadius = existing?.radiusMeters ?? 500;
-    _assignTriggerType = existing?.triggerType ?? TriggerType.distance;
-    _assignZoneTrigger = existing?.zoneTrigger ?? ZoneTrigger.onEntry;
-    _assignTimeMinutes = existing?.timeTrigger?.inMinutes ?? 10;
-    _assignMarkerPng = null;
-    _assignMarkerKey = null;
-    if (existing != null) {
-      await _hideExistingNativeAlarm(existing);
-      if (!mounted) return;
-    }
-    _isAssigning = true;
-    _radiusNotifier.value = _currentRadiusPx;
-    _refreshAssignMarker();
-    DebugConsole.log('ASSIGN_START: lat=$lat lng=$lng existing=${existing?.id} screenCenter=$_assignScreenCenter radiusPx=${_currentRadiusPx.toStringAsFixed(1)} radiusM=$_assignRadius');
-    // Immediately update veil+layers for edit (hide edited alarm's native layers, show edit veil)
-    final style = _controller?.style;
-    if (style != null) {
-      DebugConsole.log('ASSIGN_START: updating veil immediately');
-      _updateVeil(style, context.read<AlarmProvider>());
-    }
-    setState(() {});
-  }
-
-
-  Future<void> _cancelAssign({bool nativeAlreadySynced = false}) async {
-    DebugConsole.log('CANCEL_ASSIGN: isAssigning=$_isAssigning existing=${_assignExisting?.id}');
-    final previousSuppress = _suppressRadiusSync;
-    _suppressRadiusSync = true;
-    _radiusDebounce?.cancel();
-    _controller?.style?.updateGeoJsonSource(id: 'fast-src', data: _emptyGeoJson);
-    final wasExisting = _assignExisting;
-    final style = _controller?.style;
-    final alarmProv = context.read<AlarmProvider>();
-    final shouldRebuildNative = !nativeAlreadySynced && wasExisting != null && style != null && _radiusLayerReady;
-    _beginClosingAssignVisual(keepCircle: shouldRebuildNative);
-
-    // Keep the circle overlay only while the native circle is being restored.
-    if (shouldRebuildNative) {
-      final circles = _buildRadiusCircles(alarmProv, excludeEditing: false);
-      _radiusLayerVersion++;
-      await _rebuildRadiusLayers(style, circles, _radiusLayerVersion);
-      _lastRadiusDataHash = _radiusHash(circles);
-    }
-    if (style != null) _updateVeil(style, alarmProv, ignoreAssign: true);
-    _finishClosingAssignCircle();
-
-    _scheduleAssignVisualClear();
-    _suppressRadiusSync = previousSuppress;
-  }
-
-  Future<void> _saveAssign(AlarmPoint alarm) async {
-    DebugConsole.log('SAVE_ASSIGN: existing=${_assignExisting?.id} lat=${alarm.latitude} lng=${alarm.longitude} r=${alarm.radiusMeters.round()}m');
-    _suppressRadiusSync = true;
-    final alarmProv = context.read<AlarmProvider>();
-    try {
-      final wasExisting = _assignExisting != null;
-      if (wasExisting) {
-        alarmProv.updateAlarmPoint(alarm);
-      } else if (alarmProv.canAddAlarm) {
-        alarmProv.addAlarmPoint(alarm);
-      }
-      _radiusDebounce?.cancel();
-      // Rebuild native layers while the Flutter pin/chip still masks symbol fade.
-      _lastRadiusDataHash = '';
-      final style = _controller?.style;
-      _beginClosingAssignVisual(keepCircle: style != null && _radiusLayerReady);
-      if (style != null && _radiusLayerReady) {
-        final circles = _buildRadiusCircles(alarmProv, excludeEditing: false);
-        _radiusLayerVersion++;
-        await _rebuildRadiusLayers(style, circles, _radiusLayerVersion);
-        _lastRadiusDataHash = _radiusHash(circles);
-        _updateVeil(style, alarmProv, ignoreAssign: true);
-      }
-      _finishClosingAssignCircle();
-      _controller?.style?.updateGeoJsonSource(id: 'fast-src', data: _emptyGeoJson);
-      _scheduleAssignVisualClear();
-    } finally {
-      _suppressRadiusSync = false;
-    }
-  }
-
-
-  /// Meters per pixel for MapLibre vector tiles (512px effective tile size).
-  /// Standard slippy-map formula uses 256px; MapLibre vector renders at 512px scale,
-  /// so we use zoom+1 to get the correct conversion.
-  double _vectorMetersPerPx(double lat, double zoom) {
-    return 156543.03392 * math.cos(lat * math.pi / 180) / math.pow(2, zoom + 1);
-  }
-
-  /// Current fast assign radius in screen pixels (for overlay painter).
-  double get _currentRadiusPx {
-    final isTime = _assignTriggerType == TriggerType.time;
-    double radius = _assignRadius;
-    if (isTime) {
-      radius = math.max(200.0, (_speedKmh / 3.6) * _assignTimeMinutes * 60);
-    }
-    final actualZoom = _controller?.camera?.zoom ?? _currentZoom;
-    return radius / _vectorMetersPerPx(_assignLat, actualZoom);
-  }
-
-  // Build separate marker point lists for active (red) and inactive (grey) pins
-  ({List<Point> active, List<Point> inactive}) _buildMarkerPoints(AlarmProvider alarmProv) {
-    final active = <Point>[];
-    final inactive = <Point>[];
-
-    for (final p in alarmProv.alarmPoints) {
-      // Skip the alarm being edited — overlay draws its pin
-      if (_isAssigning && _assignExisting != null && _assignExisting!.id == p.id) continue;
-      final point = Point(coordinates: Position(p.longitude, p.latitude));
-      if (p.isActive) {
-        active.add(point);
-      } else {
-        inactive.add(point);
-      }
-    }
-
-    // Assign pin is drawn in the Flutter overlay (not MarkerLayer)
-    // to avoid geo conversion offset — both pin and circle use screen coords
-
-    return (active: active, inactive: inactive);
-  }
-
-
-
   @override
   Widget build(BuildContext context) {
     final styleUrl = context.select<SettingsProvider, String>(
         (p) => _styleUrls[p.settings.vectorStyleUrl] ?? _styleUrls['liberty']!);
     final alarmProv = context.watch<AlarmProvider>();
 
-    _syncRadiusSource(alarmProv);
+    this._syncRadiusSource(alarmProv);
 
     return Stack(
       children: [
@@ -839,9 +263,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             final dpr = MediaQuery.devicePixelRatioOf(context);
             final geo = _controller?.toLngLatSync(details.localPosition * dpr);
             if (geo != null) {
-              unawaited(_startAssign(geo.lat.toDouble(), geo.lng.toDouble()));
+              unawaited(this._startAssign(geo.lat.toDouble(), geo.lng.toDouble()));
             } else {
-              unawaited(_startAssign(
+              unawaited(this._startAssign(
                 _controller?.camera?.center?.lat.toDouble() ?? 0,
                 _controller?.camera?.center?.lng.toDouble() ?? 0,
               ));
@@ -855,8 +279,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             } else {
               _assignTimeMinutes = (dist * 0.3).clamp(5.0, 120.0).round();
             }
-            _radiusNotifier.value = _currentRadiusPx;
-            _refreshAssignMarker();
+            _radiusNotifier.value = this._currentRadiusPx;
+            this._refreshAssignMarker();
             setState(() {});
           },
           onLongPressEnd: !_isAssigning ? null : (details) {
@@ -886,7 +310,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             },
             onEvent: (event) {
               if (event is MapEventClick) {
-                _onTap(event.point);
+                this._onTap(event.point);
               } else if (event is MapEventMoveCamera || event is MapEventCameraIdle) {
                 final newZoom = _controller?.camera?.zoom ?? _currentZoom;
                 if ((newZoom - _currentZoom).abs() > 0.05) {
@@ -980,7 +404,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             children: [
               GestureDetector(
                 onTap: () {
-                  if (_isAssigning) _cancelAssign();
+                  if (_isAssigning) this._cancelAssign();
                   widget.scaffoldKey.currentState?.openDrawer();
                 },
                 child: Container(
@@ -998,7 +422,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               const SizedBox(height: 8),
               GestureDetector(
                 onTap: () {
-                  if (_isAssigning) _cancelAssign();
+                  if (_isAssigning) this._cancelAssign();
                   final settings = context.read<SettingsProvider>();
                   final current = settings.settings.mapProvider;
                   final next = current == MapTileProvider.vector ? MapTileProvider.free : MapTileProvider.vector;
@@ -1084,8 +508,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                     _assignTimeMinutes = (dist * 0.3).clamp(5.0, 120.0).round();
                   }
                   // Update overlay circle instantly (no widget rebuild)
-                  _radiusNotifier.value = _currentRadiusPx;
-                  _refreshAssignMarker();
+                  _radiusNotifier.value = this._currentRadiusPx;
+                  this._refreshAssignMarker();
                   // Sync slider in AlarmCard (setState only rebuilds card, not overlay)
                   setState(() {});
                 },
@@ -1134,24 +558,24 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               radius: _assignRadius,
               onRadiusChanged: (v) {
                 setState(() => _assignRadius = v);
-                _radiusNotifier.value = _currentRadiusPx;
-                _refreshAssignMarker();
+                _radiusNotifier.value = this._currentRadiusPx;
+                this._refreshAssignMarker();
               },
               onZoneTriggerChanged: (v) => setState(() => _assignZoneTrigger = v),
               onTriggerTypeChanged: (v) {
                 setState(() => _assignTriggerType = v);
-                _refreshAssignMarker();
+                this._refreshAssignMarker();
               },
               onTimeChanged: (v) {
                 setState(() => _assignTimeMinutes = v);
-                _radiusNotifier.value = _currentRadiusPx;
-                _refreshAssignMarker();
+                _radiusNotifier.value = this._currentRadiusPx;
+                this._refreshAssignMarker();
               },
-              onSave: _saveAssign,
-              onCancel: () => _cancelAssign(),
+              onSave: (alarm) => this._saveAssign(alarm),
+              onCancel: () => this._cancelAssign(),
               onDelete: _assignExisting != null ? () {
                 context.read<AlarmProvider>().removeAlarmPoint(_assignExisting!.id);
-                _cancelAssign();
+                this._cancelAssign();
               } : null,
             ),
           ),
@@ -1159,76 +583,4 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     );
   }
 
-  /// 64-point polygon circle for veil hole geometry.
-  static List<List<double>> _geoCircle(double lng, double lat, double radiusMeters) {
-    const segments = 64;
-    final coords = <List<double>>[];
-    final angDist = radiusMeters / 6371000.0;
-    final latR = lat * math.pi / 180;
-    final lngR = lng * math.pi / 180;
-    final sinLat = math.sin(latR);
-    final cosLat = math.cos(latR);
-    final sinAng = math.sin(angDist);
-    final cosAng = math.cos(angDist);
-    for (int i = 0; i <= segments; i++) {
-      final bearing = 2 * math.pi * i / segments;
-      final pLat = math.asin(sinLat * cosAng + cosLat * sinAng * math.cos(bearing));
-      final pLng = lngR + math.atan2(
-        math.sin(bearing) * sinAng * cosLat,
-        cosAng - sinLat * math.sin(pLat),
-      );
-      coords.add([pLng * 180 / math.pi, pLat * 180 / math.pi]);
-    }
-    return coords;
-  }
-}
-
-/// Flutter-side circle painter driven by ValueNotifier for 60fps updates
-/// without widget rebuilds. Dashed border for time-based triggers.
-class _RadiusOverlayPainter extends CustomPainter {
-  final Offset center;
-  final ValueNotifier<double> radiusNotifier;
-  final bool isTime;
-  final bool isLeave;
-
-  _RadiusOverlayPainter({
-    required this.center,
-    required this.radiusNotifier,
-    required this.isTime,
-    this.isLeave = false,
-  }) : super(repaint: radiusNotifier);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final radiusPx = radiusNotifier.value;
-    final fillColor = isTime
-        ? const Color(0x1AFF9800)
-        : const Color(0x1FFF0000);
-    final strokeColor = isTime
-        ? const Color(0xB3FF9800)
-        : const Color(0x99FF0000);
-
-    // Circle fill — skip for onLeave (veil provides the red fill outside)
-    if (!isLeave) {
-      canvas.drawCircle(center, radiusPx, Paint()..color = fillColor);
-    }
-    // Circle stroke/border — always drawn (onLeave needs it as veil boundary)
-    final strokePaint = Paint()
-      ..color = strokeColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0;
-    if (isTime) {
-      final path = Path()..addOval(Rect.fromCircle(center: center, radius: radiusPx));
-      final dashed = dashPath(path, dashArray: CircularIntervalList<double>([8.0, 4.0]));
-      canvas.drawPath(dashed, strokePaint);
-    } else {
-      canvas.drawCircle(center, radiusPx, strokePaint);
-    }
-
-    // Pin + chip are rendered with AlarmMarkerRenderer as the same bitmap used
-    // by saved vector markers. This painter only owns the circle geometry.
-  }
-
-  @override
-  bool shouldRepaint(_RadiusOverlayPainter oldDelegate) => true;
 }

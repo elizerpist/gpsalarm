@@ -1,0 +1,47 @@
+part of '../maplibre_new_view.dart';
+
+/// Flutter-side circle painter driven by ValueNotifier for 60fps updates
+/// without widget rebuilds. Dashed border for time-based triggers.
+class _RadiusOverlayPainter extends CustomPainter {
+  final Offset center;
+  final ValueNotifier<double> radiusNotifier;
+  final bool isTime;
+  final bool isLeave;
+
+  _RadiusOverlayPainter({
+    required this.center,
+    required this.radiusNotifier,
+    required this.isTime,
+    this.isLeave = false,
+  }) : super(repaint: radiusNotifier);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final radiusPx = radiusNotifier.value;
+    final fillColor = isTime
+        ? const Color(0x1AFF9800)
+        : const Color(0x1FFF0000);
+    final strokeColor = isTime
+        ? const Color(0xB3FF9800)
+        : const Color(0x99FF0000);
+
+    if (!isLeave) {
+      canvas.drawCircle(center, radiusPx, Paint()..color = fillColor);
+    }
+
+    final strokePaint = Paint()
+      ..color = strokeColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+    if (isTime) {
+      final path = Path()..addOval(Rect.fromCircle(center: center, radius: radiusPx));
+      final dashed = dashPath(path, dashArray: CircularIntervalList<double>([8.0, 4.0]));
+      canvas.drawPath(dashed, strokePaint);
+    } else {
+      canvas.drawCircle(center, radiusPx, strokePaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_RadiusOverlayPainter oldDelegate) => true;
+}

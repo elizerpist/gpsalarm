@@ -499,11 +499,9 @@ class _VectorNativeStylePicker extends StatelessWidget {
     'versatiles-colorful': 'Colorful',
     'versatiles-neutrino': 'Neutrino',
     'versatiles-eclipse': 'Eclipse',
-    'protomaps-light': 'PM Light',
-    'protomaps-dark': 'PM Dark',
-    'protomaps-grayscale': 'PM Gray',
-    'protomaps-white': 'PM White',
-    'protomaps-black': 'PM Black',
+    'carto-voyager': 'Voyager',
+    'carto-dark': 'Dark Matter',
+    'carto-positron': 'Carto Light',
   };
 
   @override
