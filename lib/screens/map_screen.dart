@@ -524,26 +524,51 @@ class _MapScreenState extends State<MapScreen> {
               ),
             ),
           ),
-          // Hamburger menu — always visible, cancels assign if active
+          // Hamburger menu + map switch — always visible
           Positioned(
             top: MediaQuery.of(context).padding.top + 12,
             left: 12,
-            child: GestureDetector(
-              onTap: () {
-                if (_isAssigning) _cancelAssign();
-                _scaffoldKey.currentState?.openDrawer();
-              },
-              child: Container(
-                width: 44, height: 44,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).brightness == Brightness.dark
-                      ? Colors.grey[900]!.withOpacity(0.92)
-                      : Colors.white.withOpacity(0.92),
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 2))],
+            child: Column(
+              children: [
+                GestureDetector(
+                  onTap: () {
+                    if (_isAssigning) _cancelAssign();
+                    _scaffoldKey.currentState?.openDrawer();
+                  },
+                  child: Container(
+                    width: 44, height: 44,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? Colors.grey[900]!.withOpacity(0.92)
+                          : Colors.white.withOpacity(0.92),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 2))],
+                    ),
+                    child: Icon(Icons.menu, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.grey[800], size: 24),
+                  ),
                 ),
-                child: Icon(Icons.menu, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.grey[800], size: 24),
-              ),
+                const SizedBox(height: 8),
+                GestureDetector(
+                  onTap: () {
+                    if (_isAssigning) _cancelAssign();
+                    final settings = context.read<SettingsProvider>();
+                    final current = settings.settings.mapProvider;
+                    final next = current == MapTileProvider.vector ? MapTileProvider.free : MapTileProvider.vector;
+                    settings.updateSettings(settings.settings.copyWith(mapProvider: next));
+                  },
+                  child: Container(
+                    width: 44, height: 44,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? Colors.grey[900]!.withOpacity(0.92)
+                          : Colors.white.withOpacity(0.92),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 2))],
+                    ),
+                    child: Icon(Icons.layers, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.grey[800], size: 22),
+                  ),
+                ),
+              ],
             ),
           ),
           // Other controls — hidden during assign

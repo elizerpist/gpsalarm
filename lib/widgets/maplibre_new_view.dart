@@ -23,6 +23,7 @@ import '../services/location_service.dart';
 import '../services/alarm_service.dart';
 import '../services/notification_service.dart';
 import '../services/debug_console.dart';
+import '../widgets/alarm_marker_renderer.dart';
 import '../widgets/scale_bar.dart';
 
 class MaplibreNewView extends StatefulWidget {
@@ -444,30 +445,28 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             'circle-stroke-width': strokeWidth,
           },
         ));
+        // Composite pin+chip bitmap marker (matches raster design)
         final labelText = c.isTime
             ? '${(c.radiusMeters / 1000).toStringAsFixed(1)}km'
-            : (c.radiusMeters >= 1000
-                ? '${(c.radiusMeters / 1000).toStringAsFixed(1)}km'
-                : '${c.radiusMeters.round()}m');
-        final labelColor = c.isTime
-            ? (c.active ? 'rgba(255,152,0,0.85)' : 'rgba(158,158,158,0.6)')
-            : (c.active ? 'rgba(255,0,0,0.85)' : 'rgba(158,158,158,0.6)');
+            : AlarmMarkerRenderer.formatDistance(c.radiusMeters);
+        final markerColor = c.isTime
+            ? (c.active ? Colors.orange : Colors.grey)
+            : (c.active ? Colors.red : Colors.grey);
+        final dpr = MediaQuery.devicePixelRatioOf(context);
+        final imageId = 'alarm-marker-${c.id}';
+        final markerPng = await AlarmMarkerRenderer.render(
+          label: labelText, color: markerColor, dpr: dpr,
+        );
+        try { await style.removeImage(imageId); } catch (_) {}
+        await style.addImage(imageId, markerPng);
         await style.addLayer(SymbolStyleLayer(
           id: 'radius-label-${c.id}',
           sourceId: 'radius-pt-${c.id}',
           layout: {
-            'text-field': labelText,
-            'text-size': 10,
-            'text-font': ['Noto Sans Bold'],
-            'text-anchor': 'top',
-            'text-offset': [0.0, 1.4],
-            'text-allow-overlap': true,
-          },
-          paint: {
-            'text-color': '#ffffff',
-            'text-halo-color': labelColor,
-            'text-halo-width': 8,
-            'text-halo-blur': 0,
+            'icon-image': imageId,
+            'icon-size': 1.0 / dpr, // image rendered at dpr scale, display at 1:1
+            'icon-anchor': 'bottom',
+            'icon-allow-overlap': true,
           },
         ));
       } catch (e) {
@@ -651,7 +650,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
         (p) => _styleUrls[p.settings.vectorStyleUrl] ?? _styleUrls['liberty']!);
     final alarmProv = context.watch<AlarmProvider>();
 
-    final markers = _buildMarkerPoints(alarmProv);
     _syncRadiusSource(alarmProv);
 
     return Stack(
@@ -722,23 +720,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               }
             },
           layers: [
-            // Pin markers
-            if (_imagesRegistered && markers.active.isNotEmpty)
-              MarkerLayer(
-                points: markers.active,
-                iconImage: 'pin-red',
-                iconSize: 0.4,
-                iconAnchor: IconAnchor.bottom,
-                iconAllowOverlap: true,
-              ),
-            if (_imagesRegistered && markers.inactive.isNotEmpty)
-              MarkerLayer(
-                points: markers.inactive,
-                iconImage: 'pin-grey',
-                iconSize: 0.4,
-                iconAnchor: IconAnchor.bottom,
-                iconAllowOverlap: true,
-              ),
+            // Pin+chip markers are rendered as bitmap icons in _rebuildRadiusLayers
+            // (SymbolStyleLayer with composite icon-image, not MarkerLayer)
             // User position — blue dot with white border + glow
             if (_userPos != null) ...[
               CircleLayer(
@@ -801,26 +784,51 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             ),
           ),
         ),
-        // Hamburger menu — always visible, cancels assign if active
+        // Hamburger menu + map switch — always visible
         Positioned(
           top: MediaQuery.of(context).padding.top + 12,
           left: 12,
-          child: GestureDetector(
-            onTap: () {
-              if (_isAssigning) _cancelAssign();
-              widget.scaffoldKey.currentState?.openDrawer();
-            },
-            child: Container(
-              width: 44, height: 44,
-              decoration: BoxDecoration(
-                color: Theme.of(context).brightness == Brightness.dark
-                    ? Colors.grey[900]!.withOpacity(0.92)
-                    : Colors.white.withOpacity(0.92),
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 2))],
+          child: Column(
+            children: [
+              GestureDetector(
+                onTap: () {
+                  if (_isAssigning) _cancelAssign();
+                  widget.scaffoldKey.currentState?.openDrawer();
+                },
+                child: Container(
+                  width: 44, height: 44,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? Colors.grey[900]!.withOpacity(0.92)
+                        : Colors.white.withOpacity(0.92),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 2))],
+                  ),
+                  child: Icon(Icons.menu, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.grey[800], size: 24),
+                ),
               ),
-              child: Icon(Icons.menu, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.grey[800], size: 24),
-            ),
+              const SizedBox(height: 8),
+              GestureDetector(
+                onTap: () {
+                  if (_isAssigning) _cancelAssign();
+                  final settings = context.read<SettingsProvider>();
+                  final current = settings.settings.mapProvider;
+                  final next = current == MapTileProvider.vector ? MapTileProvider.free : MapTileProvider.vector;
+                  settings.updateSettings(settings.settings.copyWith(mapProvider: next));
+                },
+                child: Container(
+                  width: 44, height: 44,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? Colors.grey[900]!.withOpacity(0.92)
+                        : Colors.white.withOpacity(0.92),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 2))],
+                  ),
+                  child: Icon(Icons.layers, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.grey[800], size: 22),
+                ),
+              ),
+            ],
           ),
         ),
         // Other controls — hidden during assign
@@ -1013,46 +1021,45 @@ class _RadiusOverlayPainter extends CustomPainter {
       canvas.drawCircle(center, radiusPx, strokePaint);
     }
 
-    // Pin marker at circle center — same Material icon as saved pins
+    // Pin marker at circle center — uses AlarmMarkerSpec for consistency with saved/raster
     final pinColor = isTime ? const Color(0xFFFF9800) : const Color(0xFFFF0000);
-    const pinSize = 32.0;
-    final tp = TextPainter(textDirection: ui.TextDirection.ltr)
+    const ps = AlarmMarkerSpec.pinSize;
+    final pinTp = TextPainter(textDirection: ui.TextDirection.ltr)
       ..text = TextSpan(
         text: String.fromCharCode(Icons.location_on.codePoint),
         style: TextStyle(
-          fontSize: pinSize,
+          fontSize: ps,
           fontFamily: Icons.location_on.fontFamily,
           package: Icons.location_on.fontPackage,
           color: pinColor,
         ),
       )
       ..layout();
-    tp.paint(canvas, Offset(center.dx - pinSize / 2, center.dy - pinSize));
+    pinTp.paint(canvas, Offset(center.dx - ps / 2, center.dy - ps));
 
-    // Distance/time chip below pin — matching raster map style
+    // Chip below pin — same spec as AlarmMarkerRenderer / raster pin_marker
     final chipText = isTime
         ? '${timeMinutes}min'
-        : (radiusMeters >= 1000
-            ? '${(radiusMeters / 1000).toStringAsFixed(1)}km'
-            : '${radiusMeters.round()}m');
+        : AlarmMarkerRenderer.formatDistance(radiusMeters);
     final chipTp = TextPainter(textDirection: ui.TextDirection.ltr)
       ..text = TextSpan(
         text: chipText,
         style: const TextStyle(
           color: Color(0xFFFFFFFF),
-          fontSize: 9,
+          fontSize: AlarmMarkerSpec.chipFontSize,
           fontWeight: FontWeight.bold,
         ),
       )
       ..layout();
-    final chipW = chipTp.width + 8;
-    final chipH = chipTp.height + 2;
+    final chipW = chipTp.width + AlarmMarkerSpec.chipPaddingX * 2;
+    final chipH = chipTp.height + AlarmMarkerSpec.chipPaddingY * 2;
+    final chipTop = center.dy + AlarmMarkerSpec.chipGap;
     final chipRect = RRect.fromRectAndRadius(
-      Rect.fromCenter(center: Offset(center.dx, center.dy + chipH / 2 + 1), width: chipW, height: chipH),
-      const Radius.circular(4),
+      Rect.fromCenter(center: Offset(center.dx, chipTop + chipH / 2), width: chipW, height: chipH),
+      const Radius.circular(AlarmMarkerSpec.chipRadius),
     );
     canvas.drawRRect(chipRect, Paint()..color = pinColor.withOpacity(0.8));
-    chipTp.paint(canvas, Offset(center.dx - chipTp.width / 2, center.dy + 1));
+    chipTp.paint(canvas, Offset(center.dx - chipTp.width / 2, chipTop + (chipH - chipTp.height) / 2));
   }
 
   @override
