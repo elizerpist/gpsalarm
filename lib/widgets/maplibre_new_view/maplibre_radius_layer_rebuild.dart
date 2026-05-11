@@ -1,6 +1,58 @@
 part of '../maplibre_new_view.dart';
 
 extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
+  Future<void> _restoreRadiusCircleLayer(StyleController style, _RadiusCircleData circle) async {
+    try {
+      await style.removeLayer('radius-circle-${circle.id}');
+    } catch (_) {}
+    await this._addRadiusCircleLayer(
+      style,
+      circle,
+      belowLayerId: 'radius-label-${circle.id}',
+    );
+  }
+
+  Future<void> _addRadiusCircleLayer(
+    StyleController style,
+    _RadiusCircleData circle, {
+    String? belowLayerId,
+  }) async {
+    final basePx = 2 * circle.radiusMeters / (156543.03392 * math.cos(circle.lat * math.pi / 180));
+    final String fillColor = circle.isLeave
+        ? 'rgba(0,0,0,0)'
+        : (circle.isTime
+            ? (circle.active ? 'rgba(255,152,0,0.10)' : 'rgba(158,158,158,0.05)')
+            : (circle.active ? 'rgba(255,0,0,0.12)' : 'rgba(158,158,158,0.05)'));
+    final String strokeColor = circle.isTime
+        ? (circle.active ? 'rgba(255,152,0,0.7)' : 'rgba(158,158,158,0.3)')
+        : (circle.active ? 'rgba(255,0,0,0.6)' : 'rgba(158,158,158,0.3)');
+    final strokeWidth = circle.active ? 2.0 : 1.0;
+
+    final layer = CircleStyleLayer(
+      id: 'radius-circle-${circle.id}',
+      sourceId: 'radius-pt-${circle.id}',
+      paint: {
+        'circle-radius': [
+          'interpolate',
+          ['exponential', 2.0],
+          ['zoom'],
+          0.0,
+          basePx,
+          22.0,
+          basePx * 4194304.0,
+        ],
+        'circle-color': fillColor,
+        'circle-stroke-color': strokeColor,
+        'circle-stroke-width': strokeWidth,
+      },
+    );
+    try {
+      await style.addLayer(layer, belowLayerId: belowLayerId);
+    } catch (_) {
+      await style.addLayer(layer);
+    }
+  }
+
   Future<void> _rebuildRadiusLayers(
     StyleController style,
     List<_RadiusCircleData> circles,
@@ -50,40 +102,12 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     }
 
     for (final c in circles) {
-      final basePx = 2 * c.radiusMeters / (156543.03392 * math.cos(c.lat * math.pi / 180));
-      final String fillColor = c.isLeave
-          ? 'rgba(0,0,0,0)'
-          : (c.isTime
-              ? (c.active ? 'rgba(255,152,0,0.10)' : 'rgba(158,158,158,0.05)')
-              : (c.active ? 'rgba(255,0,0,0.12)' : 'rgba(158,158,158,0.05)'));
-      final String strokeColor = c.isTime
-          ? (c.active ? 'rgba(255,152,0,0.7)' : 'rgba(158,158,158,0.3)')
-          : (c.active ? 'rgba(255,0,0,0.6)' : 'rgba(158,158,158,0.3)');
-      final strokeWidth = c.active ? 2.0 : 1.0;
-
       try {
         style.updateGeoJsonSource(
           id: 'radius-pt-${c.id}',
           data: _pointGeoJson(c.lng, c.lat),
         );
-        await style.addLayer(CircleStyleLayer(
-          id: 'radius-circle-${c.id}',
-          sourceId: 'radius-pt-${c.id}',
-          paint: {
-            'circle-radius': [
-              'interpolate',
-              ['exponential', 2.0],
-              ['zoom'],
-              0.0,
-              basePx,
-              22.0,
-              basePx * 4194304.0,
-            ],
-            'circle-color': fillColor,
-            'circle-stroke-color': strokeColor,
-            'circle-stroke-width': strokeWidth,
-          },
-        ));
+        await this._addRadiusCircleLayer(style, c);
         final imageId = markerImageIds[c.id];
         if (imageId == null) continue;
         final markerSize = AlarmMarkerRenderer.measureLogicalSize(markerLabels[c.id]!);

@@ -502,13 +502,13 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                   if (!_isAssigning) return;
                   if (!_isDraggingRadius || _assignScreenCenter == null) return;
                   if (e.pointer != _dragPointerId) return;
-                  this._activateAssignOverlay();
                   final dist = (e.localPosition - _assignScreenCenter!).distance;
                   if (_assignTriggerType == TriggerType.distance) {
                     _assignRadius = (dist * _vectorMetersPerPx(_assignLat, _currentZoom)).clamp(100.0, 5000.0);
                   } else {
                     _assignTimeMinutes = (dist * 0.3).clamp(5.0, 120.0).round();
                   }
+                  this._activateAssignOverlay();
                   // Update overlay circle instantly (no widget rebuild)
                   _radiusNotifier.value = this._currentRadiusPx;
                   this._refreshAssignMarker();
@@ -537,7 +537,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             ),
           ),
         if ((_isAssigning || _closingAssignVisual) &&
-            (this._showAssignOverlay || _closingAssignVisual) &&
+            (this._showAssignMarkerOverlay || _closingAssignVisual) &&
             _assignScreenCenter != null &&
             _assignMarkerPng != null)
           Positioned(
@@ -562,23 +562,23 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               existingPoint: _assignExisting,
               radius: _assignRadius,
               onRadiusChanged: (v) {
-                this._activateAssignOverlay();
                 setState(() => _assignRadius = v);
+                this._activateAssignOverlay();
                 _radiusNotifier.value = this._currentRadiusPx;
                 this._refreshAssignMarker();
               },
               onZoneTriggerChanged: (v) {
-                this._activateAssignOverlay();
                 setState(() => _assignZoneTrigger = v);
+                this._activateAssignOverlay();
               },
               onTriggerTypeChanged: (v) {
-                this._activateAssignOverlay();
                 setState(() => _assignTriggerType = v);
+                this._activateAssignOverlay();
                 this._refreshAssignMarker();
               },
               onTimeChanged: (v) {
-                this._activateAssignOverlay();
                 setState(() => _assignTimeMinutes = v);
+                this._activateAssignOverlay();
                 _radiusNotifier.value = this._currentRadiusPx;
                 this._refreshAssignMarker();
               },

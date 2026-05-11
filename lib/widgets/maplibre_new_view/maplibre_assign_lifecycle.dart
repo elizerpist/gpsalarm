@@ -15,7 +15,6 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
   void _activateAssignOverlay() {
     if (!_isAssigning || _assignNativeHidden) return;
     _assignNativeHidden = true;
-    this._refreshAssignMarker();
     _radiusNotifier.value = this._currentRadiusPx;
     final existing = _assignExisting;
     if (existing != null) {
@@ -42,12 +41,8 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     if (style == null) return;
     final id = 'alarm-$index';
     try {
-      await style.removeLayer('radius-label-$id');
-    } catch (_) {}
-    try {
       await style.removeLayer('radius-circle-$id');
     } catch (_) {}
-    style.updateGeoJsonSource(id: 'radius-pt-$id', data: _emptyGeoJson);
   }
 
   void _beginClosingAssignVisual({required bool keepCircle}) {
@@ -132,7 +127,22 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     if (shouldRebuildNative) {
       final circles = this._buildRadiusCircles(alarmProv, excludeEditing: false);
       _radiusLayerVersion++;
-      await this._rebuildRadiusLayers(style, circles, _radiusLayerVersion);
+      _RadiusCircleData? circle;
+      if (wasExisting != null) {
+        final index = alarmProv.alarmPoints.indexWhere((p) => p.id == wasExisting.id);
+        final id = 'alarm-$index';
+        for (final c in circles) {
+          if (c.id == id) {
+            circle = c;
+            break;
+          }
+        }
+      }
+      if (circle != null) {
+        await this._restoreRadiusCircleLayer(style, circle);
+      } else {
+        await this._rebuildRadiusLayers(style, circles, _radiusLayerVersion);
+      }
       _lastRadiusDataHash = this._radiusHash(circles);
     }
     if (style != null && nativeWasHidden) this._updateVeil(style, alarmProv, ignoreAssign: true);
@@ -143,22 +153,37 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
   }
 
   Future<void> _saveAssign(AlarmPoint alarm) async {
-    DebugConsole.log('SAVE_ASSIGN: existing=${_assignExisting?.id} lat=${alarm.latitude} lng=${alarm.longitude} r=${alarm.radiusMeters.round()}m');
+    final effectiveAlarm = AlarmPoint(
+      id: alarm.id,
+      name: alarm.name,
+      latitude: _assignLat,
+      longitude: _assignLng,
+      radiusMeters: _assignTriggerType == TriggerType.distance ? _assignRadius : 0,
+      triggerType: _assignTriggerType,
+      zoneTrigger: _assignZoneTrigger,
+      isActive: alarm.isActive,
+      timeTrigger: _assignTriggerType == TriggerType.time ? Duration(minutes: _assignTimeMinutes) : null,
+      customAlarmSound: _assignExisting?.customAlarmSound ?? alarm.customAlarmSound,
+      customAlarmType: _assignExisting?.customAlarmType ?? alarm.customAlarmType,
+      createdAt: _assignExisting?.createdAt ?? alarm.createdAt,
+    );
+    DebugConsole.log('SAVE_ASSIGN: existing=${_assignExisting?.id} lat=${effectiveAlarm.latitude} lng=${effectiveAlarm.longitude} r=${effectiveAlarm.radiusMeters.round()}m');
     _suppressRadiusSync = true;
     final alarmProv = context.read<AlarmProvider>();
     try {
       final wasExisting = _assignExisting != null;
       final nativeWasHidden = _assignNativeHidden;
-      final visualChanged = _alarmVisualChanged(_assignExisting, alarm);
+      final visualChanged = _alarmVisualChanged(_assignExisting, effectiveAlarm);
       if (wasExisting) {
-        alarmProv.updateAlarmPoint(alarm);
+        alarmProv.updateAlarmPoint(effectiveAlarm);
       } else if (alarmProv.canAddAlarm) {
-        alarmProv.addAlarmPoint(alarm);
+        alarmProv.addAlarmPoint(effectiveAlarm);
       }
       _radiusDebounce?.cancel();
       final style = _controller?.style;
       final shouldRebuildNative = style != null && _radiusLayerReady && (!wasExisting || nativeWasHidden || visualChanged);
       if (shouldRebuildNative) _lastRadiusDataHash = '';
+      if (shouldRebuildNative) await this._ensureAssignMarkerBitmap();
       _beginClosingAssignVisual(keepCircle: shouldRebuildNative && (!wasExisting || nativeWasHidden));
       if (shouldRebuildNative) {
         final circles = this._buildRadiusCircles(alarmProv, excludeEditing: false);
