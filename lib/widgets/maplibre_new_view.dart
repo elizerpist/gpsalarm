@@ -63,6 +63,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   Size _assignMarkerSize = Size.zero;
   int _assignMarkerVersion = 0;
   bool _closingAssignVisual = false;
+  bool _closingAssignCircle = false;
   Timer? _assignVisualClearTimer;
   final Map<String, Uint8List> _markerBitmapCache = {};
   final Map<String, Size> _markerSizeCache = {};
@@ -76,9 +77,20 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   Timer? _speedInterpolTimer;
 
   static const _styleUrls = {
+    // OpenFreeMap
     'liberty': 'https://tiles.openfreemap.org/styles/liberty',
     'bright': 'https://tiles.openfreemap.org/styles/bright',
     'positron': 'https://tiles.openfreemap.org/styles/positron',
+    // Versatiles
+    'versatiles-colorful': 'https://tiles.versatiles.org/assets/styles/colorful.json',
+    'versatiles-neutrino': 'https://tiles.versatiles.org/assets/styles/neutrino.json',
+    'versatiles-eclipse': 'https://tiles.versatiles.org/assets/styles/eclipse.json',
+    // Protomaps
+    'protomaps-light': 'https://api.protomaps.com/styles/v4/light/en.json',
+    'protomaps-dark': 'https://api.protomaps.com/styles/v4/dark/en.json',
+    'protomaps-grayscale': 'https://api.protomaps.com/styles/v4/grayscale/en.json',
+    'protomaps-white': 'https://api.protomaps.com/styles/v4/white/en.json',
+    'protomaps-black': 'https://api.protomaps.com/styles/v4/black/en.json',
   };
 
   @override
@@ -446,8 +458,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       final cacheKey = '$labelText-${markerColor.value}-$_deviceDpr';
       markerImageIds[c.id] = imageId;
       markerLabels[c.id] = labelText;
-      final markerPng = _markerBitmapCache[cacheKey] ??= await AlarmMarkerRenderer.render(
-          label: labelText, color: markerColor, dpr: _deviceDpr);
+      var markerPng = _markerBitmapCache[cacheKey];
+      if (markerPng == null) {
+        markerPng = await AlarmMarkerRenderer.render(
+            label: labelText, color: markerColor, dpr: _deviceDpr);
+        _markerBitmapCache[cacheKey] = markerPng;
+      }
       try {
         await style.addImage(imageId, markerPng);
       } catch (_) {
@@ -635,28 +651,60 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     style.updateGeoJsonSource(id: 'radius-pt-$id', data: _emptyGeoJson);
   }
 
+  void _beginClosingAssignVisual({required bool keepCircle}) {
+    _assignVisualClearTimer?.cancel();
+    setState(() {
+      _isAssigning = false;
+      _closingAssignVisual = true;
+      _closingAssignCircle = keepCircle;
+      _assignExisting = null;
+      _isDraggingRadius = false;
+      _dragPointerId = null;
+    });
+  }
+
+  void _finishClosingAssignCircle() {
+    if (!_closingAssignCircle || !mounted) return;
+    setState(() => _closingAssignCircle = false);
+  }
+
+  void _scheduleAssignVisualClear() {
+    _assignVisualClearTimer?.cancel();
+    _assignVisualClearTimer = Timer(const Duration(milliseconds: 1200), () {
+      if (!mounted) return;
+      setState(() {
+        _closingAssignVisual = false;
+        _closingAssignCircle = false;
+        _assignScreenCenter = null;
+        _assignMarkerPng = null;
+        _assignMarkerKey = null;
+        _assignTriggerType = TriggerType.distance;
+        _assignZoneTrigger = ZoneTrigger.onEntry;
+        _assignTimeMinutes = 10;
+      });
+    });
+  }
+
   Future<void> _startAssign(double lat, double lng, {AlarmPoint? existing}) async {
     _assignVisualClearTimer?.cancel();
     _closingAssignVisual = false;
     _assignScreenCenter = existing != null
         ? (_geoToScreen(existing.latitude, existing.longitude) ?? _lastPointerDownPos)
         : _lastPointerDownPos;
+    _assignExisting = existing;
+    _assignLat = lat;
+    _assignLng = lng;
+    _assignRadius = existing?.radiusMeters ?? 500;
+    _assignTriggerType = existing?.triggerType ?? TriggerType.distance;
+    _assignZoneTrigger = existing?.zoneTrigger ?? ZoneTrigger.onEntry;
+    _assignTimeMinutes = existing?.timeTrigger?.inMinutes ?? 10;
+    _assignMarkerPng = null;
+    _assignMarkerKey = null;
     if (existing != null) {
       await _hideExistingNativeAlarm(existing);
       if (!mounted) return;
     }
-    setState(() {
-      _isAssigning = true;
-      _assignExisting = existing;
-      _assignLat = lat;
-      _assignLng = lng;
-      _assignRadius = existing?.radiusMeters ?? 500;
-      _assignTriggerType = existing?.triggerType ?? TriggerType.distance;
-      _assignZoneTrigger = existing?.zoneTrigger ?? ZoneTrigger.onEntry;
-      _assignTimeMinutes = existing?.timeTrigger?.inMinutes ?? 10;
-      _assignMarkerPng = null;
-      _assignMarkerKey = null;
-    });
+    _isAssigning = true;
     _radiusNotifier.value = _currentRadiusPx;
     _refreshAssignMarker();
     DebugConsole.log('ASSIGN_START: lat=$lat lng=$lng existing=${existing?.id} screenCenter=$_assignScreenCenter radiusPx=${_currentRadiusPx.toStringAsFixed(1)} radiusM=$_assignRadius');
@@ -666,6 +714,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       DebugConsole.log('ASSIGN_START: updating veil immediately');
       _updateVeil(style, context.read<AlarmProvider>());
     }
+    setState(() {});
   }
 
 
@@ -678,36 +727,20 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     final wasExisting = _assignExisting;
     final style = _controller?.style;
     final alarmProv = context.read<AlarmProvider>();
+    final shouldRebuildNative = !nativeAlreadySynced && wasExisting != null && style != null && _radiusLayerReady;
+    _beginClosingAssignVisual(keepCircle: shouldRebuildNative);
 
-    // If editing existing alarm: rebuild native layers BEFORE hiding overlay
-    if (!nativeAlreadySynced && wasExisting != null && style != null && _radiusLayerReady) {
+    // Keep the circle overlay only while the native circle is being restored.
+    if (shouldRebuildNative) {
       final circles = _buildRadiusCircles(alarmProv, excludeEditing: false);
       _radiusLayerVersion++;
       await _rebuildRadiusLayers(style, circles, _radiusLayerVersion);
       _lastRadiusDataHash = _radiusHash(circles);
     }
     if (style != null) _updateVeil(style, alarmProv, ignoreAssign: true);
+    _finishClosingAssignCircle();
 
-    setState(() {
-      _isAssigning = false;
-      _closingAssignVisual = true;
-      _assignExisting = null;
-      _isDraggingRadius = false;
-      _dragPointerId = null;
-    });
-    _assignVisualClearTimer?.cancel();
-    _assignVisualClearTimer = Timer(const Duration(milliseconds: 350), () {
-      if (!mounted) return;
-      setState(() {
-        _closingAssignVisual = false;
-        _assignScreenCenter = null;
-        _assignMarkerPng = null;
-        _assignMarkerKey = null;
-        _assignTriggerType = TriggerType.distance;
-        _assignZoneTrigger = ZoneTrigger.onEntry;
-        _assignTimeMinutes = 10;
-      });
-    });
+    _scheduleAssignVisualClear();
     _suppressRadiusSync = previousSuppress;
   }
 
@@ -716,15 +749,17 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     _suppressRadiusSync = true;
     final alarmProv = context.read<AlarmProvider>();
     try {
-      if (_assignExisting != null) {
+      final wasExisting = _assignExisting != null;
+      if (wasExisting) {
         alarmProv.updateAlarmPoint(alarm);
       } else if (alarmProv.canAddAlarm) {
         alarmProv.addAlarmPoint(alarm);
       }
       _radiusDebounce?.cancel();
-      // Build native layers BEFORE hiding overlay to avoid flash gap
+      // Rebuild native layers while the Flutter pin/chip still masks symbol fade.
       _lastRadiusDataHash = '';
       final style = _controller?.style;
+      _beginClosingAssignVisual(keepCircle: style != null && _radiusLayerReady);
       if (style != null && _radiusLayerReady) {
         final circles = _buildRadiusCircles(alarmProv, excludeEditing: false);
         _radiusLayerVersion++;
@@ -732,7 +767,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
         _lastRadiusDataHash = _radiusHash(circles);
         _updateVeil(style, alarmProv, ignoreAssign: true);
       }
-      await _cancelAssign(nativeAlreadySynced: true);
+      _finishClosingAssignCircle();
+      _controller?.style?.updateGeoJsonSource(id: 'fast-src', data: _emptyGeoJson);
+      _scheduleAssignVisualClear();
     } finally {
       _suppressRadiusSync = false;
     }
@@ -1016,7 +1053,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                 : const SizedBox.shrink(),
           ),
         // Radius drag overlay — blocks map gestures, 60fps via ValueNotifier
-        if ((_isAssigning || _closingAssignVisual) && _assignScreenCenter != null)
+        if ((_isAssigning || _closingAssignCircle) && _assignScreenCenter != null)
           Positioned.fill(
             child: RepaintBoundary(
               child: Listener(

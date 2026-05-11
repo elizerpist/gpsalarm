@@ -496,6 +496,14 @@ class _VectorNativeStylePicker extends StatelessWidget {
     'liberty': 'Liberty',
     'bright': 'Bright',
     'positron': 'Positron',
+    'versatiles-colorful': 'Colorful',
+    'versatiles-neutrino': 'Neutrino',
+    'versatiles-eclipse': 'Eclipse',
+    'protomaps-light': 'PM Light',
+    'protomaps-dark': 'PM Dark',
+    'protomaps-grayscale': 'PM Gray',
+    'protomaps-white': 'PM White',
+    'protomaps-black': 'PM Black',
   };
 
   @override
@@ -509,7 +517,7 @@ class _VectorNativeStylePicker extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('MapLibre GL stílus (OpenFreeMap, ingyenes)',
+          Text('MapLibre GL stílus',
               style: TextStyle(fontSize: 11, color: Colors.grey[600])),
           const SizedBox(height: 8),
           Wrap(
