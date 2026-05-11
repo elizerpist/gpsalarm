@@ -728,7 +728,17 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               initZoom: context.read<MapProvider>().zoom,
             ),
             onMapCreated: _onMapCreated,
-            onStyleLoaded: (style) => _registerImages(style),
+            onStyleLoaded: (style) {
+              _registerImages(style);
+              // Style JSON may override initZoom/initCenter with its defaults.
+              // Restore MapProvider values after style loads.
+              final mp = context.read<MapProvider>();
+              DebugConsole.log('STYLE_LOADED: restoring zoom=${mp.zoom.toStringAsFixed(2)} center=${mp.center}');
+              _controller?.moveCamera(
+                center: Position(mp.center.longitude, mp.center.latitude),
+                zoom: mp.zoom,
+              );
+            },
             onEvent: (event) {
               if (event is MapEventClick) {
                 _onTap(event.point);
@@ -737,15 +747,18 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                 if ((newZoom - _currentZoom).abs() > 0.05) {
                   setState(() => _currentZoom = newZoom);
                 }
-                // Sync zoom/center to MapProvider for raster↔vector switch continuity
-                final mp = context.read<MapProvider>();
-                mp.updateZoomSilent(newZoom);
-                final cam = _controller?.camera;
-                if (cam?.center != null) {
-                  mp.updateCenterSilent(LatLng(
-                    cam!.center.lat.toDouble(),
-                    cam.center.lng.toDouble(),
-                  ));
+                // Only sync to MapProvider AFTER images registered (style fully loaded).
+                // Before that, camera events carry the style's default zoom, not the user's.
+                if (_imagesRegistered) {
+                  final mp = context.read<MapProvider>();
+                  mp.updateZoomSilent(newZoom);
+                  final cam = _controller?.camera;
+                  if (cam?.center != null) {
+                    mp.updateCenterSilent(LatLng(
+                      cam!.center.lat.toDouble(),
+                      cam.center.lng.toDouble(),
+                    ));
+                  }
                 }
               }
             },
