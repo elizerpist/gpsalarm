@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'dart:ui' as ui;
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 /// Shared design spec for alarm pin + distance chip.
@@ -19,6 +20,26 @@ class AlarmMarkerRenderer {
   static String formatDistance(double meters) {
     if (meters >= 1000) return '${(meters / 1000).toStringAsFixed(1)}km';
     return '${meters.round()}m';
+  }
+
+  static Size measureLogicalSize(String label) {
+    final chipTp = TextPainter(textDirection: ui.TextDirection.ltr)
+      ..text = TextSpan(
+        text: label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: AlarmMarkerSpec.chipFontSize,
+          fontWeight: FontWeight.bold,
+        ),
+      )
+      ..layout();
+
+    final chipW = chipTp.width + AlarmMarkerSpec.chipPaddingX * 2;
+    final chipH = chipTp.height + AlarmMarkerSpec.chipPaddingY * 2;
+    return Size(
+      math.max(AlarmMarkerSpec.pinSize, chipW),
+      AlarmMarkerSpec.pinSize + AlarmMarkerSpec.chipGap + chipH,
+    );
   }
 
   /// Render pin + chip composite to PNG bytes.
