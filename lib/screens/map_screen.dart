@@ -59,7 +59,6 @@ class _MapScreenState extends State<MapScreen> {
   bool _longPressTriggered = false;
 
   double _rasterZoom = 13;
-  bool _rasterZoomInitialized = false;
   final ValueNotifier<double> _speedKmh = ValueNotifier(0);
 
   // Speed interpolation between GPS ticks
@@ -80,15 +79,6 @@ class _MapScreenState extends State<MapScreen> {
     DebugConsole.log('initState()');
     _initLocation();
     _startFrameMonitor();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (!_rasterZoomInitialized) {
-      _rasterZoomInitialized = true;
-      _rasterZoom = context.read<MapProvider>().zoom;
-    }
   }
 
   void _startFrameMonitor() {
@@ -282,6 +272,10 @@ class _MapScreenState extends State<MapScreen> {
   Widget build(BuildContext context) {
     final mapProvider = context.select<SettingsProvider, MapTileProvider>(
         (p) => p.settings.mapProvider);
+
+    // Sync rasterZoom from MapProvider on every build (covers vector→raster switch)
+    final mpZoom = context.read<MapProvider>().zoom;
+    if ((_rasterZoom - mpZoom).abs() > 0.1) _rasterZoom = mpZoom;
 
     // Vector (maplibre) — native only
     if (mapProvider == MapTileProvider.vector && !kIsWeb) {

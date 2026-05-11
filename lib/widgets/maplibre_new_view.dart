@@ -403,15 +403,29 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   /// literal interpolate expression (see docs/vector-map-radius-circles.md).
   /// onLeave alarms get stroke-only circle (transparent fill); the veil provides the fill.
   Future<void> _rebuildRadiusLayers(StyleController style, List<({String id, double lng, double lat, double radiusMeters, bool active, bool isTime, bool isLeave})> circles, int version) async {
-    // Remove old alarm layers only (sources are pre-created at init)
+    // Pre-render all marker bitmaps BEFORE removing old layers (minimize flash gap)
+    final markerImages = <String, Uint8List>{};
+    for (final c in circles) {
+      final labelText = c.isTime
+          ? '${(c.radiusMeters / 1000).toStringAsFixed(1)}km'
+          : AlarmMarkerRenderer.formatDistance(c.radiusMeters);
+      final markerColor = c.isTime
+          ? (c.active ? Colors.orange : Colors.grey)
+          : (c.active ? Colors.red : Colors.grey);
+      markerImages['alarm-marker-${c.id}'] = await AlarmMarkerRenderer.render(
+        label: labelText, color: markerColor, dpr: 1.0,
+      );
+    }
+
+    if (version != _radiusLayerVersion) return;
+
+    // Now swap layers: remove old, add new (images already prepared)
     for (int i = 0; i < 20; i++) {
       final id = 'alarm-$i';
       try { await style.removeLayer('radius-label-$id'); } catch (_) {}
       try { await style.removeLayer('radius-circle-$id'); } catch (_) {}
       style.updateGeoJsonSource(id: 'radius-pt-$id', data: _emptyGeoJson);
     }
-
-    if (version != _radiusLayerVersion) return;
 
     for (final c in circles) {
       // 512px vector tile scale: basePx needs 2× vs 256px slippy-map formula
@@ -446,26 +460,19 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             'circle-stroke-width': strokeWidth,
           },
         ));
-        // Composite pin+chip bitmap marker (matches raster design)
-        final labelText = c.isTime
-            ? '${(c.radiusMeters / 1000).toStringAsFixed(1)}km'
-            : AlarmMarkerRenderer.formatDistance(c.radiusMeters);
-        final markerColor = c.isTime
-            ? (c.active ? Colors.orange : Colors.grey)
-            : (c.active ? Colors.red : Colors.grey);
-        final dpr = MediaQuery.devicePixelRatioOf(context);
+        // Composite pin+chip bitmap marker (pre-rendered above, matches raster design)
         final imageId = 'alarm-marker-${c.id}';
-        final markerPng = await AlarmMarkerRenderer.render(
-          label: labelText, color: markerColor, dpr: dpr,
-        );
-        try { await style.removeImage(imageId); } catch (_) {}
-        await style.addImage(imageId, markerPng);
+        final markerPng = markerImages[imageId];
+        if (markerPng != null) {
+          try { await style.removeImage(imageId); } catch (_) {}
+          await style.addImage(imageId, markerPng);
+        }
         await style.addLayer(SymbolStyleLayer(
           id: 'radius-label-${c.id}',
           sourceId: 'radius-pt-${c.id}',
           layout: {
             'icon-image': imageId,
-            'icon-size': 1.0 / dpr, // image rendered at dpr scale, display at 1:1
+            'icon-size': 1.0,
             'icon-anchor': 'bottom',
             'icon-allow-overlap': true,
           },
@@ -545,7 +552,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     _assignScreenCenter = existing != null
         ? (_geoToScreen(existing.latitude, existing.longitude) ?? _lastPointerDownPos)
         : _lastPointerDownPos;
-    DebugConsole.log('ASSIGN_START: lat=$lat lng=$lng lastPointer=$_lastPointerDownPos screenCenter=$_assignScreenCenter existing=${existing?.id}');
     setState(() {
       _isAssigning = true;
       _assignExisting = existing;
@@ -557,7 +563,13 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       _assignTimeMinutes = existing?.timeTrigger?.inMinutes ?? 10;
     });
     _radiusNotifier.value = _currentRadiusPx;
-    DebugConsole.log('ASSIGN_START: radiusPx=${_currentRadiusPx.toStringAsFixed(1)} radiusM=$_assignRadius');
+    // Immediately update veil+layers for edit (hide edited alarm's native layers, show edit veil)
+    final style = _controller?.style;
+    if (style != null) {
+      _updateVeil(style, context.read<AlarmProvider>());
+    }
+    // Force hash invalidation so native layers update for the edit state
+    _lastRadiusDataHash = '';
   }
 
 
@@ -573,6 +585,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       _assignZoneTrigger = ZoneTrigger.onEntry;
       _assignTimeMinutes = 10;
     });
+    // Immediately update veil to target state (don't wait for next build)
+    final style = _controller?.style;
+    if (style != null) {
+      _updateVeil(style, context.read<AlarmProvider>());
+    }
   }
 
   Future<void> _saveAssign(AlarmPoint alarm) async {
