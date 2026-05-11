@@ -35,6 +35,7 @@ part 'maplibre_new_view/maplibre_radius_data.dart';
 part 'maplibre_new_view/maplibre_radius_layer_init.dart';
 part 'maplibre_new_view/maplibre_radius_layer_rebuild.dart';
 part 'maplibre_new_view/maplibre_radius_sync.dart';
+part 'maplibre_new_view/maplibre_style_state.dart';
 part 'maplibre_new_view/maplibre_style_urls.dart';
 part 'maplibre_new_view/maplibre_tap_handling.dart';
 part 'maplibre_new_view/maplibre_veil_layer.dart';
@@ -51,6 +52,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   MapController? _controller;
   bool _imagesRegistered = false;
   bool _radiusLayerReady = false;
+  String? _activeStyleUrl;
+  String? _registeredStyleUrl;
+  int _styleGeneration = 0;
   final LocationService _locationService = LocationService();
   // Unified assign state
   bool _isAssigning = false;
@@ -77,6 +81,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   bool _closingAssignVisual = false;
   bool _closingAssignCircle = false;
   bool _assignNativeHidden = false;
+  bool _assignOverlayActivating = false;
   Timer? _assignVisualClearTimer;
   final Map<String, Uint8List> _markerBitmapCache = {};
   final Map<String, Size> _markerSizeCache = {};
@@ -217,15 +222,19 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     DebugConsole.log('VECTOR: controller type = ${controller.runtimeType}');
   }
 
-  Future<void> _registerImages(StyleController style) async {
-    if (_imagesRegistered) return;
+  Future<void> _registerImages(StyleController style, String styleUrl) async {
+    if (_imagesRegistered && _registeredStyleUrl == styleUrl) return;
+    final generation = _styleGeneration;
     try {
       final redPin = await _renderIconToPng(Icons.location_on, const Color(0xFFFF0000), 160);
       final greyPin = await _renderIconToPng(Icons.location_on, const Color(0xFF9E9E9E), 160);
+      if (!mounted || generation != _styleGeneration || _activeStyleUrl != styleUrl) return;
       await style.addImage('pin-red', redPin);
       await style.addImage('pin-grey', greyPin);
       await this._initRadiusLayer(style);
+      if (!mounted || generation != _styleGeneration || _activeStyleUrl != styleUrl) return;
       _imagesRegistered = true;
+      _registeredStyleUrl = styleUrl;
       if (mounted) setState(() {});
       DebugConsole.log('VECTOR: images + radius layer registered');
     } catch (e) {
@@ -249,6 +258,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
         (p) => _styleUrls[p.settings.vectorStyleUrl] ?? _styleUrls['liberty']!);
     final alarmProv = context.watch<AlarmProvider>();
 
+    this._prepareVectorStyle(styleUrl);
     this._syncRadiusSource(alarmProv);
 
     return Stack(
@@ -299,7 +309,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             ),
             onMapCreated: _onMapCreated,
             onStyleLoaded: (style) {
-              _registerImages(style);
+              unawaited(_registerImages(style, styleUrl));
               // Style JSON may override initZoom/initCenter with its defaults.
               // Restore MapProvider values after style loads.
               final mp = context.read<MapProvider>();
@@ -508,7 +518,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                   } else {
                     _assignTimeMinutes = (dist * 0.3).clamp(5.0, 120.0).round();
                   }
-                  this._activateAssignOverlay();
+                  unawaited(this._activateAssignOverlay());
                   // Update overlay circle instantly (no widget rebuild)
                   _radiusNotifier.value = this._currentRadiusPx;
                   this._refreshAssignMarker();
@@ -563,22 +573,22 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               radius: _assignRadius,
               onRadiusChanged: (v) {
                 setState(() => _assignRadius = v);
-                this._activateAssignOverlay();
+                unawaited(this._activateAssignOverlay());
                 _radiusNotifier.value = this._currentRadiusPx;
                 this._refreshAssignMarker();
               },
               onZoneTriggerChanged: (v) {
                 setState(() => _assignZoneTrigger = v);
-                this._activateAssignOverlay();
+                unawaited(this._activateAssignOverlay());
               },
               onTriggerTypeChanged: (v) {
                 setState(() => _assignTriggerType = v);
-                this._activateAssignOverlay();
+                unawaited(this._activateAssignOverlay());
                 this._refreshAssignMarker();
               },
               onTimeChanged: (v) {
                 setState(() => _assignTimeMinutes = v);
-                this._activateAssignOverlay();
+                unawaited(this._activateAssignOverlay());
                 _radiusNotifier.value = this._currentRadiusPx;
                 this._refreshAssignMarker();
               },

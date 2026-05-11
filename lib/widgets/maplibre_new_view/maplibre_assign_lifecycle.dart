@@ -116,7 +116,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     final previousSuppress = _suppressRadiusSync;
     _suppressRadiusSync = true;
     _radiusDebounce?.cancel();
-    _controller?.style?.updateGeoJsonSource(id: 'fast-src', data: _emptyGeoJson);
+    try { _controller?.style?.updateGeoJsonSource(id: 'fast-src', data: _emptyGeoJson); } catch (_) {}
     final wasExisting = _assignExisting;
     final nativeWasHidden = _assignNativeHidden;
     final style = _controller?.style;
@@ -193,7 +193,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         this._updateVeil(style, alarmProv, ignoreAssign: true);
       }
       _finishClosingAssignCircle();
-      _controller?.style?.updateGeoJsonSource(id: 'fast-src', data: _emptyGeoJson);
+      try { _controller?.style?.updateGeoJsonSource(id: 'fast-src', data: _emptyGeoJson); } catch (_) {}
       _scheduleAssignVisualClear();
     } finally {
       _suppressRadiusSync = false;

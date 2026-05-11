@@ -14,7 +14,7 @@ extension _MaplibreRadiusSync on _MaplibreNewViewState {
       try {
         style.removeLayer('fast-circle');
       } catch (_) {}
-      style.updateGeoJsonSource(id: 'fast-src', data: _emptyGeoJson);
+      try { style.updateGeoJsonSource(id: 'fast-src', data: _emptyGeoJson); } catch (_) {}
     }
 
     this._updateVeil(style, alarmProv);

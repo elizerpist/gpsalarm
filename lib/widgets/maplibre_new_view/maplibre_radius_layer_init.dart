@@ -23,10 +23,12 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
       await style.removeLayer('fast-circle');
     } catch (_) {}
 
-    style.updateGeoJsonSource(
-      id: 'fast-src',
-      data: _pointGeoJson(_assignLng, _assignLat),
-    );
+    try {
+      style.updateGeoJsonSource(
+        id: 'fast-src',
+        data: _pointGeoJson(_assignLng, _assignLat),
+      );
+    } catch (_) {}
 
     final isTime = _assignTriggerType == TriggerType.time;
     double radius = _assignRadius;

@@ -58,7 +58,9 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     List<_RadiusCircleData> circles,
     int version,
   ) async {
-    DebugConsole.log('REBUILD_LAYERS: START ${circles.length} circles v=$version');
+    if (!_radiusLayerReady) return;
+    final generation = _styleGeneration;
+    DebugConsole.log('REBUILD_LAYERS: START ${circles.length} circles v=$version gen=$generation');
     final markerImageIds = <String, String>{};
     final markerLabels = <String, String>{};
     for (final c in circles) {
@@ -88,7 +90,7 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
       }
     }
 
-    if (version != _radiusLayerVersion) return;
+    if (version != _radiusLayerVersion || generation != _styleGeneration) return;
 
     for (int i = 0; i < 20; i++) {
       final id = 'alarm-$i';
@@ -98,7 +100,7 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
       try {
         await style.removeLayer('radius-circle-$id');
       } catch (_) {}
-      style.updateGeoJsonSource(id: 'radius-pt-$id', data: _emptyGeoJson);
+      try { style.updateGeoJsonSource(id: 'radius-pt-$id', data: _emptyGeoJson); } catch (_) {}
     }
 
     for (final c in circles) {

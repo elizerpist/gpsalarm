@@ -12,7 +12,7 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     final hasFastLeave = !ignoreAssign && _showAssignOverlay && _assignZoneTrigger == ZoneTrigger.onLeave;
 
     if (leaveAlarms.isEmpty && !hasFastLeave) {
-      style.updateGeoJsonSource(id: 'veil-src', data: _emptyGeoJson);
+      try { style.updateGeoJsonSource(id: 'veil-src', data: _emptyGeoJson); } catch (_) {}
       return;
     }
 
@@ -42,18 +42,20 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
       ...holes,
     ];
 
-    style.updateGeoJsonSource(
-      id: 'veil-src',
-      data: jsonEncode({
-        'type': 'FeatureCollection',
-        'features': [
-          {
-            'type': 'Feature',
-            'geometry': {'type': 'Polygon', 'coordinates': coords},
-            'properties': {},
-          },
-        ],
-      }),
-    );
+    try {
+      style.updateGeoJsonSource(
+        id: 'veil-src',
+        data: jsonEncode({
+          'type': 'FeatureCollection',
+          'features': [
+            {
+              'type': 'Feature',
+              'geometry': {'type': 'Polygon', 'coordinates': coords},
+              'properties': {},
+            },
+          ],
+        }),
+      );
+    } catch (_) {}
   }
 }
