@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:uuid/uuid.dart';
 import 'package:vibration/vibration.dart';
+import 'package:flutter_compass/flutter_compass.dart';
 import '../models/alarm_point.dart';
 import '../models/app_settings.dart';
 import '../providers/alarm_provider.dart';
@@ -56,10 +57,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   String? _registeredStyleUrl;
   int _styleGeneration = 0;
   final LocationService _locationService = LocationService();
-  // 3D view + GPS follow
+  // 3D view + GPS follow + compass
   bool _is3D = false;
   bool _gpsFollow = false;
   double _lastBearing = 0;
+  StreamSubscription<CompassEvent>? _compassSub;
   // Unified assign state
   bool _isAssigning = false;
   AlarmPoint? _assignExisting;
@@ -160,18 +162,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
         }
         _checkAlarms(position.latitude, position.longitude);
         // GPS follow: auto-center + bearing in 3D mode
-        if (_gpsFollow && _is3D && position.heading >= 0) {
-          _lastBearing = position.heading;
+        // GPS follow: auto-center (bearing handled by compass stream, not GPS heading)
+        if (_gpsFollow) {
           _controller?.animateCamera(
             center: newPos,
-            bearing: position.heading,
-            pitch: 45,
             nativeDuration: const Duration(milliseconds: 1500),
-          );
-        } else if (_gpsFollow) {
-          _controller?.animateCamera(
-            center: newPos,
-            nativeDuration: const Duration(milliseconds: 1000),
           );
         }
         // Feed speed interpolation
@@ -226,6 +221,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
 
   @override
   void dispose() {
+    _compassSub?.cancel();
     _radiusDebounce?.cancel();
     _fastCircleDebounce?.cancel();
     _assignVisualClearTimer?.cancel();
@@ -489,8 +485,17 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                     if (_is3D) {
                       _gpsFollow = true;
                       _controller?.moveCamera(pitch: 45, bearing: _lastBearing);
+                      // Start compass stream for live device heading
+                      _compassSub?.cancel();
+                      _compassSub = FlutterCompass.events?.listen((event) {
+                        if (!_is3D || !_gpsFollow || event.heading == null) return;
+                        _lastBearing = event.heading!;
+                        _controller?.moveCamera(bearing: event.heading!);
+                      });
                     } else {
                       _gpsFollow = false;
+                      _compassSub?.cancel();
+                      _compassSub = null;
                       _controller?.moveCamera(pitch: 0, bearing: 0);
                     }
                   });
@@ -531,6 +536,13 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                 if (pos != null) {
                   if (_is3D) {
                     setState(() => _gpsFollow = true);
+                    // Re-start compass if it was stopped
+                    _compassSub?.cancel();
+                    _compassSub = FlutterCompass.events?.listen((event) {
+                      if (!_is3D || !_gpsFollow || event.heading == null) return;
+                      _lastBearing = event.heading!;
+                      _controller?.moveCamera(bearing: event.heading!);
+                    });
                     _controller?.moveCamera(
                       center: Position(pos.longitude, pos.latitude),
                       zoom: 15, pitch: 45, bearing: _lastBearing);
