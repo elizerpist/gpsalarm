@@ -1,6 +1,31 @@
 part of '../maplibre_new_view.dart';
 
 extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
+  bool _alarmVisualChanged(AlarmPoint? previous, AlarmPoint next) {
+    if (previous == null) return true;
+    return previous.latitude != next.latitude ||
+        previous.longitude != next.longitude ||
+        previous.radiusMeters != next.radiusMeters ||
+        previous.triggerType != next.triggerType ||
+        previous.zoneTrigger != next.zoneTrigger ||
+        previous.isActive != next.isActive ||
+        previous.timeTrigger != next.timeTrigger;
+  }
+
+  void _activateAssignOverlay() {
+    if (!_isAssigning || _assignNativeHidden) return;
+    _assignNativeHidden = true;
+    this._refreshAssignMarker();
+    _radiusNotifier.value = this._currentRadiusPx;
+    final existing = _assignExisting;
+    if (existing != null) {
+      unawaited(this._hideExistingNativeAlarm(existing));
+    }
+    final style = _controller?.style;
+    if (style != null) this._updateVeil(style, context.read<AlarmProvider>());
+    setState(() {});
+  }
+
   Future<void> _hideExistingNativeAlarm(AlarmPoint existing) async {
     _radiusDebounce?.cancel();
     final alarmProv = context.read<AlarmProvider>();
@@ -32,6 +57,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       _closingAssignVisual = true;
       _closingAssignCircle = keepCircle;
       _assignExisting = null;
+      _assignNativeHidden = false;
       _isDraggingRadius = false;
       _dragPointerId = null;
     });
@@ -44,7 +70,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
 
   void _scheduleAssignVisualClear() {
     _assignVisualClearTimer?.cancel();
-    _assignVisualClearTimer = Timer(const Duration(milliseconds: 1200), () {
+    _assignVisualClearTimer = Timer(const Duration(milliseconds: 80), () {
       if (!mounted) return;
       setState(() {
         _closingAssignVisual = false;
@@ -52,6 +78,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         _assignScreenCenter = null;
         _assignMarkerPng = null;
         _assignMarkerKey = null;
+        _assignNativeHidden = false;
         _assignTriggerType = TriggerType.distance;
         _assignZoneTrigger = ZoneTrigger.onEntry;
         _assignTimeMinutes = 10;
@@ -74,18 +101,17 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignTimeMinutes = existing?.timeTrigger?.inMinutes ?? 10;
     _assignMarkerPng = null;
     _assignMarkerKey = null;
-    if (existing != null) {
-      await this._hideExistingNativeAlarm(existing);
-      if (!mounted) return;
-    }
+    _assignNativeHidden = existing == null;
     _isAssigning = true;
     _radiusNotifier.value = this._currentRadiusPx;
     this._refreshAssignMarker();
     DebugConsole.log('ASSIGN_START: lat=$lat lng=$lng existing=${existing?.id} screenCenter=$_assignScreenCenter radiusPx=${this._currentRadiusPx.toStringAsFixed(1)} radiusM=$_assignRadius');
     final style = _controller?.style;
-    if (style != null) {
+    if (style != null && _showAssignOverlay) {
       DebugConsole.log('ASSIGN_START: updating veil immediately');
       this._updateVeil(style, context.read<AlarmProvider>());
+    } else if (existing != null) {
+      DebugConsole.log('ASSIGN_START: keeping native alarm visual during edit');
     }
     setState(() {});
   }
@@ -97,9 +123,10 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _radiusDebounce?.cancel();
     _controller?.style?.updateGeoJsonSource(id: 'fast-src', data: _emptyGeoJson);
     final wasExisting = _assignExisting;
+    final nativeWasHidden = _assignNativeHidden;
     final style = _controller?.style;
     final alarmProv = context.read<AlarmProvider>();
-    final shouldRebuildNative = !nativeAlreadySynced && wasExisting != null && style != null && _radiusLayerReady;
+    final shouldRebuildNative = !nativeAlreadySynced && nativeWasHidden && wasExisting != null && style != null && _radiusLayerReady;
     _beginClosingAssignVisual(keepCircle: shouldRebuildNative);
 
     if (shouldRebuildNative) {
@@ -108,7 +135,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       await this._rebuildRadiusLayers(style, circles, _radiusLayerVersion);
       _lastRadiusDataHash = this._radiusHash(circles);
     }
-    if (style != null) this._updateVeil(style, alarmProv, ignoreAssign: true);
+    if (style != null && nativeWasHidden) this._updateVeil(style, alarmProv, ignoreAssign: true);
     _finishClosingAssignCircle();
 
     _scheduleAssignVisualClear();
@@ -121,16 +148,19 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     final alarmProv = context.read<AlarmProvider>();
     try {
       final wasExisting = _assignExisting != null;
+      final nativeWasHidden = _assignNativeHidden;
+      final visualChanged = _alarmVisualChanged(_assignExisting, alarm);
       if (wasExisting) {
         alarmProv.updateAlarmPoint(alarm);
       } else if (alarmProv.canAddAlarm) {
         alarmProv.addAlarmPoint(alarm);
       }
       _radiusDebounce?.cancel();
-      _lastRadiusDataHash = '';
       final style = _controller?.style;
-      _beginClosingAssignVisual(keepCircle: style != null && _radiusLayerReady);
-      if (style != null && _radiusLayerReady) {
+      final shouldRebuildNative = style != null && _radiusLayerReady && (!wasExisting || nativeWasHidden || visualChanged);
+      if (shouldRebuildNative) _lastRadiusDataHash = '';
+      _beginClosingAssignVisual(keepCircle: shouldRebuildNative && (!wasExisting || nativeWasHidden));
+      if (shouldRebuildNative) {
         final circles = this._buildRadiusCircles(alarmProv, excludeEditing: false);
         _radiusLayerVersion++;
         await this._rebuildRadiusLayers(style, circles, _radiusLayerVersion);

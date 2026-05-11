@@ -76,6 +76,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   int _assignMarkerVersion = 0;
   bool _closingAssignVisual = false;
   bool _closingAssignCircle = false;
+  bool _assignNativeHidden = false;
   Timer? _assignVisualClearTimer;
   final Map<String, Uint8List> _markerBitmapCache = {};
   final Map<String, Size> _markerSizeCache = {};
@@ -501,6 +502,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                   if (!_isAssigning) return;
                   if (!_isDraggingRadius || _assignScreenCenter == null) return;
                   if (e.pointer != _dragPointerId) return;
+                  this._activateAssignOverlay();
                   final dist = (e.localPosition - _assignScreenCenter!).distance;
                   if (_assignTriggerType == TriggerType.distance) {
                     _assignRadius = (dist * _vectorMetersPerPx(_assignLat, _currentZoom)).clamp(100.0, 5000.0);
@@ -521,7 +523,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                   _dragPointerId = null;
                 },
                 child: CustomPaint(
-                  painter: _assignScreenCenter != null
+                  painter: _assignScreenCenter != null && (this._showAssignOverlay || _closingAssignCircle)
                       ? _RadiusOverlayPainter(
                           center: _assignScreenCenter!,
                           radiusNotifier: _radiusNotifier,
@@ -534,7 +536,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               ),
             ),
           ),
-        if ((_isAssigning || _closingAssignVisual) && _assignScreenCenter != null && _assignMarkerPng != null)
+        if ((_isAssigning || _closingAssignVisual) &&
+            (this._showAssignOverlay || _closingAssignVisual) &&
+            _assignScreenCenter != null &&
+            _assignMarkerPng != null)
           Positioned(
             left: _assignScreenCenter!.dx - _assignMarkerSize.width / 2,
             top: _assignScreenCenter!.dy - AlarmMarkerSpec.pinSize,
@@ -557,16 +562,22 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               existingPoint: _assignExisting,
               radius: _assignRadius,
               onRadiusChanged: (v) {
+                this._activateAssignOverlay();
                 setState(() => _assignRadius = v);
                 _radiusNotifier.value = this._currentRadiusPx;
                 this._refreshAssignMarker();
               },
-              onZoneTriggerChanged: (v) => setState(() => _assignZoneTrigger = v),
+              onZoneTriggerChanged: (v) {
+                this._activateAssignOverlay();
+                setState(() => _assignZoneTrigger = v);
+              },
               onTriggerTypeChanged: (v) {
+                this._activateAssignOverlay();
                 setState(() => _assignTriggerType = v);
                 this._refreshAssignMarker();
               },
               onTimeChanged: (v) {
+                this._activateAssignOverlay();
                 setState(() => _assignTimeMinutes = v);
                 _radiusNotifier.value = this._currentRadiusPx;
                 this._refreshAssignMarker();

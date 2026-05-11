@@ -20,7 +20,13 @@ extension _MaplibreRadiusData on _MaplibreNewViewState {
     for (int i = 0; i < alarmProv.alarmPoints.length; i++) {
       final p = alarmProv.alarmPoints[i];
       if (excludeAlarmId != null && p.id == excludeAlarmId) continue;
-      if (excludeEditing && _isAssigning && _assignExisting != null && _assignExisting!.id == p.id) continue;
+      if (excludeEditing &&
+          _isAssigning &&
+          _assignNativeHidden &&
+          _assignExisting != null &&
+          _assignExisting!.id == p.id) {
+        continue;
+      }
       double radius = p.radiusMeters;
       final isTime = p.triggerType == TriggerType.time;
       if (isTime && p.timeTrigger != null) {

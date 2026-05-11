@@ -1,6 +1,8 @@
 part of '../maplibre_new_view.dart';
 
 extension _MaplibreAssignMarker on _MaplibreNewViewState {
+  bool get _showAssignOverlay => _isAssigning && (_assignExisting == null || _assignNativeHidden);
+
   String _assignMarkerLabel() {
     if (_assignTriggerType == TriggerType.time) return '${_assignTimeMinutes}min';
     return AlarmMarkerRenderer.formatDistance(_assignRadius);
@@ -12,7 +14,7 @@ extension _MaplibreAssignMarker on _MaplibreNewViewState {
   }
 
   void _refreshAssignMarker() {
-    if (!_isAssigning) return;
+    if (!_showAssignOverlay) return;
     final label = _assignMarkerLabel();
     final color = _assignMarkerColor();
     final key = '$label-${color.value}-$_deviceDpr';

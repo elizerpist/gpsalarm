@@ -24,7 +24,7 @@ extension _MaplibreRadiusSync on _MaplibreNewViewState {
     final alarmCircles = this._buildRadiusCircles(alarmProv, excludeEditing: true);
     final fullHash = this._radiusHash(
       alarmCircles,
-      editingId: _isAssigning && _assignExisting != null ? _assignExisting!.id : null,
+      editingId: _isAssigning && _assignNativeHidden && _assignExisting != null ? _assignExisting!.id : null,
     );
     if (fullHash == _lastRadiusDataHash) return;
     _lastRadiusDataHash = fullHash;

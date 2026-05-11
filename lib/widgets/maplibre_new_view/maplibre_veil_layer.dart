@@ -6,10 +6,10 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
         .where(
           (p) =>
               p.zoneTrigger == ZoneTrigger.onLeave &&
-              !(ignoreAssign == false && _isAssigning && _assignExisting?.id == p.id),
+              !(!ignoreAssign && _isAssigning && _assignNativeHidden && _assignExisting?.id == p.id),
         )
         .toList();
-    final hasFastLeave = ignoreAssign == false && _isAssigning && _assignZoneTrigger == ZoneTrigger.onLeave;
+    final hasFastLeave = !ignoreAssign && _showAssignOverlay && _assignZoneTrigger == ZoneTrigger.onLeave;
 
     if (leaveAlarms.isEmpty && !hasFastLeave) {
       style.updateGeoJsonSource(id: 'veil-src', data: _emptyGeoJson);
