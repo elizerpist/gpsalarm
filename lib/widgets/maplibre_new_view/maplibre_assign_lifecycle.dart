@@ -12,7 +12,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         previous.timeTrigger != next.timeTrigger;
   }
 
-  void _activateAssignOverlay() {
+  Future<void> _activateAssignOverlay() async {
     if (!_isAssigning || _assignNativeHidden) return;
     _assignNativeHidden = true;
     _radiusNotifier.value = this._currentRadiusPx;
