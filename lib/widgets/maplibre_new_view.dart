@@ -132,6 +132,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     final alarmProv = context.read<AlarmProvider>();
     for (final point in alarmProv.alarmPoints.where((p) => p.isActive)) {
       bool shouldTrigger = false;
+
       if (point.triggerType == TriggerType.distance) {
         final isInside = AlarmService.isWithinRadius(
           userLat: userLat, userLng: userLng,
@@ -139,7 +140,14 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
           radiusMeters: point.radiusMeters,
         );
         shouldTrigger = point.zoneTrigger == ZoneTrigger.onEntry ? isInside : !isInside;
+      } else if (point.triggerType == TriggerType.time && point.timeTrigger != null) {
+        final speedMs = _speedKmh / 3.6;
+        final timeRadius = math.max(200.0, speedMs * point.timeTrigger!.inSeconds.toDouble());
+        final dist = AlarmService.distanceMeters(userLat, userLng, point.latitude, point.longitude);
+        final insideTimeCircle = dist <= timeRadius;
+        shouldTrigger = point.zoneTrigger == ZoneTrigger.onEntry ? insideTimeCircle : !insideTimeCircle;
       }
+
       if (shouldTrigger) {
         alarmProv.toggleActive(point.id);
         final title = point.name ?? tr('no_name');
@@ -333,7 +341,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
 
   void _updateVeil(StyleController style, AlarmProvider alarmProv) {
     final leaveAlarms = alarmProv.alarmPoints
-        .where((p) => p.zoneTrigger == ZoneTrigger.onLeave)
+        .where((p) => p.zoneTrigger == ZoneTrigger.onLeave
+            && !(_isAssigning && _assignExisting?.id == p.id))
         .toList();
     final hasFastLeave = _isAssigning && _assignZoneTrigger == ZoneTrigger.onLeave;
 
@@ -376,10 +385,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     );
   }
 
-  /// Rebuild ONLY alarm circle layers using per-alarm CircleStyleLayer with
-  /// literal interpolate expression (the ONLY approach that produces perfect
-  /// geometric circles — see docs/vector-map-radius-circles.md).
-  /// onLeave alarms are SKIPPED — the veil hole provides their visual boundary.
+  /// Rebuild alarm circle + label layers using per-alarm CircleStyleLayer with
+  /// literal interpolate expression (see docs/vector-map-radius-circles.md).
+  /// onLeave alarms get stroke-only circle (transparent fill); the veil provides the fill.
   Future<void> _rebuildRadiusLayers(StyleController style, List<({String id, double lng, double lat, double radiusMeters, bool active, bool isTime, bool isLeave})> circles, int version) async {
     // Remove old alarm layers only (sources are pre-created at init)
     for (int i = 0; i < 20; i++) {
@@ -537,7 +545,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     });
   }
 
-  void _saveAssign(AlarmPoint alarm) {
+  Future<void> _saveAssign(AlarmPoint alarm) async {
     final alarmProv = context.read<AlarmProvider>();
     if (_assignExisting != null) {
       alarmProv.updateAlarmPoint(alarm);
@@ -558,7 +566,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
         circles.add((id: 'alarm-$i', lng: p.longitude, lat: p.latitude, radiusMeters: r, active: p.isActive, isTime: p.triggerType == TriggerType.time, isLeave: p.zoneTrigger == ZoneTrigger.onLeave));
       }
       _radiusLayerVersion++;
-      _rebuildRadiusLayers(style, circles, _radiusLayerVersion);
+      await _rebuildRadiusLayers(style, circles, _radiusLayerVersion);
       _lastRadiusDataHash = circles.map((c) => '${c.lng},${c.lat},${c.radiusMeters.toStringAsFixed(1)},${c.active},${c.isTime},${c.isLeave}').join('|');
     }
     _cancelAssign();
