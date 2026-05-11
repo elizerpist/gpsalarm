@@ -249,7 +249,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     if (isTime) {
       radius = math.max(200.0, (_speedKmh / 3.6) * _assignTimeMinutes * 60);
     }
-    final basePx = radius / (156543.03392 * math.cos(_assignLat * math.pi / 180));
+    // 512px vector tile scale: basePx needs 2× vs 256px slippy-map formula
+    final basePx = 2 * radius / (156543.03392 * math.cos(_assignLat * math.pi / 180));
     final fillColor = isTime ? 'rgba(255,152,0,0.10)' : 'rgba(255,0,0,0.12)';
     final strokeColor = isTime ? 'rgba(255,152,0,0.7)' : 'rgba(255,0,0,0.6)';
 
@@ -400,7 +401,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     if (version != _radiusLayerVersion) return;
 
     for (final c in circles) {
-      final basePx = c.radiusMeters / (156543.03392 * math.cos(c.lat * math.pi / 180));
+      // 512px vector tile scale: basePx needs 2× vs 256px slippy-map formula
+      final basePx = 2 * c.radiusMeters / (156543.03392 * math.cos(c.lat * math.pi / 180));
       // onLeave: veil provides fill, but we still add stroke-only circle for border
       final String fillColor = c.isLeave
           ? 'rgba(0,0,0,0)'
@@ -489,7 +491,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   AlarmPoint? _findTappedAlarm(double tapLat, double tapLng, AlarmProvider alarmProv) {
     // Pin is ~64px tall (160 icon * 0.4 scale), anchor at bottom.
     // Allow tapping within 40px of the anchor point.
-    final metersPerPx = 156543.03392 * math.cos(tapLat * math.pi / 180) / math.pow(2, _currentZoom);
+    final metersPerPx = _vectorMetersPerPx(tapLat, _currentZoom);
     final thresholdMeters = math.max(50.0, 40 * metersPerPx);
     AlarmPoint? closest;
     double closestDist = double.infinity;
@@ -573,6 +575,13 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   }
 
 
+  /// Meters per pixel for MapLibre vector tiles (512px effective tile size).
+  /// Standard slippy-map formula uses 256px; MapLibre vector renders at 512px scale,
+  /// so we use zoom+1 to get the correct conversion.
+  double _vectorMetersPerPx(double lat, double zoom) {
+    return 156543.03392 * math.cos(lat * math.pi / 180) / math.pow(2, zoom + 1);
+  }
+
   /// Current fast assign radius in screen pixels (for overlay painter).
   double get _currentRadiusPx {
     final isTime = _assignTriggerType == TriggerType.time;
@@ -581,8 +590,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       radius = math.max(200.0, (_speedKmh / 3.6) * _assignTimeMinutes * 60);
     }
     final actualZoom = _controller?.camera?.zoom ?? _currentZoom;
-    final metersPerPx = 156543.03392 * math.cos(_assignLat * math.pi / 180) / math.pow(2, actualZoom);
-    return radius / metersPerPx;
+    return radius / _vectorMetersPerPx(_assignLat, actualZoom);
   }
 
   // Build separate marker point lists for active (red) and inactive (grey) pins
@@ -643,8 +651,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             if (!_isDraggingRadius || _assignScreenCenter == null) return;
             final dist = (details.localPosition - _assignScreenCenter!).distance;
             if (_assignTriggerType == TriggerType.distance) {
-              final metersPerPx = 156543.03392 * math.cos(_assignLat * math.pi / 180) / math.pow(2, _currentZoom);
-              _assignRadius = (dist * metersPerPx).clamp(100.0, 5000.0);
+              _assignRadius = (dist * _vectorMetersPerPx(_assignLat, _currentZoom)).clamp(100.0, 5000.0);
             } else {
               _assignTimeMinutes = (dist * 0.3).clamp(5.0, 120.0).round();
             }
@@ -729,7 +736,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
           bottom: 24,
           left: 12,
           child: ScaleBar(
-            zoom: _currentZoom,
+            zoom: _currentZoom + 1, // MapLibre vector: 512px tile scale
             latitude: _userPos?.lat.toDouble() ?? 47.5,
             speedKmh: _speedKmh,
           ),
@@ -833,8 +840,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                   if (e.pointer != _dragPointerId) return;
                   final dist = (e.localPosition - _assignScreenCenter!).distance;
                   if (_assignTriggerType == TriggerType.distance) {
-                    final metersPerPx = 156543.03392 * math.cos(_assignLat * math.pi / 180) / math.pow(2, _currentZoom);
-                    _assignRadius = (dist * metersPerPx).clamp(100.0, 5000.0);
+                    _assignRadius = (dist * _vectorMetersPerPx(_assignLat, _currentZoom)).clamp(100.0, 5000.0);
                   } else {
                     _assignTimeMinutes = (dist * 0.3).clamp(5.0, 120.0).round();
                   }
