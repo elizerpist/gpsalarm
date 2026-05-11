@@ -162,13 +162,17 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
         // GPS follow: auto-center + bearing in 3D mode
         if (_gpsFollow && _is3D && position.heading >= 0) {
           _lastBearing = position.heading;
-          _controller?.moveCamera(
+          _controller?.animateCamera(
             center: newPos,
             bearing: position.heading,
             pitch: 45,
+            nativeDuration: const Duration(milliseconds: 1500),
           );
         } else if (_gpsFollow) {
-          _controller?.moveCamera(center: newPos);
+          _controller?.animateCamera(
+            center: newPos,
+            nativeDuration: const Duration(milliseconds: 1000),
+          );
         }
         // Feed speed interpolation
         final newSpeed = _locationService.averageSpeedKmh;
@@ -472,7 +476,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 2))],
                   ),
-                  child: Icon(Icons.map, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.grey[800], size: 22),
+                  child: Icon(Icons.layers, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.grey[800], size: 22),
                 ),
               ),
               const SizedBox(height: 8),
