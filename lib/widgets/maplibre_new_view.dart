@@ -955,20 +955,21 @@ class _RadiusOverlayPainter extends CustomPainter {
         ? const Color(0xB3FF9800)
         : const Color(0x99FF0000);
 
-    // Circle fill + stroke — skip for onLeave (veil hole provides the visual)
+    // Circle fill — skip for onLeave (veil provides the red fill outside)
     if (!isLeave) {
       canvas.drawCircle(center, radiusPx, Paint()..color = fillColor);
-      final strokePaint = Paint()
-        ..color = strokeColor
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.0;
-      if (isTime) {
-        final path = Path()..addOval(Rect.fromCircle(center: center, radius: radiusPx));
-        final dashed = dashPath(path, dashArray: CircularIntervalList<double>([8.0, 4.0]));
-        canvas.drawPath(dashed, strokePaint);
-      } else {
-        canvas.drawCircle(center, radiusPx, strokePaint);
-      }
+    }
+    // Circle stroke/border — always drawn (onLeave needs it as veil boundary)
+    final strokePaint = Paint()
+      ..color = strokeColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+    if (isTime) {
+      final path = Path()..addOval(Rect.fromCircle(center: center, radius: radiusPx));
+      final dashed = dashPath(path, dashArray: CircularIntervalList<double>([8.0, 4.0]));
+      canvas.drawPath(dashed, strokePaint);
+    } else {
+      canvas.drawCircle(center, radiusPx, strokePaint);
     }
 
     // Pin marker at circle center — same Material icon as saved pins
