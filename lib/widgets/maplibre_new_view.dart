@@ -85,6 +85,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     if (!_zoomInitialized) {
       _zoomInitialized = true;
       _currentZoom = context.read<MapProvider>().zoom;
+      DebugConsole.log('VECTOR_INIT: zoom from MapProvider=${_currentZoom.toStringAsFixed(2)} center=${context.read<MapProvider>().center}');
     }
   }
 
@@ -403,6 +404,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   /// literal interpolate expression (see docs/vector-map-radius-circles.md).
   /// onLeave alarms get stroke-only circle (transparent fill); the veil provides the fill.
   Future<void> _rebuildRadiusLayers(StyleController style, List<({String id, double lng, double lat, double radiusMeters, bool active, bool isTime, bool isLeave})> circles, int version) async {
+    DebugConsole.log('REBUILD_LAYERS: START ${circles.length} circles v=$version');
     // Pre-render all marker bitmaps BEFORE removing old layers (minimize flash gap)
     final markerImages = <String, Uint8List>{};
     for (final c in circles) {
@@ -563,9 +565,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       _assignTimeMinutes = existing?.timeTrigger?.inMinutes ?? 10;
     });
     _radiusNotifier.value = _currentRadiusPx;
+    DebugConsole.log('ASSIGN_START: lat=$lat lng=$lng existing=${existing?.id} screenCenter=$_assignScreenCenter radiusPx=${_currentRadiusPx.toStringAsFixed(1)} radiusM=$_assignRadius');
     // Immediately update veil+layers for edit (hide edited alarm's native layers, show edit veil)
     final style = _controller?.style;
     if (style != null) {
+      DebugConsole.log('ASSIGN_START: updating veil immediately');
       _updateVeil(style, context.read<AlarmProvider>());
     }
     // Force hash invalidation so native layers update for the edit state
@@ -574,7 +578,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
 
 
   void _cancelAssign() {
+    DebugConsole.log('CANCEL_ASSIGN: isAssigning=$_isAssigning existing=${_assignExisting?.id}');
     _controller?.style?.updateGeoJsonSource(id: 'fast-src', data: _emptyGeoJson);
+    final wasExisting = _assignExisting;
     setState(() {
       _isAssigning = false;
       _assignExisting = null;
@@ -588,11 +594,17 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     // Immediately update veil to target state (don't wait for next build)
     final style = _controller?.style;
     if (style != null) {
+      DebugConsole.log('CANCEL_ASSIGN: updating veil immediately');
       _updateVeil(style, context.read<AlarmProvider>());
+    }
+    // Force rebuild of native layers (edited alarm was excluded, needs to come back)
+    if (wasExisting != null) {
+      _lastRadiusDataHash = '';
     }
   }
 
   Future<void> _saveAssign(AlarmPoint alarm) async {
+    DebugConsole.log('SAVE_ASSIGN: existing=${_assignExisting?.id} lat=${alarm.latitude} lng=${alarm.longitude} r=${alarm.radiusMeters.round()}m');
     final alarmProv = context.read<AlarmProvider>();
     if (_assignExisting != null) {
       alarmProv.updateAlarmPoint(alarm);

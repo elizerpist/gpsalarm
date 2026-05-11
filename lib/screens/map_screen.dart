@@ -133,7 +133,13 @@ class _MapScreenState extends State<MapScreen> {
       final pos = await _locationService.getCurrentPosition();
       if (pos != null && mounted) {
         _userPosition.value = LatLng(pos.latitude, pos.longitude);
-        _mapController.move(_userPosition.value!, _mapController.camera.zoom);
+        // Update MapProvider center for cross-map sync
+        context.read<MapProvider>().updateCenterSilent(_userPosition.value!);
+        // Only move raster map controller if raster is active
+        final isRaster = context.read<SettingsProvider>().settings.mapProvider != MapTileProvider.vector;
+        if (isRaster) {
+          try { _mapController.move(_userPosition.value!, _mapController.camera.zoom); } catch (_) {}
+        }
       }
       final settings = context.read<SettingsProvider>().settings;
       final isContinuous = settings.gpsPollingMode == GpsPollingMode.continuous;
@@ -275,6 +281,8 @@ class _MapScreenState extends State<MapScreen> {
 
     // Sync rasterZoom from MapProvider on every build (covers vector→raster switch)
     final mpZoom = context.read<MapProvider>().zoom;
+    final mpCenter = context.read<MapProvider>().center;
+    DebugConsole.log('MAP_BUILD: provider=${mapProvider.name} mpZoom=${mpZoom.toStringAsFixed(2)} mpCenter=${mpCenter.latitude.toStringAsFixed(4)},${mpCenter.longitude.toStringAsFixed(4)} rasterZoom=${_rasterZoom.toStringAsFixed(2)}');
     if ((_rasterZoom - mpZoom).abs() > 0.1) _rasterZoom = mpZoom;
 
     // Vector (maplibre) — native only
