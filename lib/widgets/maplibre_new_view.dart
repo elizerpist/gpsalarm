@@ -56,6 +56,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   String? _registeredStyleUrl;
   int _styleGeneration = 0;
   final LocationService _locationService = LocationService();
+  // 3D view + GPS follow
+  bool _is3D = false;
+  bool _gpsFollow = false;
+  double _lastBearing = 0;
   // Unified assign state
   bool _isAssigning = false;
   AlarmPoint? _assignExisting;
@@ -155,6 +159,17 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
           setState(() => _userPos = newPos);
         }
         _checkAlarms(position.latitude, position.longitude);
+        // GPS follow: auto-center + bearing in 3D mode
+        if (_gpsFollow && _is3D && position.heading >= 0) {
+          _lastBearing = position.heading;
+          _controller?.moveCamera(
+            center: newPos,
+            bearing: position.heading,
+            pitch: 45,
+          );
+        } else if (_gpsFollow) {
+          _controller?.moveCamera(center: newPos);
+        }
         // Feed speed interpolation
         final newSpeed = _locationService.averageSpeedKmh;
         _prevGpsSpeed = _currentGpsSpeed;
@@ -460,6 +475,38 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                   child: Icon(Icons.map, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.grey[800], size: 22),
                 ),
               ),
+              const SizedBox(height: 8),
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _is3D = !_is3D;
+                    if (_is3D) {
+                      _gpsFollow = true;
+                      _controller?.moveCamera(pitch: 45, bearing: _lastBearing);
+                    } else {
+                      _gpsFollow = false;
+                      _controller?.moveCamera(pitch: 0, bearing: 0);
+                    }
+                  });
+                },
+                child: Container(
+                  width: 44, height: 44,
+                  decoration: BoxDecoration(
+                    color: _is3D
+                        ? Theme.of(context).colorScheme.primary
+                        : (Theme.of(context).brightness == Brightness.dark
+                            ? Colors.grey[900]!.withOpacity(0.92)
+                            : Colors.white.withOpacity(0.92)),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 2))],
+                  ),
+                  child: Icon(
+                    _is3D ? Icons.view_in_ar : Icons.threed_rotation,
+                    color: _is3D ? Colors.white : (Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.grey[800]),
+                    size: 22,
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -476,8 +523,15 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               onMyLocation: () async {
                 final pos = await _locationService.getCurrentPosition();
                 if (pos != null) {
-                  _controller?.moveCamera(
-                    center: Position(pos.longitude, pos.latitude), zoom: 15);
+                  if (_is3D) {
+                    setState(() => _gpsFollow = true);
+                    _controller?.moveCamera(
+                      center: Position(pos.longitude, pos.latitude),
+                      zoom: 15, pitch: 45, bearing: _lastBearing);
+                  } else {
+                    _controller?.moveCamera(
+                      center: Position(pos.longitude, pos.latitude), zoom: 15);
+                  }
                 }
               },
             ),
