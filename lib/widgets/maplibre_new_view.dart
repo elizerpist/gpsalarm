@@ -12,6 +12,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:uuid/uuid.dart';
 import 'package:vibration/vibration.dart';
 import '../models/alarm_point.dart';
+import '../models/app_settings.dart';
 import '../providers/alarm_provider.dart';
 import '../providers/map_provider.dart';
 import '../providers/settings_provider.dart';
