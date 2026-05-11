@@ -330,8 +330,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     }
     // Skip rebuild if alarm data unchanged (prevents circle flash on map pan/zoom)
     final dataHash = alarmCircles.map((c) => '${c.lng},${c.lat},${c.radiusMeters.toStringAsFixed(1)},${c.active},${c.isTime},${c.isLeave}').join('|');
-    final editHash = _isAssigning ? 'e${_assignExisting?.id}' : '';
-    final fullHash = '$dataHash|$editHash';
+    final editSuffix = _isAssigning && _assignExisting != null ? '|e${_assignExisting!.id}' : '';
+    final fullHash = '$dataHash$editSuffix';
     if (fullHash == _lastRadiusDataHash) return;
     _lastRadiusDataHash = fullHash;
 
@@ -471,6 +471,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
           try { await style.removeImage(imageId); } catch (_) {}
           await style.addImage(imageId, markerPng);
         }
+        // Offset: pin tip should be at geo point, but image has chip below pin.
+        // icon-anchor 'bottom' anchors chip bottom at geo → need to shift up by chip height.
+        const chipLogicalH = AlarmMarkerSpec.chipFontSize + AlarmMarkerSpec.chipPaddingY * 2 + AlarmMarkerSpec.chipGap;
         await style.addLayer(SymbolStyleLayer(
           id: 'radius-label-${c.id}',
           sourceId: 'radius-pt-${c.id}',
@@ -478,6 +481,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             'icon-image': imageId,
             'icon-size': 1.0,
             'icon-anchor': 'bottom',
+            'icon-offset': [0.0, -chipLogicalH * _deviceDpr],
             'icon-allow-overlap': true,
           },
         ));
