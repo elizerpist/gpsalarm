@@ -561,7 +561,9 @@ class _MapScreenState extends State<MapScreen> {
                     settings.updateSettings(settings.settings.copyWith(mapTileStyle: next));
                   },
                   onLongPress: () {
-                    // Long tap: switch to vector (MapLibre)
+                    // Long tap: switch to vector (MapLibre) with haptic
+                    final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
+                    if (haptic) Vibration.vibrate(duration: 30);
                     if (_isAssigning) _cancelAssign();
                     final settings = context.read<SettingsProvider>();
                     settings.updateSettings(settings.settings.copyWith(mapProvider: MapTileProvider.vector));

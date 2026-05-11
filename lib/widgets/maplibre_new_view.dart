@@ -462,7 +462,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                   settings.updateSettings(settings.settings.copyWith(vectorStyleUrl: nextKey));
                 },
                 onLongPress: () {
-                  // Long tap: toggle raster/vector
+                  // Long tap: toggle raster/vector (with haptic)
+                  final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
+                  if (haptic) Vibration.vibrate(duration: 30);
                   if (_isAssigning) this._cancelAssign();
                   final settings = context.read<SettingsProvider>();
                   settings.updateSettings(settings.settings.copyWith(mapProvider: MapTileProvider.free));
