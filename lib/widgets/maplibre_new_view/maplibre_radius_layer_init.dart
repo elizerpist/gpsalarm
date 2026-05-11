@@ -55,6 +55,8 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
         'circle-color': fillColor,
         'circle-stroke-color': strokeColor,
         'circle-stroke-width': 2.0,
+        'circle-pitch-alignment': 'map',
+        'circle-pitch-scale': 'map',
       },
     ));
     _fastCircleUpdating = false;

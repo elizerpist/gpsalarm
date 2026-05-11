@@ -44,6 +44,8 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
         'circle-color': fillColor,
         'circle-stroke-color': strokeColor,
         'circle-stroke-width': strokeWidth,
+        'circle-pitch-alignment': 'map',
+        'circle-pitch-scale': 'map',
       },
     );
     try {
