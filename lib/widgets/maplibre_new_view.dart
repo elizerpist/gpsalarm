@@ -433,11 +433,20 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               const SizedBox(height: 8),
               GestureDetector(
                 onTap: () {
+                  // Single tap: cycle vector skin
                   if (_isAssigning) this._cancelAssign();
                   final settings = context.read<SettingsProvider>();
-                  final current = settings.settings.mapProvider;
-                  final next = current == MapTileProvider.vector ? MapTileProvider.free : MapTileProvider.vector;
-                  settings.updateSettings(settings.settings.copyWith(mapProvider: next));
+                  final keys = _styleUrls.keys.toList();
+                  final currentKey = settings.settings.vectorStyleUrl;
+                  final idx = keys.indexOf(currentKey);
+                  final nextKey = keys[(idx + 1) % keys.length];
+                  settings.updateSettings(settings.settings.copyWith(vectorStyleUrl: nextKey));
+                },
+                onLongPress: () {
+                  // Long tap: toggle raster/vector
+                  if (_isAssigning) this._cancelAssign();
+                  final settings = context.read<SettingsProvider>();
+                  settings.updateSettings(settings.settings.copyWith(mapProvider: MapTileProvider.free));
                 },
                 child: Container(
                   width: 44, height: 44,
@@ -448,7 +457,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 2))],
                   ),
-                  child: Icon(Icons.layers, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.grey[800], size: 22),
+                  child: Icon(Icons.map, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.grey[800], size: 22),
                 ),
               ),
             ],

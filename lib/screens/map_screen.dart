@@ -552,11 +552,19 @@ class _MapScreenState extends State<MapScreen> {
                 const SizedBox(height: 8),
                 GestureDetector(
                   onTap: () {
+                    // Single tap: cycle raster tile styles (standard/humanitarian/topo/positron/voyager/dark)
                     if (_isAssigning) _cancelAssign();
                     final settings = context.read<SettingsProvider>();
-                    final current = settings.settings.mapProvider;
-                    final next = current == MapTileProvider.vector ? MapTileProvider.free : MapTileProvider.vector;
-                    settings.updateSettings(settings.settings.copyWith(mapProvider: next));
+                    final styles = MapTileStyle.values;
+                    final idx = styles.indexOf(settings.settings.mapTileStyle);
+                    final next = styles[(idx + 1) % styles.length];
+                    settings.updateSettings(settings.settings.copyWith(mapTileStyle: next));
+                  },
+                  onLongPress: () {
+                    // Long tap: switch to vector (MapLibre)
+                    if (_isAssigning) _cancelAssign();
+                    final settings = context.read<SettingsProvider>();
+                    settings.updateSettings(settings.settings.copyWith(mapProvider: MapTileProvider.vector));
                   },
                   child: Container(
                     width: 44, height: 44,
@@ -567,7 +575,7 @@ class _MapScreenState extends State<MapScreen> {
                       borderRadius: BorderRadius.circular(12),
                       boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 2))],
                     ),
-                    child: Icon(Icons.layers, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.grey[800], size: 22),
+                    child: Icon(Icons.image, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.grey[800], size: 22),
                   ),
                 ),
               ],

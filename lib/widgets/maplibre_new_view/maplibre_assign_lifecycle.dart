@@ -184,13 +184,14 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       final shouldRebuildNative = style != null && _radiusLayerReady && (!wasExisting || nativeWasHidden || visualChanged);
       if (shouldRebuildNative) _lastRadiusDataHash = '';
       if (shouldRebuildNative) await this._ensureAssignMarkerBitmap();
-      _beginClosingAssignVisual(keepCircle: shouldRebuildNative && (!wasExisting || nativeWasHidden));
+      // Keep overlay circle visible during rebuild to prevent flash
+      _beginClosingAssignVisual(keepCircle: shouldRebuildNative);
       if (shouldRebuildNative) {
         final circles = this._buildRadiusCircles(alarmProv, excludeEditing: false);
         _radiusLayerVersion++;
-        await this._rebuildRadiusLayers(style, circles, _radiusLayerVersion);
+        await this._rebuildRadiusLayers(style!, circles, _radiusLayerVersion);
         _lastRadiusDataHash = this._radiusHash(circles);
-        this._updateVeil(style, alarmProv, ignoreAssign: true);
+        this._updateVeil(style!, alarmProv, ignoreAssign: true);
       }
       _finishClosingAssignCircle();
       try { _controller?.style?.updateGeoJsonSource(id: 'fast-src', data: _emptyGeoJson); } catch (_) {}
