@@ -306,6 +306,9 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     if (version != _radiusLayerVersion || generation != _styleGeneration)
       return;
 
+    // Also clear fast-circle if still alive (from new alarm save path)
+    await this._clearFastCircleLayer(style);
+
     for (int i = 0; i < 20; i++) {
       final id = 'alarm-$i';
       _radiusVisualIds.remove(id);
