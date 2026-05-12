@@ -505,7 +505,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   String _lastRadiusDataHash = ''; // skip rebuild if alarm data unchanged
   bool _suppressRadiusSync = false;
   final Map<String, bool> _alarmInsideState = {};
-  bool get _useNativeAssignCircle => true;
+  // Overlay-only during assign: no native circle, no handoff, no flicker.
+  // Native circle created only on save. Camera is locked during assign anyway.
+  bool get _useNativeAssignCircle => false;
 
   Position? _cachedUserPosition() {
     final cached = _userPos;
@@ -994,7 +996,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                 },
                 child: CustomPaint(
                   painter:
-                      (_isDraggingRadius || _handoffToNative || !_useNativeAssignCircle) &&
+                      (_isDraggingRadius || !_useNativeAssignCircle) &&
                           _assignScreenCenter != null &&
                           (this._showAssignOverlay || _closingAssignCircle)
                       ? _RadiusOverlayPainter(
