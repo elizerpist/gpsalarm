@@ -344,8 +344,21 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
               )
             : null;
         if (_useNativeAssignCircle && singleCircle != null) {
-          // Add permanent circle+marker (fast-circle still visible underneath)
-          await this._upsertRadiusVisual(liveStyle, singleCircle);
+          // KEEP fast-circle layer alive — just update its source to permanent position.
+          // No layer remove/add = no flicker or duplication.
+          // Then add the permanent marker (pin+chip) on the permanent source.
+          try {
+            await liveStyle.updateGeoJsonSource(
+              id: 'fast-pt-src',
+              data: _pointGeoJson(singleCircle.lng, singleCircle.lat),
+            );
+          } catch (_) {}
+          // Add permanent marker (bitmap pin+chip) on permanent source
+          await this._updateRadiusCircleSources(liveStyle, singleCircle, updateMarker: true);
+          // Now rebuild all layers properly (will create radius-circle-alarm-X
+          // and remove fast-circle as part of normal cleanup)
+          await this._rebuildRadiusLayers(liveStyle, circles, _radiusLayerVersion);
+          await this._clearFastCircleLayer(liveStyle);
         } else {
           await this._rebuildRadiusLayers(
             liveStyle,
@@ -356,13 +369,10 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         _lastRadiusDataHash = this._radiusHash(circles);
         this._updateVeil(liveStyle, alarmProv, ignoreAssign: true);
       }
-      // Wait for MapLibre to render BOTH permanent circle and marker.
-      // Only THEN remove fast-circle and hide overlay — no gap for either.
+      // Wait for MapLibre to render native marker before hiding overlay pin
       if (shouldRebuildNative) {
-        await Future.delayed(const Duration(milliseconds: 200));
+        await Future.delayed(const Duration(milliseconds: 150));
       }
-      // Now safe: permanent circle+marker rendered → remove fast + hide overlay
-      if (style != null) await this._clearFastCircleLayer(style);
       _beginClosingAssignVisual(keepCircle: false);
       _finishClosingAssignCircle();
       _scheduleAssignVisualClear(
