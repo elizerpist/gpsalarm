@@ -344,9 +344,8 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
               )
             : null;
         if (_useNativeAssignCircle && singleCircle != null) {
-          // KEEP fast-circle layer alive — just update its source to permanent position.
-          // No layer remove/add = no flicker or duplication.
-          // Then add the permanent marker (pin+chip) on the permanent source.
+          // KEEP fast-circle layer alive as the visible circle.
+          // Just update its source to the permanent position — no layer swap.
           try {
             await liveStyle.updateGeoJsonSource(
               id: 'fast-pt-src',
@@ -355,18 +354,34 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           } catch (_) {}
           // Add permanent marker (bitmap pin+chip) on permanent source
           await this._updateRadiusCircleSources(liveStyle, singleCircle, updateMarker: true);
-          // Now rebuild all layers properly (will create radius-circle-alarm-X
-          // and remove fast-circle as part of normal cleanup)
-          await this._rebuildRadiusLayers(liveStyle, circles, _radiusLayerVersion);
-          await this._clearFastCircleLayer(liveStyle);
+          await this._ensureRadiusMarkerImage(liveStyle, singleCircle);
+          final markerLabel = _markerLabelForCircle(singleCircle);
+          final markerSize = AlarmMarkerRenderer.measureLogicalSize(markerLabel);
+          final pinTipCorrection = markerSize.height - AlarmMarkerSpec.pinSize;
+          try {
+            await liveStyle.addLayer(SymbolStyleLayer(
+              id: 'radius-label-${singleCircle.id}',
+              sourceId: 'radius-pt-${singleCircle.id}',
+              layout: {
+                'icon-image': 'alarm-marker-${singleCircle.id}',
+                'icon-size': 1.0,
+                'icon-anchor': 'bottom',
+                'icon-offset': [0.0, pinTipCorrection],
+                'icon-allow-overlap': true,
+              },
+            ));
+          } catch (_) {}
+          // DON'T call _rebuildRadiusLayers here — it would remove fast-circle.
+          // Leave hash empty so debounced _syncRadiusSource rebuilds permanent layers.
+          _lastRadiusDataHash = '';
         } else {
           await this._rebuildRadiusLayers(
             liveStyle,
             circles,
             _radiusLayerVersion,
           );
+          _lastRadiusDataHash = this._radiusHash(circles);
         }
-        _lastRadiusDataHash = this._radiusHash(circles);
         this._updateVeil(liveStyle, alarmProv, ignoreAssign: true);
       }
       // Wait for MapLibre to render native marker before hiding overlay pin
