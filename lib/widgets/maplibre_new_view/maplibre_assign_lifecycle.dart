@@ -344,10 +344,8 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
               )
             : null;
         if (_useNativeAssignCircle && singleCircle != null) {
-          // Atomic swap: remove fast-circle BEFORE adding permanent (prevents duplication)
-          // Add permanent FIRST, then remove fast (no gap = no flicker)
+          // Add permanent circle+marker (fast-circle still visible underneath)
           await this._upsertRadiusVisual(liveStyle, singleCircle);
-          await this._clearFastCircleLayer(liveStyle);
         } else {
           await this._rebuildRadiusLayers(
             liveStyle,
@@ -358,17 +356,15 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         _lastRadiusDataHash = this._radiusHash(circles);
         this._updateVeil(liveStyle, alarmProv, ignoreAssign: true);
       }
-      // Give MapLibre time to render the native marker+circle before hiding overlay.
-      // SymbolStyleLayer (pin bitmap) needs more frames than CircleStyleLayer.
+      // Wait for MapLibre to render BOTH permanent circle and marker.
+      // Only THEN remove fast-circle and hide overlay — no gap for either.
       if (shouldRebuildNative) {
         await Future.delayed(const Duration(milliseconds: 200));
       }
-      // Hide overlay AFTER native layers are rendered (prevents pin flash)
+      // Now safe: permanent circle+marker rendered → remove fast + hide overlay
+      if (style != null) await this._clearFastCircleLayer(style);
       _beginClosingAssignVisual(keepCircle: false);
       _finishClosingAssignCircle();
-      if (style != null) {
-        await this._clearFastCircleLayer(style);
-      }
       _scheduleAssignVisualClear(
         !wasExisting && _useNativeAssignCircle
             ? const Duration(milliseconds: 500)
