@@ -329,10 +329,6 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           (!wasExisting || nativeWasHidden || visualChanged);
       if (shouldRebuildNative) _lastRadiusDataHash = '';
       if (shouldRebuildNative) await this._ensureAssignMarkerBitmap();
-      // Keep overlay circle visible during rebuild to prevent flash
-      _beginClosingAssignVisual(
-        keepCircle: shouldRebuildNative && !_useNativeAssignCircle,
-      );
       if (shouldRebuildNative) {
         final liveStyle = style!;
         final circles = this._buildRadiusCircles(
@@ -348,6 +344,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
               )
             : null;
         if (_useNativeAssignCircle && singleCircle != null) {
+          // Atomic swap: remove fast-circle BEFORE adding permanent (prevents duplication)
           await this._clearFastCircleLayer(liveStyle);
           await this._upsertRadiusVisual(liveStyle, singleCircle);
         } else {
@@ -360,6 +357,8 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         _lastRadiusDataHash = this._radiusHash(circles);
         this._updateVeil(liveStyle, alarmProv, ignoreAssign: true);
       }
+      // Hide overlay AFTER native layers are ready (prevents flash)
+      _beginClosingAssignVisual(keepCircle: false);
       _finishClosingAssignCircle();
       if (style != null) {
         await this._clearFastCircleLayer(style);
