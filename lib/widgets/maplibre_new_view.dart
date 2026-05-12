@@ -102,6 +102,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   Timer? _assignVisualClearTimer;
   Timer? _assignNativeUpdateTimer;
   Timer? _assignCardSyncTimer;
+  Future<void>? _assignNativeUpdateFuture;
   bool _assignNativeUpdatePending = false;
   bool _assignNativeUpdateMarkerPending = false;
   bool _assignNativeUpdateRunning = false;
@@ -882,13 +883,20 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
               myLocationIcon: Icons.my_location,
               onMyLocation: () => unawaited(_jumpToUserPosition()),
               // 3D button — right side, above zoom
-              on3DTap: () => setState(() => _set3DMode(enabled: !_is3D, compassFollow: true)),
+              on3DTap: () => setState(
+                () => _set3DMode(enabled: !_is3D, compassFollow: true),
+              ),
               on3DLongPress: () {
-                final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
+                final haptic = context
+                    .read<SettingsProvider>()
+                    .settings
+                    .hapticFeedback;
                 if (haptic) Vibration.vibrate(duration: 30);
                 setState(_toggle3DFixedMode);
               },
-              icon3D: _is3D && !_gpsFollow ? Icons.screen_rotation_alt : (_is3D ? Icons.view_in_ar : Icons.threed_rotation),
+              icon3D: _is3D && !_gpsFollow
+                  ? Icons.screen_rotation_alt
+                  : (_is3D ? Icons.view_in_ar : Icons.threed_rotation),
               icon3DColor: _is3D ? Colors.white : null,
               bg3DColor: _is3D ? Theme.of(context).colorScheme.primary : null,
             ),

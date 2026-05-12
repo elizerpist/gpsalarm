@@ -55,7 +55,7 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
             isTime: isTime,
             isLeave: _assignZoneTrigger == ZoneTrigger.onLeave,
             active: _assignActive,
-          ),
+          )..['radiusPx'] = this._currentRadiusPx,
         ),
       );
       await this._ensureFastCircleLayer(style, (

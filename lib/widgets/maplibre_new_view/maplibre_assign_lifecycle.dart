@@ -1,6 +1,84 @@
 part of '../maplibre_new_view.dart';
 
 extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
+  void _cancelAssignDragUpdateTimers() {
+    _assignNativeUpdateTimer?.cancel();
+    _assignNativeUpdateTimer = null;
+    _assignCardSyncTimer?.cancel();
+    _assignCardSyncTimer = null;
+    _assignNativeUpdatePending = false;
+    _assignNativeUpdateMarkerPending = false;
+  }
+
+  void _scheduleAssignNativeOverlayUpdate({bool updateMarker = false}) {
+    if (!_isAssigning || !_useNativeAssignCircle) return;
+    _assignNativeUpdatePending = true;
+    _assignNativeUpdateMarkerPending =
+        _assignNativeUpdateMarkerPending || updateMarker;
+    if (_assignNativeUpdateRunning || _assignNativeUpdateTimer != null) return;
+    _assignNativeUpdateTimer = Timer(const Duration(milliseconds: 16), () {
+      _assignNativeUpdateTimer = null;
+      final future = _flushAssignNativeOverlayUpdate();
+      _assignNativeUpdateFuture = future;
+      unawaited(
+        future.whenComplete(() {
+          if (_assignNativeUpdateFuture == future) {
+            _assignNativeUpdateFuture = null;
+          }
+        }),
+      );
+    });
+  }
+
+  Future<void> _waitForAssignNativeUpdate() async {
+    final future = _assignNativeUpdateFuture;
+    if (future == null) return;
+    try {
+      await future;
+    } catch (_) {}
+  }
+
+  Future<void> _flushAssignNativeOverlayUpdate() async {
+    if (!_isAssigning || !_useNativeAssignCircle) {
+      _assignNativeUpdatePending = false;
+      _assignNativeUpdateMarkerPending = false;
+      return;
+    }
+    if (_assignNativeUpdateRunning) return;
+    if (!_assignNativeUpdatePending) return;
+    _assignNativeUpdatePending = false;
+    final updateMarker = _assignNativeUpdateMarkerPending;
+    _assignNativeUpdateMarkerPending = false;
+    _assignNativeUpdateRunning = true;
+    try {
+      await this._activateAssignOverlay(updateMarker: updateMarker);
+    } finally {
+      _assignNativeUpdateRunning = false;
+      if (_assignNativeUpdatePending && _isAssigning) {
+        this._scheduleAssignNativeOverlayUpdate(
+          updateMarker: _assignNativeUpdateMarkerPending,
+        );
+      }
+    }
+  }
+
+  void _scheduleAssignCardSync() {
+    if (!_isAssigning) return;
+    if (_assignCardSyncTimer != null) return;
+    _assignCardSyncTimer = Timer(const Duration(milliseconds: 80), () {
+      _assignCardSyncTimer = null;
+      this._flushAssignCardSync();
+    });
+  }
+
+  void _flushAssignCardSync() {
+    _assignCardSyncTimer?.cancel();
+    _assignCardSyncTimer = null;
+    if (!mounted || !_isAssigning) return;
+    this._refreshAssignMarker();
+    setState(() {});
+  }
+
   bool _alarmVisualChanged(AlarmPoint? previous, AlarmPoint next) {
     if (previous == null) return true;
     return previous.latitude != next.latitude ||
@@ -71,6 +149,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
 
   void _beginClosingAssignVisual({required bool keepCircle}) {
     _assignVisualClearTimer?.cancel();
+    _cancelAssignDragUpdateTimers();
     setState(() {
       _isAssigning = false;
       _closingAssignVisual = true;
@@ -116,6 +195,9 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     double lng, {
     AlarmPoint? existing,
   }) async {
+    final alarmProv = context.read<AlarmProvider>();
+    _cancelAssignDragUpdateTimers();
+    await _waitForAssignNativeUpdate();
     _assignVisualClearTimer?.cancel();
     _suspendCompassForAssign();
     _closingAssignVisual = false;
@@ -133,7 +215,6 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignActive = existing?.isActive ?? true;
     _assignMarkerPng = null;
     _assignMarkerKey = null;
-    final alarmProv = context.read<AlarmProvider>();
     _assignNativeAlarmLayerId = existing == null
         ? 'alarm-${alarmProv.alarmPoints.length}'
         : this._alarmLayerId(alarmProv, existing.id);
@@ -159,13 +240,15 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     DebugConsole.log(
       'CANCEL_ASSIGN: isAssigning=$_isAssigning existing=${_assignExisting?.id}',
     );
+    final alarmProv = context.read<AlarmProvider>();
+    _cancelAssignDragUpdateTimers();
+    await _waitForAssignNativeUpdate();
     final previousSuppress = _suppressRadiusSync;
     _suppressRadiusSync = true;
     _radiusDebounce?.cancel();
     final wasExisting = _assignExisting;
     final nativeWasHidden = _assignNativeHidden;
     final style = _controller?.style;
-    final alarmProv = context.read<AlarmProvider>();
     final canRestoreInPlace =
         !nativeAlreadySynced &&
         _useNativeAssignCircle &&
@@ -289,8 +372,10 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     DebugConsole.log(
       'SAVE_ASSIGN: existing=${_assignExisting?.id} lat=${effectiveAlarm.latitude} lng=${effectiveAlarm.longitude} r=${effectiveAlarm.radiusMeters.round()}m',
     );
-    _suppressRadiusSync = true;
     final alarmProv = context.read<AlarmProvider>();
+    _cancelAssignDragUpdateTimers();
+    await _waitForAssignNativeUpdate();
+    _suppressRadiusSync = true;
     try {
       final wasExisting = _assignExisting != null;
       final nativeWasHidden = _assignNativeHidden;
