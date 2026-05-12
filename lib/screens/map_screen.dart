@@ -427,11 +427,37 @@ class _MapScreenState extends State<MapScreen> {
                       points: const [LatLng(-85, -180), LatLng(-85, 180), LatLng(85, 180), LatLng(85, -180)],
                       holePointsList: holes,
                       color: Colors.red.withOpacity(0.15),
-                      borderColor: Colors.red.withOpacity(0.6),
-                      borderStrokeWidth: 2,
                       isFilled: true,
                     ),
                   ]);
+                },
+              ),
+              // Exit trigger circle borders — separate from veil to avoid double border
+              Consumer<AlarmProvider>(
+                builder: (_, alarmProv, __) {
+                  final leaveCircles = <CircleMarker>[
+                    ...alarmProv.alarmPoints
+                        .where((p) => p.zoneTrigger == ZoneTrigger.onLeave
+                            && p.id != _assignExisting?.id)
+                        .map((p) => CircleMarker(
+                          point: LatLng(p.latitude, p.longitude),
+                          radius: p.radiusMeters,
+                          useRadiusInMeter: true,
+                          color: Colors.transparent,
+                          borderColor: (p.isActive ? Colors.red : Colors.grey).withOpacity(0.6),
+                          borderStrokeWidth: 2,
+                        )),
+                    if (_isAssigning && _assignCenter != null && _assignZoneTrigger == ZoneTrigger.onLeave)
+                      CircleMarker(
+                        point: _assignCenter!,
+                        radius: _assignRadius,
+                        useRadiusInMeter: true,
+                        color: Colors.transparent,
+                        borderColor: Colors.red.withOpacity(0.6),
+                        borderStrokeWidth: 2,
+                      ),
+                  ];
+                  return leaveCircles.isEmpty ? const SizedBox.shrink() : CircleLayer(circles: leaveCircles);
                 },
               ),
               // Pin markers
