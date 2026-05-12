@@ -59,6 +59,7 @@ class _MapScreenState extends State<MapScreen> {
   bool _longPressTriggered = false;
 
   double _rasterZoom = 13;
+  int _rasterDragLogCounter = 0;
   final ValueNotifier<double> _speedKmh = ValueNotifier(0);
 
   // Speed interpolation between GPS ticks
@@ -752,6 +753,10 @@ class _MapScreenState extends State<MapScreen> {
           final minutes = (dist * 0.3).clamp(5.0, 120.0).round();
           setState(() => _assignTimeMinutes = minutes);
         }
+        _rasterDragLogCounter++;
+        if (_rasterDragLogCounter % 15 == 1) {
+          DebugConsole.log('RASTER_DRAG: r=${_assignRadius.round()}m dist=${dist.round()} frame=$_rasterDragLogCounter');
+        }
       }
       return;
     }
@@ -777,7 +782,9 @@ class _MapScreenState extends State<MapScreen> {
     _activePointers = (_activePointers - 1).clamp(0, 99);
     _cancelLongPressTimer();
     if (_isDraggingRadius) {
+      DebugConsole.log('RASTER_DRAG_END: r=${_assignRadius.round()}m frames=$_rasterDragLogCounter');
       _isDraggingRadius = false;
+      _rasterDragLogCounter = 0;
       return;
     }
     if (_longPressTriggered) {

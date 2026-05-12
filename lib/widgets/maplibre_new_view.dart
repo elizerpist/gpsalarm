@@ -964,6 +964,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   // Update overlay circle instantly via ValueNotifier (no widget rebuild, no native calls)
                   // Native layer update deferred to onPointerUp to avoid 8-12ms per-frame jank
                   _radiusNotifier.value = this._currentRadiusPx;
+                  _dragLogCounter++;
+                  if (_dragLogCounter % 15 == 1) { // ~250ms at 60fps
+                    DebugConsole.log('VECTOR_DRAG: r=${_assignRadius.round()}m px=${this._currentRadiusPx.round()} dist=${(e.localPosition - _assignScreenCenter!).distance.round()} frame=$_dragLogCounter');
+                  }
                   this._scheduleAssignCardSync();
                 },
                 onPointerUp: (e) {
@@ -973,6 +977,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   );
                   if (e.pointer != _dragPointerId) return;
                   _isDraggingRadius = false;
+                  DebugConsole.log('VECTOR_DRAG_END: r=${_assignRadius.round()}m px=${this._currentRadiusPx.round()} frames=$_dragLogCounter nativeSync=true');
                   // Sync native layer now that drag ended
                   this._scheduleAssignNativeOverlayUpdate();
                   _dragPointerId = null;
