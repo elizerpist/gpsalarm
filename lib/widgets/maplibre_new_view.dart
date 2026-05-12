@@ -69,6 +69,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
   late final AnimationController _3dButtonAnim;
   late final Animation<double> _3dButtonSlide;
   bool _3dButtonVisible = true;
+  bool _cameraAtUser = true; // true = my-location button becomes 3D toggle
   // Unified assign state
   bool _isAssigning = false;
   AlarmPoint? _assignExisting;
@@ -526,6 +527,15 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
                       cam!.center.lat.toDouble(),
                       cam.center.lng.toDouble(),
                     ));
+                    // Track if camera is near user position (for my-location/3D button swap)
+                    if (_userPos != null) {
+                      final dist = AlarmService.distanceMeters(
+                        cam.center.lat.toDouble(), cam.center.lng.toDouble(),
+                        _userPos!.lat.toDouble(), _userPos!.lng.toDouble(),
+                      );
+                      final atUser = dist < 100;
+                      if (atUser != _cameraAtUser) setState(() => _cameraAtUser = atUser);
+                    }
                   }
                 }
               }
@@ -710,26 +720,49 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
               onZoomOut: () => _safeMoveCamera(zoom: _currentZoom - 1),
               onSearchTap: () => context.read<MapProvider>().toggleSearch(),
               searchActive: searchActive,
-              onMyLocation: () async {
-                final pos = await _locationService.getCurrentPosition();
-                if (pos != null) {
-                  if (_is3D) {
-                    setState(() => _gpsFollow = true);
-                    _startCompassFollow();
-                    _safeMoveCamera(
-                      center: Position(pos.longitude, pos.latitude),
-                      zoom: 15,
-                      pitch: 45,
-                      bearing: _lastBearing,
-                    );
-                  } else {
-                    _safeMoveCamera(
-                      center: Position(pos.longitude, pos.latitude),
-                      zoom: 15,
-                    );
-                  }
-                }
-              },
+              // When camera is at user position: button becomes 3D toggle
+              // When camera is elsewhere: button jumps to user position
+              myLocationIcon: _cameraAtUser
+                  ? (_is3D ? Icons.view_in_ar : Icons.threed_rotation)
+                  : Icons.my_location,
+              myLocationIconColor: _cameraAtUser && _is3D ? Colors.white : null,
+              myLocationBgColor: _cameraAtUser && _is3D
+                  ? Theme.of(context).colorScheme.primary
+                  : null,
+              onMyLocation: _cameraAtUser
+                  ? () {
+                      // At user position: toggle 3D
+                      setState(() {
+                        _set3DMode(enabled: !_is3D, compassFollow: true);
+                      });
+                    }
+                  : () async {
+                      // Not at user position: jump to user
+                      final pos = await _locationService.getCurrentPosition();
+                      if (pos != null) {
+                        setState(() => _cameraAtUser = true);
+                        if (_is3D) {
+                          setState(() => _gpsFollow = true);
+                          _startCompassFollow();
+                          _safeMoveCamera(
+                            center: Position(pos.longitude, pos.latitude),
+                            zoom: 15, pitch: 45, bearing: _lastBearing,
+                          );
+                        } else {
+                          _safeMoveCamera(
+                            center: Position(pos.longitude, pos.latitude),
+                            zoom: 15,
+                          );
+                        }
+                      }
+                    },
+              onMyLocationLongPress: _cameraAtUser
+                  ? () {
+                      final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
+                      if (haptic) Vibration.vibrate(duration: 30);
+                      setState(_toggle3DFixedMode);
+                    }
+                  : null,
             ),
           ),
         if (!_isAssigning)

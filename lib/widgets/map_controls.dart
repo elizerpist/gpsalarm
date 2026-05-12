@@ -7,6 +7,10 @@ class MapControls extends StatelessWidget {
   final VoidCallback onSearchTap;
   final VoidCallback onMyLocation;
   final bool searchActive;
+  final IconData? myLocationIcon;
+  final Color? myLocationIconColor;
+  final Color? myLocationBgColor;
+  final VoidCallback? onMyLocationLongPress;
 
   const MapControls({
     super.key,
@@ -16,6 +20,10 @@ class MapControls extends StatelessWidget {
     required this.onSearchTap,
     required this.onMyLocation,
     required this.searchActive,
+    this.myLocationIcon,
+    this.myLocationIconColor,
+    this.myLocationBgColor,
+    this.onMyLocationLongPress,
   });
 
   @override
@@ -60,14 +68,41 @@ class MapControls extends StatelessWidget {
             ],
           ),
         ),
-        // My location button
+        // My location / 3D toggle button
         Positioned(
           bottom: 92 + keyboardHeight,
           right: 16,
-          child: _ControlButton(
+          child: GestureDetector(
             onTap: onMyLocation,
-            bgColor: bgColor,
-            child: Icon(Icons.my_location, color: iconColor, size: 22),
+            onLongPress: onMyLocationLongPress,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: myLocationBgColor ?? bgColor,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.15),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Center(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  child: Icon(
+                    myLocationIcon ?? Icons.my_location,
+                    key: ValueKey(myLocationIcon ?? Icons.my_location),
+                    color: myLocationIconColor ?? iconColor,
+                    size: 22,
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
         // FAB - bottom right (hidden when search is active — pill takes over)
