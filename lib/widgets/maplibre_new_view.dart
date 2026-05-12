@@ -888,19 +888,19 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
               on3DTap: () => setState(
                 () => _set3DMode(enabled: !_is3D, compassFollow: true),
               ),
-              on3DLongPress: () {
-                final haptic = context
-                    .read<SettingsProvider>()
-                    .settings
-                    .hapticFeedback;
+              icon3D: _is3D ? Icons.view_in_ar : Icons.threed_rotation,
+              icon3DColor: _is3D ? Colors.white : null,
+              bg3DColor: _is3D ? Theme.of(context).colorScheme.primary : null,
+              // Freeze button — ejects when 3D active
+              showFreeze: _is3D,
+              onFreezeTap: () {
+                final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
                 if (haptic) Vibration.vibrate(duration: 30);
                 setState(_toggle3DFixedMode);
               },
-              icon3D: _is3D && !_gpsFollow
-                  ? Icons.screen_rotation_alt
-                  : (_is3D ? Icons.view_in_ar : Icons.threed_rotation),
-              icon3DColor: _is3D ? Colors.white : null,
-              bg3DColor: _is3D ? Theme.of(context).colorScheme.primary : null,
+              iconFreeze: _gpsFollow ? Icons.lock_open : Icons.lock,
+              iconFreezeColor: !_gpsFollow ? Colors.white : null,
+              bgFreezeColor: !_gpsFollow ? Theme.of(context).colorScheme.primary : null,
             ),
           ),
         if (!_isAssigning)

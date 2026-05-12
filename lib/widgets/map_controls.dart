@@ -17,6 +17,12 @@ class MapControls extends StatelessWidget {
   final IconData? icon3D;
   final Color? icon3DColor;
   final Color? bg3DColor;
+  // Freeze button (ejects from 3D when active)
+  final VoidCallback? onFreezeTap;
+  final IconData? iconFreeze;
+  final Color? iconFreezeColor;
+  final Color? bgFreezeColor;
+  final bool showFreeze;
 
   const MapControls({
     super.key,
@@ -35,6 +41,11 @@ class MapControls extends StatelessWidget {
     this.icon3D,
     this.icon3DColor,
     this.bg3DColor,
+    this.onFreezeTap,
+    this.iconFreeze,
+    this.iconFreezeColor,
+    this.bgFreezeColor,
+    this.showFreeze = false,
   });
 
   @override
@@ -65,12 +76,38 @@ class MapControls extends StatelessWidget {
           right: 16,
           child: Column(
             children: [
-              if (on3DTap != null)
+              if (on3DTap != null) ...[
+                // Freeze button — ejects below 3D when active, slides back when inactive
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 400),
+                  curve: Curves.elasticOut,
+                  alignment: Alignment.topCenter,
+                  child: showFreeze && onFreezeTap != null
+                      ? Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: GestureDetector(
+                            onTap: onFreezeTap,
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 300),
+                              width: 44, height: 44,
+                              decoration: BoxDecoration(
+                                color: bgFreezeColor ?? bgColor,
+                                borderRadius: BorderRadius.circular(12),
+                                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 2))],
+                              ),
+                              child: Center(
+                                child: Icon(iconFreeze ?? Icons.screen_rotation_alt, color: iconFreezeColor ?? iconColor, size: 22),
+                              ),
+                            ),
+                          ),
+                        )
+                      : const SizedBox.shrink(),
+                ),
+                // 3D toggle button
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: GestureDetector(
                     onTap: on3DTap,
-                    onLongPress: on3DLongPress,
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 300),
                       curve: Curves.easeInOut,
@@ -89,6 +126,7 @@ class MapControls extends StatelessWidget {
                     ),
                   ),
                 ),
+              ],
               _ControlButton(
                 onTap: onZoomIn,
                 bgColor: bgColor,
