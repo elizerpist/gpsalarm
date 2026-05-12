@@ -946,6 +946,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                     _dragPointerId = e.pointer;
                     _isDraggingRadius = true;
                     _dragLogCounter = 0;
+                    // Clear native fast-circle when drag starts — overlay takes over
+                    final style = _controller?.style;
+                    if (style != null && _useNativeAssignCircle) {
+                      unawaited(this._clearFastCircleLayer(style));
+                    }
+                    DebugConsole.log('DRAG_START: cleared native fast-circle, overlay takes over');
                   }
                 },
                 onPointerMove: (e) {
