@@ -11,6 +11,12 @@ class MapControls extends StatelessWidget {
   final Color? myLocationIconColor;
   final Color? myLocationBgColor;
   final VoidCallback? onMyLocationLongPress;
+  // 3D button (vector map only)
+  final VoidCallback? on3DTap;
+  final VoidCallback? on3DLongPress;
+  final IconData? icon3D;
+  final Color? icon3DColor;
+  final Color? bg3DColor;
 
   const MapControls({
     super.key,
@@ -24,6 +30,11 @@ class MapControls extends StatelessWidget {
     this.myLocationIconColor,
     this.myLocationBgColor,
     this.onMyLocationLongPress,
+    this.on3DTap,
+    this.on3DLongPress,
+    this.icon3D,
+    this.icon3DColor,
+    this.bg3DColor,
   });
 
   @override
@@ -48,12 +59,36 @@ class MapControls extends StatelessWidget {
             child: Icon(Icons.menu, color: iconColor, size: 24),
           ),
         ),
-        // Zoom buttons - right side above FAB
+        // 3D + Zoom buttons - right side above FAB
         Positioned(
           bottom: 140 + keyboardHeight,
           right: 16,
           child: Column(
             children: [
+              if (on3DTap != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: GestureDetector(
+                    onTap: on3DTap,
+                    onLongPress: on3DLongPress,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeInOut,
+                      width: 44, height: 44,
+                      decoration: BoxDecoration(
+                        color: bg3DColor ?? bgColor,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 2))],
+                      ),
+                      child: Center(
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 200),
+                          child: Icon(icon3D ?? Icons.threed_rotation, key: ValueKey(icon3D), color: icon3DColor ?? iconColor, size: 22),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               _ControlButton(
                 onTap: onZoomIn,
                 bgColor: bgColor,

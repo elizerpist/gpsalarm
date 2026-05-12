@@ -100,6 +100,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   bool _assignNativeHidden = false;
   bool _assignOverlayActivating = false;
   Timer? _assignVisualClearTimer;
+  Timer? _assignNativeUpdateTimer;
+  Timer? _assignCardSyncTimer;
+  bool _assignNativeUpdatePending = false;
+  bool _assignNativeUpdateMarkerPending = false;
+  bool _assignNativeUpdateRunning = false;
   final Map<String, Uint8List> _markerBitmapCache = {};
   final Map<String, Size> _markerSizeCache = {};
   final Map<String, String> _registeredMarkerImageKeys = {};
@@ -305,6 +310,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     _compassSub?.cancel();
     _radiusDebounce?.cancel();
     _assignVisualClearTimer?.cancel();
+    _assignNativeUpdateTimer?.cancel();
+    _assignCardSyncTimer?.cancel();
     _speedInterpolTimer?.cancel();
     _radiusNotifier.dispose();
     _locationService.dispose();
@@ -599,14 +606,14 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   }
                   _radiusNotifier.value = this._currentRadiusPx;
                   if (_useNativeAssignCircle)
-                    unawaited(this._activateAssignOverlay());
-                  this._refreshAssignMarker();
-                  setState(() {});
+                    this._scheduleAssignNativeOverlayUpdate();
+                  this._scheduleAssignCardSync();
                 },
           onLongPressEnd: !_isAssigning
               ? null
               : (details) {
                   _isDraggingRadius = false;
+                  this._flushAssignCardSync();
                 },
           child: MapLibreMap(
             key: ValueKey(styleUrl),
@@ -779,21 +786,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                 ),
               ),
               const SizedBox(height: 8),
+              // Toggle raster/vector — single tap only
               GestureDetector(
                 onTap: () {
-                  // Single tap: cycle vector skin
-                  if (_isAssigning) this._cancelAssign();
-                  final settings = context.read<SettingsProvider>();
-                  final keys = _styleUrls.keys.toList();
-                  final currentKey = settings.settings.vectorStyleUrl;
-                  final idx = keys.indexOf(currentKey);
-                  final nextKey = keys[(idx + 1) % keys.length];
-                  settings.updateSettings(
-                    settings.settings.copyWith(vectorStyleUrl: nextKey),
-                  );
-                },
-                onLongPress: () {
-                  // Long tap: toggle raster/vector (with haptic)
                   final haptic = context
                       .read<SettingsProvider>()
                       .settings
@@ -832,68 +827,42 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   ),
                 ),
               ),
-              // 3D button — ejects from toggle button with spring animation
-              AnimatedBuilder(
-                animation: _3dButtonSlide,
-                builder: (context, child) {
-                  // Slide from 0 (overlapping toggle) to 1 (final position)
-                  final t = _3dButtonSlide.value;
-                  return Transform.translate(
-                    offset: Offset(
-                      0,
-                      (1 - t) * -52,
-                    ), // -52 = slide up from toggle position
-                    child: Opacity(opacity: t.clamp(0.0, 1.0), child: child),
+              const SizedBox(height: 8),
+              // Skin cycle — single tap
+              GestureDetector(
+                onTap: () {
+                  if (_isAssigning) this._cancelAssign();
+                  final settings = context.read<SettingsProvider>();
+                  final keys = _styleUrls.keys.toList();
+                  final currentKey = settings.settings.vectorStyleUrl;
+                  final idx = keys.indexOf(currentKey);
+                  final nextKey = keys[(idx + 1) % keys.length];
+                  settings.updateSettings(
+                    settings.settings.copyWith(vectorStyleUrl: nextKey),
                   );
                 },
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _set3DMode(enabled: !_is3D, compassFollow: true);
-                      });
-                    },
-                    onLongPress: () {
-                      final haptic = context
-                          .read<SettingsProvider>()
-                          .settings
-                          .hapticFeedback;
-                      if (haptic) Vibration.vibrate(duration: 30);
-                      setState(_toggle3DFixedMode);
-                    },
-                    child: Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: _is3D
-                            ? Theme.of(context).colorScheme.primary
-                            : (Theme.of(context).brightness == Brightness.dark
-                                  ? Colors.grey[900]!.withOpacity(0.92)
-                                  : Colors.white.withOpacity(0.92)),
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.15),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? Colors.grey[900]!.withOpacity(0.92)
+                        : Colors.white.withOpacity(0.92),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.15),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
                       ),
-                      child: Icon(
-                        _is3D && !_gpsFollow
-                            ? Icons.screen_rotation_alt
-                            : (_is3D
-                                  ? Icons.view_in_ar
-                                  : Icons.threed_rotation),
-                        color: _is3D
-                            ? Colors.white
-                            : (Theme.of(context).brightness == Brightness.dark
-                                  ? Colors.white
-                                  : Colors.grey[800]),
-                        size: 22,
-                      ),
-                    ),
+                    ],
+                  ),
+                  child: Icon(
+                    Icons.palette,
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? Colors.white
+                        : Colors.grey[800],
+                    size: 22,
                   ),
                 ),
               ),
@@ -912,14 +881,16 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
               searchActive: searchActive,
               myLocationIcon: Icons.my_location,
               onMyLocation: () => unawaited(_jumpToUserPosition()),
-              onMyLocationLongPress: () {
-                final haptic = context
-                    .read<SettingsProvider>()
-                    .settings
-                    .hapticFeedback;
+              // 3D button — right side, above zoom
+              on3DTap: () => setState(() => _set3DMode(enabled: !_is3D, compassFollow: true)),
+              on3DLongPress: () {
+                final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
                 if (haptic) Vibration.vibrate(duration: 30);
                 setState(_toggle3DFixedMode);
               },
+              icon3D: _is3D && !_gpsFollow ? Icons.screen_rotation_alt : (_is3D ? Icons.view_in_ar : Icons.threed_rotation),
+              icon3DColor: _is3D ? Colors.white : null,
+              bg3DColor: _is3D ? Theme.of(context).colorScheme.primary : null,
             ),
           ),
         if (!_isAssigning)
@@ -978,12 +949,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   } else {
                     _assignTimeMinutes = (dist * 0.3).clamp(5.0, 120.0).round();
                   }
-                  unawaited(this._activateAssignOverlay());
                   // Update overlay circle instantly (no widget rebuild)
                   _radiusNotifier.value = this._currentRadiusPx;
-                  this._refreshAssignMarker();
-                  // Sync slider in AlarmCard (setState only rebuilds card, not overlay)
-                  setState(() {});
+                  this._scheduleAssignNativeOverlayUpdate();
+                  this._scheduleAssignCardSync();
                 },
                 onPointerUp: (e) {
                   if (!_isAssigning) return;
@@ -993,6 +962,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   if (e.pointer != _dragPointerId) return;
                   _isDraggingRadius = false;
                   _dragPointerId = null;
+                  this._flushAssignCardSync();
                 },
                 child: CustomPaint(
                   painter:
@@ -1041,28 +1011,28 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
               radius: _assignRadius,
               onRadiusChanged: (v) {
                 setState(() => _assignRadius = v);
-                unawaited(this._activateAssignOverlay());
+                this._scheduleAssignNativeOverlayUpdate();
                 _radiusNotifier.value = this._currentRadiusPx;
                 this._refreshAssignMarker();
               },
               onZoneTriggerChanged: (v) {
                 setState(() => _assignZoneTrigger = v);
-                unawaited(this._activateAssignOverlay());
+                this._scheduleAssignNativeOverlayUpdate();
               },
               onTriggerTypeChanged: (v) {
                 setState(() => _assignTriggerType = v);
-                unawaited(this._activateAssignOverlay(updateMarker: true));
+                this._scheduleAssignNativeOverlayUpdate(updateMarker: true);
                 this._refreshAssignMarker();
               },
               onTimeChanged: (v) {
                 setState(() => _assignTimeMinutes = v);
-                unawaited(this._activateAssignOverlay());
+                this._scheduleAssignNativeOverlayUpdate();
                 _radiusNotifier.value = this._currentRadiusPx;
                 this._refreshAssignMarker();
               },
               onActiveChanged: (v) {
                 setState(() => _assignActive = v);
-                unawaited(this._activateAssignOverlay(updateMarker: true));
+                this._scheduleAssignNativeOverlayUpdate(updateMarker: true);
                 this._refreshAssignMarker();
               },
               onSave: (alarm) => this._saveAssign(alarm),

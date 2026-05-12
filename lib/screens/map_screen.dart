@@ -577,18 +577,9 @@ class _MapScreenState extends State<MapScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
+                // Toggle raster/vector — single tap
                 GestureDetector(
                   onTap: () {
-                    // Single tap: cycle raster tile styles (standard/humanitarian/topo/positron/voyager/dark)
-                    if (_isAssigning) _cancelAssign();
-                    final settings = context.read<SettingsProvider>();
-                    final styles = MapTileStyle.values;
-                    final idx = styles.indexOf(settings.settings.mapTileStyle);
-                    final next = styles[(idx + 1) % styles.length];
-                    settings.updateSettings(settings.settings.copyWith(mapTileStyle: next));
-                  },
-                  onLongPress: () {
-                    // Long tap: switch to vector (MapLibre) with haptic
                     final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
                     if (haptic) Vibration.vibrate(duration: 30);
                     if (_isAssigning) _cancelAssign();
@@ -605,6 +596,29 @@ class _MapScreenState extends State<MapScreen> {
                       boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 2))],
                     ),
                     child: Icon(Icons.layers, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.grey[800], size: 22),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // Skin cycle — single tap
+                GestureDetector(
+                  onTap: () {
+                    if (_isAssigning) _cancelAssign();
+                    final settings = context.read<SettingsProvider>();
+                    final styles = MapTileStyle.values;
+                    final idx = styles.indexOf(settings.settings.mapTileStyle);
+                    final next = styles[(idx + 1) % styles.length];
+                    settings.updateSettings(settings.settings.copyWith(mapTileStyle: next));
+                  },
+                  child: Container(
+                    width: 44, height: 44,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? Colors.grey[900]!.withOpacity(0.92)
+                          : Colors.white.withOpacity(0.92),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 2))],
+                    ),
+                    child: Icon(Icons.palette, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.grey[800], size: 22),
                   ),
                 ),
               ],
