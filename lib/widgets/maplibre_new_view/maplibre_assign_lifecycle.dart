@@ -238,8 +238,9 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     );
     final style = _controller?.style;
     if (style != null && _showAssignOverlay) {
-      if (_useNativeAssignCircle) await this._updateFastCircleLayer(style);
-      DebugConsole.log('ASSIGN_START: updating veil immediately');
+      // Skip native circle during drag — overlay painter handles it
+      if (_useNativeAssignCircle && !_isDraggingRadius) await this._updateFastCircleLayer(style);
+      DebugConsole.log('ASSIGN_START: updating veil immediately isDragging=$_isDraggingRadius');
       this._updateVeil(style, context.read<AlarmProvider>());
     } else if (existing != null) {
       DebugConsole.log('ASSIGN_START: keeping native alarm visual during edit');
