@@ -47,7 +47,10 @@ extension _MaplibreAssignMarker on _MaplibreNewViewState {
       return key;
     }
     final version = ++_assignMarkerVersion;
+    final renderSw = Stopwatch()..start();
     AlarmMarkerRenderer.render(label: label, color: color, dpr: _deviceDpr).then((png) {
+      renderSw.stop();
+      DebugConsole.log('VECTOR_MARKER_RENDER: ${renderSw.elapsedMilliseconds}ms label=$label cached=false');
       if (!mounted || version != _assignMarkerVersion || _assignMarkerKey != key) return;
       _markerBitmapCache[key] = png;
       setState(() => _assignMarkerPng = png);

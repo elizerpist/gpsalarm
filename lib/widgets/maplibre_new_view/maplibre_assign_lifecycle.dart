@@ -50,9 +50,12 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     final updateMarker = _assignNativeUpdateMarkerPending;
     _assignNativeUpdateMarkerPending = false;
     _assignNativeUpdateRunning = true;
+    final sw = Stopwatch()..start();
     try {
       await this._activateAssignOverlay(updateMarker: updateMarker);
     } finally {
+      sw.stop();
+      DebugConsole.log('VECTOR_NATIVE_SYNC: ${sw.elapsedMilliseconds}ms marker=$updateMarker');
       _assignNativeUpdateRunning = false;
       if (_assignNativeUpdatePending && _isAssigning) {
         this._scheduleAssignNativeOverlayUpdate(
@@ -75,8 +78,13 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignCardSyncTimer?.cancel();
     _assignCardSyncTimer = null;
     if (!mounted || !_isAssigning) return;
+    final sw = Stopwatch()..start();
     this._refreshAssignMarker();
     setState(() {});
+    sw.stop();
+    if (sw.elapsedMilliseconds > 5) {
+      DebugConsole.log('VECTOR_CARD_SYNC: ${sw.elapsedMilliseconds}ms (marker+setState)');
+    }
   }
 
   bool _alarmVisualChanged(AlarmPoint? previous, AlarmPoint next) {

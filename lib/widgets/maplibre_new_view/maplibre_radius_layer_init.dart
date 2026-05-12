@@ -23,6 +23,7 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
   }
 
   Future<void> _updateFastCircleLayer(StyleController style) async {
+    final sw = Stopwatch()..start();
     final isTime = _assignTriggerType == TriggerType.time;
     double radius = _assignRadius;
     if (isTime) {
@@ -68,6 +69,8 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
         isLeave: _assignZoneTrigger == ZoneTrigger.onLeave,
       ));
     } catch (_) {}
+    sw.stop();
+    DebugConsole.log('VECTOR_SOURCE_UPDATE: ${sw.elapsedMilliseconds}ms (updateGeoJson+ensureLayer)');
   }
 
   Future<void> _clearFastCircleLayer(StyleController style) async {
