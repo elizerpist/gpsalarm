@@ -985,7 +985,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                 },
                 child: CustomPaint(
                   painter:
-                      !_useNativeAssignCircle &&
+                      (_isDraggingRadius || !_useNativeAssignCircle) &&
                           _assignScreenCenter != null &&
                           (this._showAssignOverlay || _closingAssignCircle)
                       ? _RadiusOverlayPainter(

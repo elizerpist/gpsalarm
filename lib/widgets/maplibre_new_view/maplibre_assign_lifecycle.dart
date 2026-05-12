@@ -79,7 +79,8 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignCardSyncTimer = null;
     if (!mounted || !_isAssigning) return;
     final sw = Stopwatch()..start();
-    this._refreshAssignMarker();
+    // Skip expensive bitmap render during drag — only update card text via setState
+    if (!_isDraggingRadius) this._refreshAssignMarker();
     setState(() {});
     sw.stop();
     if (sw.elapsedMilliseconds > 5) {
