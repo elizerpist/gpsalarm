@@ -89,9 +89,11 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     setState(() => _closingAssignCircle = false);
   }
 
-  void _scheduleAssignVisualClear() {
+  void _scheduleAssignVisualClear([
+    Duration delay = const Duration(milliseconds: 80),
+  ]) {
     _assignVisualClearTimer?.cancel();
-    _assignVisualClearTimer = Timer(const Duration(milliseconds: 80), () {
+    _assignVisualClearTimer = Timer(delay, () {
       if (!mounted) return;
       setState(() {
         _closingAssignVisual = false;
@@ -104,6 +106,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         _assignTriggerType = TriggerType.distance;
         _assignZoneTrigger = ZoneTrigger.onEntry;
         _assignTimeMinutes = 10;
+        _assignActive = true;
       });
       _restoreCompassAfterAssign();
     });
@@ -123,6 +126,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignTriggerType = existing?.triggerType ?? TriggerType.distance;
     _assignZoneTrigger = existing?.zoneTrigger ?? ZoneTrigger.onEntry;
     _assignTimeMinutes = existing?.timeTrigger?.inMinutes ?? 10;
+    _assignActive = existing?.isActive ?? true;
     _assignMarkerPng = null;
     _assignMarkerKey = null;
     _assignNativeAlarmLayerId = existing == null
@@ -211,6 +215,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
   }
 
   Future<void> _saveAssign(AlarmPoint alarm) async {
+    _assignActive = alarm.isActive;
     final effectiveAlarm = AlarmPoint(
       id: alarm.id,
       name: alarm.name,
@@ -282,7 +287,11 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       }
       _finishClosingAssignCircle();
       if (style != null) await this._clearFastCircleLayer(style);
-      _scheduleAssignVisualClear();
+      _scheduleAssignVisualClear(
+        !wasExisting && _useNativeAssignCircle
+            ? const Duration(milliseconds: 500)
+            : const Duration(milliseconds: 80),
+      );
     } finally {
       _suppressRadiusSync = false;
     }

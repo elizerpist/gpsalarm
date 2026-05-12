@@ -78,8 +78,6 @@ extension _MaplibreRadiusData on _MaplibreNewViewState {
     if (existing == null) return null;
     final id = _alarmLayerId(alarmProv, existing.id) ?? _assignNativeAlarmLayerId;
     if (id == null) return null;
-    final index = alarmProv.alarmPoints.indexWhere((p) => p.id == existing.id);
-    final providerPoint = index < 0 ? null : alarmProv.alarmPoints[index];
     double radius = _assignRadius;
     final isTime = _assignTriggerType == TriggerType.time;
     if (isTime) {
@@ -90,7 +88,7 @@ extension _MaplibreRadiusData on _MaplibreNewViewState {
       lng: _assignLng,
       lat: _assignLat,
       radiusMeters: radius,
-      active: providerPoint?.isActive ?? existing.isActive,
+      active: _assignActive,
       isTime: isTime,
       isLeave: _assignZoneTrigger == ZoneTrigger.onLeave,
     );

@@ -835,6 +835,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
                           radiusNotifier: _radiusNotifier,
                           isTime: _assignTriggerType == TriggerType.time,
                           isLeave: _assignZoneTrigger == ZoneTrigger.onLeave,
+                          active: _assignActive,
                         )
                       : null,
                   child: const SizedBox.expand(),

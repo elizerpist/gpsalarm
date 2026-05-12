@@ -18,6 +18,8 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
           'case',
           ['==', ['get', 'isLeave'], true],
           'rgba(0,0,0,0)',
+          ['==', ['get', 'active'], false],
+          'rgba(158,158,158,0.08)',
           ['==', ['get', 'isTime'], true],
           'rgba(255,152,0,0.10)',
           'rgba(255,0,0,0.12)',
@@ -34,6 +36,8 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
       paint: {
         'line-color': [
           'case',
+          ['==', ['get', 'active'], false],
+          'rgba(158,158,158,0.70)',
           ['==', ['get', 'isTime'], true],
           'rgba(255,152,0,0.7)',
           'rgba(255,0,0,0.6)',
@@ -66,6 +70,7 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
           radius,
           isTime: isTime,
           isLeave: _assignZoneTrigger == ZoneTrigger.onLeave,
+          active: _assignActive,
         ),
       );
       await style.updateGeoJsonSource(
@@ -76,6 +81,7 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
           radius,
           isTime: isTime,
           isLeave: _assignZoneTrigger == ZoneTrigger.onLeave,
+          active: _assignActive,
         ),
       );
     } catch (_) {}

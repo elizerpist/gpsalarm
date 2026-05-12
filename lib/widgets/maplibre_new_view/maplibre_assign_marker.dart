@@ -12,6 +12,7 @@ extension _MaplibreAssignMarker on _MaplibreNewViewState {
   }
 
   Color _assignMarkerColor() {
+    if (!_assignActive) return Colors.grey;
     if (_assignTriggerType == TriggerType.time) return Colors.orange;
     return Colors.red;
   }

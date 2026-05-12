@@ -7,23 +7,29 @@ class _RadiusOverlayPainter extends CustomPainter {
   final ValueNotifier<double> radiusNotifier;
   final bool isTime;
   final bool isLeave;
+  final bool active;
 
   _RadiusOverlayPainter({
     required this.center,
     required this.radiusNotifier,
     required this.isTime,
     this.isLeave = false,
+    this.active = true,
   }) : super(repaint: radiusNotifier);
 
   @override
   void paint(Canvas canvas, Size size) {
     final radiusPx = radiusNotifier.value;
-    final fillColor = isTime
-        ? const Color(0x1AFF9800)
-        : const Color(0x1FFF0000);
-    final strokeColor = isTime
-        ? const Color(0xB3FF9800)
-        : const Color(0x99FF0000);
+    final fillColor = !active
+        ? const Color(0x149E9E9E)
+        : (isTime
+            ? const Color(0x1AFF9800)
+            : const Color(0x1FFF0000));
+    final strokeColor = !active
+        ? const Color(0xB39E9E9E)
+        : (isTime
+            ? const Color(0xB3FF9800)
+            : const Color(0x99FF0000));
 
     if (!isLeave) {
       canvas.drawCircle(center, radiusPx, Paint()..color = fillColor);

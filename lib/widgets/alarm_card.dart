@@ -18,6 +18,7 @@ class AlarmCard extends StatefulWidget {
   final ValueChanged<ZoneTrigger> onZoneTriggerChanged;
   final ValueChanged<TriggerType> onTriggerTypeChanged;
   final ValueChanged<int> onTimeChanged;
+  final ValueChanged<bool>? onActiveChanged;
   final void Function(AlarmPoint alarm) onSave;
   final VoidCallback onCancel;
   final VoidCallback? onDelete;
@@ -32,6 +33,7 @@ class AlarmCard extends StatefulWidget {
     required this.onZoneTriggerChanged,
     required this.onTriggerTypeChanged,
     required this.onTimeChanged,
+    this.onActiveChanged,
     required this.onSave,
     required this.onCancel,
     this.onDelete,
@@ -221,7 +223,11 @@ class _AlarmCardState extends State<AlarmCard> {
                     const SizedBox(width: 12),
                     // Active toggle with bell icon
                     GestureDetector(
-                      onTap: () => setState(() => _isActive = !_isActive),
+                      onTap: () {
+                        final next = !_isActive;
+                        setState(() => _isActive = next);
+                        widget.onActiveChanged?.call(next);
+                      },
                       child: Icon(
                         _isActive ? Icons.notifications_active : Icons.notifications_off,
                         size: 22,

@@ -13,6 +13,26 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
         : (circle.active ? Colors.red : Colors.grey);
   }
 
+  Object get _radiusFillColorExpression => [
+        'case',
+        ['==', ['get', 'isLeave'], true],
+        'rgba(0,0,0,0)',
+        ['==', ['get', 'active'], false],
+        'rgba(158,158,158,0.08)',
+        ['==', ['get', 'isTime'], true],
+        'rgba(255,152,0,0.10)',
+        'rgba(255,0,0,0.12)',
+      ];
+
+  Object get _radiusStrokeColorExpression => [
+        'case',
+        ['==', ['get', 'active'], false],
+        'rgba(158,158,158,0.70)',
+        ['==', ['get', 'isTime'], true],
+        'rgba(255,152,0,0.7)',
+        'rgba(255,0,0,0.6)',
+      ];
+
   Future<String> _ensureRadiusMarkerImage(
     StyleController style,
     _RadiusCircleData circle,
@@ -73,6 +93,7 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     final circle = this._currentAssignCircle(alarmProv);
     if (circle == null) return;
     await this._updateRadiusCircleSources(style, circle);
+    await this._ensureRadiusMarkerImage(style, circle);
   }
 
   Future<void> _removeRadiusVisual(
@@ -132,21 +153,11 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     _RadiusCircleData circle, {
     String? belowLayerId,
   }) async {
-    final String fillColor = circle.isLeave
-        ? 'rgba(0,0,0,0)'
-        : (circle.isTime
-            ? (circle.active ? 'rgba(255,152,0,0.10)' : 'rgba(158,158,158,0.05)')
-            : (circle.active ? 'rgba(255,0,0,0.12)' : 'rgba(158,158,158,0.05)'));
-    final String strokeColor = circle.isTime
-        ? (circle.active ? 'rgba(255,152,0,0.7)' : 'rgba(158,158,158,0.3)')
-            : (circle.active ? 'rgba(255,0,0,0.6)' : 'rgba(158,158,158,0.3)');
-    final strokeWidth = circle.active ? 2.0 : 1.0;
-
     if (_is3D) {
       final fillLayer = FillStyleLayer(
         id: 'radius-fill-${circle.id}',
         sourceId: 'radius-fill-${circle.id}',
-        paint: {'fill-color': fillColor},
+        paint: {'fill-color': _radiusFillColorExpression},
       );
       final lineLayer = LineStyleLayer(
         id: 'radius-line-${circle.id}',
@@ -156,8 +167,8 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
           'line-join': 'round',
         },
         paint: {
-          'line-color': strokeColor,
-          'line-width': strokeWidth,
+          'line-color': _radiusStrokeColorExpression,
+          'line-width': 2.0,
         },
       );
       try {
@@ -185,9 +196,9 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
             22.0,
             basePx * 4194304.0,
           ],
-          'circle-color': fillColor,
-          'circle-stroke-color': strokeColor,
-          'circle-stroke-width': strokeWidth,
+          'circle-color': _radiusFillColorExpression,
+          'circle-stroke-color': _radiusStrokeColorExpression,
+          'circle-stroke-width': 2.0,
           'circle-pitch-alignment': 'map',
           'circle-pitch-scale': 'map',
         },
@@ -208,6 +219,7 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
       circle.radiusMeters,
       isTime: circle.isTime,
       isLeave: circle.isLeave,
+      active: circle.active,
     );
   }
 
@@ -219,6 +231,7 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
       circle.radiusMeters,
       isTime: circle.isTime,
       isLeave: circle.isLeave,
+      active: circle.active,
     );
   }
 

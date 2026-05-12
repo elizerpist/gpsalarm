@@ -13,10 +13,15 @@ String _pointGeoJson(double lng, double lat) {
   });
 }
 
-Map<String, Object> _circleProps({required bool isTime, required bool isLeave}) {
+Map<String, Object> _circleProps({
+  required bool isTime,
+  required bool isLeave,
+  required bool active,
+}) {
   return {
     'isTime': isTime,
     'isLeave': isLeave,
+    'active': active,
   };
 }
 
@@ -26,6 +31,7 @@ String _circlePolygonGeoJson(
   double radiusMeters, {
   bool isTime = false,
   bool isLeave = false,
+  bool active = true,
 }) {
   final ring = _geoCircle(lng, lat, radiusMeters);
   return jsonEncode({
@@ -37,7 +43,11 @@ String _circlePolygonGeoJson(
           'type': 'Polygon',
           'coordinates': [ring],
         },
-        'properties': _circleProps(isTime: isTime, isLeave: isLeave),
+        'properties': _circleProps(
+          isTime: isTime,
+          isLeave: isLeave,
+          active: active,
+        ),
       },
     ],
   });
@@ -49,6 +59,7 @@ String _circleLineGeoJson(
   double radiusMeters, {
   bool isTime = false,
   bool isLeave = false,
+  bool active = true,
 }) {
   final ring = _geoCircle(lng, lat, radiusMeters);
   return jsonEncode({
@@ -60,7 +71,11 @@ String _circleLineGeoJson(
           'type': 'LineString',
           'coordinates': ring,
         },
-        'properties': _circleProps(isTime: isTime, isLeave: isLeave),
+        'properties': _circleProps(
+          isTime: isTime,
+          isLeave: isLeave,
+          active: active,
+        ),
       },
     ],
   });

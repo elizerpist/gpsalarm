@@ -4,11 +4,13 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
   void _updateVeil(StyleController style, AlarmProvider alarmProv, {bool ignoreAssign = false}) {
     final useLiveAssignHole = !ignoreAssign &&
         _isAssigning &&
+        _assignActive &&
         _assignZoneTrigger == ZoneTrigger.onLeave &&
         (_showAssignOverlay || _useNativeExistingAssignLayer);
     final leaveAlarms = alarmProv.alarmPoints
         .where(
           (p) =>
+              p.isActive &&
               p.zoneTrigger == ZoneTrigger.onLeave &&
               !(!ignoreAssign && _isAssigning && _assignNativeHidden && _assignExisting?.id == p.id),
         )
