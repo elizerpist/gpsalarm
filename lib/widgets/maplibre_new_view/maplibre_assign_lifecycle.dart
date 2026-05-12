@@ -472,15 +472,13 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         }
         this._updateVeil(liveStyle, alarmProv, ignoreAssign: true);
       }
-      // Wait for MapLibre to render native marker before hiding overlay pin
-      if (shouldRebuildNative) {
-        await Future.delayed(const Duration(milliseconds: 150));
-      }
-      _beginClosingAssignVisual(keepCircle: false);
+      // Keep overlay visible while native layers render
+      _beginClosingAssignVisual(keepCircle: shouldRebuildNative);
       _finishClosingAssignCircle();
+      // Give MapLibre enough time to render native layers before killing overlay
       _scheduleAssignVisualClear(
-        !wasExisting && _useNativeAssignCircle
-            ? const Duration(milliseconds: 500)
+        shouldRebuildNative
+            ? const Duration(milliseconds: 300)
             : const Duration(milliseconds: 80),
       );
     } finally {
