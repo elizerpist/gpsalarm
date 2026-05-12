@@ -49,7 +49,7 @@ class MaplibreNewView extends StatefulWidget {
   State<MaplibreNewView> createState() => _MaplibreNewViewState();
 }
 
-class _MaplibreNewViewState extends State<MaplibreNewView> {
+class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProviderStateMixin {
   MapController? _controller;
   bool _imagesRegistered = false;
   bool _radiusLayerReady = false;
@@ -65,6 +65,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   DateTime _lastCompassCameraUpdate = DateTime.fromMillisecondsSinceEpoch(0);
   StreamSubscription<CompassEvent>? _compassSub;
   bool _resumeCompassAfterAssign = false;
+  // 3D button eject animation
+  late final AnimationController _3dButtonAnim;
+  late final Animation<double> _3dButtonSlide;
+  bool _3dButtonVisible = true;
   // Unified assign state
   bool _isAssigning = false;
   AlarmPoint? _assignExisting;
@@ -74,6 +78,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   TriggerType _assignTriggerType = TriggerType.distance;
   ZoneTrigger _assignZoneTrigger = ZoneTrigger.onEntry;
   int _assignTimeMinutes = 10;
+  bool _assignActive = true;
   bool _isDraggingRadius = false;
   int? _dragPointerId;
   double _currentZoom = 13;
@@ -108,6 +113,19 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   @override
   void initState() {
     super.initState();
+    _3dButtonAnim = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+    _3dButtonSlide = CurvedAnimation(
+      parent: _3dButtonAnim,
+      curve: Curves.elasticOut,
+    );
+    // Eject animation: starts hidden, springs to final position
+    _3dButtonAnim.value = 0.0;
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (mounted) _3dButtonAnim.forward();
+    });
     _initLocation();
     _startSpeedInterpolation();
   }
@@ -249,6 +267,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
 
   @override
   void dispose() {
+    _3dButtonAnim.dispose();
     _compassSub?.cancel();
     _radiusDebounce?.cancel();
     _assignVisualClearTimer?.cancel();
@@ -631,33 +650,50 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                   child: Icon(Icons.layers, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.grey[800], size: 22),
                 ),
               ),
-              const SizedBox(height: 8),
-              GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _set3DMode(enabled: !_is3D, compassFollow: true);
-                  });
+              // 3D button — ejects from toggle button with spring animation
+              AnimatedBuilder(
+                animation: _3dButtonSlide,
+                builder: (context, child) {
+                  // Slide from 0 (overlapping toggle) to 1 (final position)
+                  final t = _3dButtonSlide.value;
+                  return Transform.translate(
+                    offset: Offset(0, (1 - t) * -52), // -52 = slide up from toggle position
+                    child: Opacity(
+                      opacity: t.clamp(0.0, 1.0),
+                      child: child,
+                    ),
+                  );
                 },
-                onLongPress: () {
-                  final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
-                  if (haptic) Vibration.vibrate(duration: 30);
-                  setState(_toggle3DFixedMode);
-                },
-                child: Container(
-                  width: 44, height: 44,
-                  decoration: BoxDecoration(
-                    color: _is3D
-                        ? Theme.of(context).colorScheme.primary
-                        : (Theme.of(context).brightness == Brightness.dark
-                            ? Colors.grey[900]!.withOpacity(0.92)
-                            : Colors.white.withOpacity(0.92)),
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 2))],
-                  ),
-                  child: Icon(
-                    _is3D && !_gpsFollow ? Icons.screen_rotation_alt : (_is3D ? Icons.view_in_ar : Icons.threed_rotation),
-                    color: _is3D ? Colors.white : (Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.grey[800]),
-                    size: 22,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _set3DMode(enabled: !_is3D, compassFollow: true);
+                      });
+                    },
+                    onLongPress: () {
+                      final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
+                      if (haptic) Vibration.vibrate(duration: 30);
+                      setState(_toggle3DFixedMode);
+                    },
+                    child: Container(
+                      width: 44, height: 44,
+                      decoration: BoxDecoration(
+                        color: _is3D
+                            ? Theme.of(context).colorScheme.primary
+                            : (Theme.of(context).brightness == Brightness.dark
+                                ? Colors.grey[900]!.withOpacity(0.92)
+                                : Colors.white.withOpacity(0.92)),
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 2))],
+                      ),
+                      child: Icon(
+                        _is3D && !_gpsFollow ? Icons.screen_rotation_alt : (_is3D ? Icons.view_in_ar : Icons.threed_rotation),
+                        color: _is3D ? Colors.white : (Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.grey[800]),
+                        size: 22,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -817,6 +853,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                 setState(() => _assignTimeMinutes = v);
                 unawaited(this._activateAssignOverlay());
                 _radiusNotifier.value = this._currentRadiusPx;
+                this._refreshAssignMarker();
+              },
+              onActiveChanged: (v) {
+                setState(() => _assignActive = v);
+                unawaited(this._activateAssignOverlay());
                 this._refreshAssignMarker();
               },
               onSave: (alarm) => this._saveAssign(alarm),
