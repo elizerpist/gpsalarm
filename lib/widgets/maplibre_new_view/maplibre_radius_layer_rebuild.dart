@@ -215,6 +215,17 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     await this._syncRadiusMarkerImage(style, circle);
     await this._updateRadiusCircleSources(style, circle);
     await this._addRadiusCircleLayer(style, circle);
+    await this._addRadiusLabelLayer(style, circle);
+    _radiusVisualIds.add(circle.id);
+  }
+
+  Future<void> _addRadiusLabelLayer(
+    StyleController style,
+    _RadiusCircleData circle,
+  ) async {
+    try {
+      await style.removeLayer('radius-label-${circle.id}');
+    } catch (_) {}
     final markerSize = AlarmMarkerRenderer.measureLogicalSize(
       _markerLabelForCircle(circle),
     );
@@ -232,7 +243,6 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
         },
       ),
     );
-    _radiusVisualIds.add(circle.id);
   }
 
   Future<void> _addRadiusCircleLayer(
@@ -283,6 +293,30 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
       ),
     );
     _fastCircleLayerKey = nextKey;
+  }
+
+  Future<void> _updateDraftRadiusCircleLayer(
+    StyleController style,
+    _RadiusCircleData circle, {
+    bool updateMarker = false,
+  }) async {
+    if (updateMarker || !_radiusPointImageIds.containsKey(circle.id)) {
+      await this._syncRadiusMarkerImage(style, circle);
+    }
+    await style.updateGeoJsonSource(
+      id: 'radius-pt-${circle.id}',
+      data: _radiusPointSourceGeoJson(circle),
+    );
+    await this._ensureRadiusCircleLayer(style, circle);
+  }
+
+  Future<void> _promoteDraftRadiusCircleLayer(
+    StyleController style,
+    _RadiusCircleData circle,
+  ) async {
+    await this._updateDraftRadiusCircleLayer(style, circle, updateMarker: true);
+    await this._addRadiusLabelLayer(style, circle);
+    _radiusVisualIds.add(circle.id);
   }
 
   Future<void> _rebuildRadiusLayers(

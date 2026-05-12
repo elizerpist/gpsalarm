@@ -29,6 +29,22 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
       radius = math.max(200.0, (_speedKmh / 3.6) * _assignTimeMinutes * 60);
     }
 
+    final draftId = _assignExisting == null ? _assignNativeAlarmLayerId : null;
+    if (draftId != null) {
+      try {
+        await this._updateDraftRadiusCircleLayer(style, (
+          id: draftId,
+          lng: _assignLng,
+          lat: _assignLat,
+          radiusMeters: radius,
+          active: _assignActive,
+          isTime: isTime,
+          isLeave: _assignZoneTrigger == ZoneTrigger.onLeave,
+        ));
+      } catch (_) {}
+      return;
+    }
+
     try {
       await style.updateGeoJsonSource(
         id: 'fast-pt-src',
