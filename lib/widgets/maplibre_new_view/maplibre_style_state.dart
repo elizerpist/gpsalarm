@@ -11,6 +11,7 @@ extension _MaplibreStyleState on _MaplibreNewViewState {
     _radiusDebounce?.cancel();
     _radiusLayerVersion++;
     _styleGeneration++;
+    _registeredMarkerImageKeys.clear();
     _controller = null;
   }
 

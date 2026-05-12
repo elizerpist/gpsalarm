@@ -64,6 +64,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   double _lastCameraBearing = 0;
   DateTime _lastCompassCameraUpdate = DateTime.fromMillisecondsSinceEpoch(0);
   StreamSubscription<CompassEvent>? _compassSub;
+  bool _resumeCompassAfterAssign = false;
   // Unified assign state
   bool _isAssigning = false;
   AlarmPoint? _assignExisting;
@@ -86,6 +87,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   String? _assignMarkerKey;
   Size _assignMarkerSize = Size.zero;
   int _assignMarkerVersion = 0;
+  String? _assignNativeAlarmLayerId;
   bool _closingAssignVisual = false;
   bool _closingAssignCircle = false;
   bool _assignNativeHidden = false;
@@ -93,6 +95,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   Timer? _assignVisualClearTimer;
   final Map<String, Uint8List> _markerBitmapCache = {};
   final Map<String, Size> _markerSizeCache = {};
+  final Map<String, String> _registeredMarkerImageKeys = {};
   // Overlay radius notifier — drives CustomPainter repaint without setState
   final ValueNotifier<double> _radiusNotifier = ValueNotifier(500);
   // Speed interpolation
@@ -269,12 +272,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   }) {
     final controller = _controller;
     if (controller == null) return;
-    unawaited(controller.animateCamera(
+    unawaited(controller.moveCamera(
       center: center,
       zoom: zoom,
       bearing: bearing,
       pitch: pitch,
-      nativeDuration: const Duration(milliseconds: 1),
     ).catchError((_) {}));
   }
 
@@ -329,6 +331,64 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       bearing: _lastBearing,
       nativeDuration: const Duration(milliseconds: 120),
     );
+  }
+
+  void _set3DMode({required bool enabled, bool compassFollow = true}) {
+    _is3D = enabled;
+    _lastRadiusDataHash = '';
+    if (enabled) {
+      _gpsFollow = compassFollow;
+      _lastCameraBearing = _lastBearing;
+      _safeMoveCamera(pitch: 45, bearing: compassFollow ? _lastBearing : _lastCameraBearing);
+      if (compassFollow) {
+        _startCompassFollow();
+      } else {
+        _stopCompassFollow();
+      }
+    } else {
+      _gpsFollow = false;
+      _stopCompassFollow();
+      _safeMoveCamera(pitch: 0, bearing: 0);
+    }
+  }
+
+  void _toggle3DFixedMode() {
+    if (!_is3D) {
+      _set3DMode(enabled: true, compassFollow: false);
+      return;
+    }
+    _gpsFollow = !_gpsFollow;
+    if (_gpsFollow) {
+      _lastCameraBearing = _lastBearing;
+      _safeMoveCamera(pitch: 45, bearing: _lastBearing);
+      _startCompassFollow();
+    } else {
+      _lastCameraBearing = _controller?.camera?.bearing ?? _lastCameraBearing;
+      _stopCompassFollow();
+      _safeMoveCamera(pitch: 45, bearing: _lastCameraBearing);
+    }
+  }
+
+  void _suspendCompassForAssign() {
+    if (!_is3D || !_gpsFollow) return;
+    _resumeCompassAfterAssign = true;
+    _gpsFollow = false;
+    _lastCameraBearing = _controller?.camera?.bearing ?? _lastCameraBearing;
+    _stopCompassFollow();
+  }
+
+  void _restoreCompassAfterAssign() {
+    if (!_resumeCompassAfterAssign || !_is3D || !mounted) {
+      _resumeCompassAfterAssign = false;
+      return;
+    }
+    _resumeCompassAfterAssign = false;
+    setState(() {
+      _gpsFollow = true;
+      _lastCameraBearing = _lastBearing;
+      _safeMoveCamera(pitch: 45, bearing: _lastBearing);
+      _startCompassFollow();
+    });
   }
 
   Future<void> _registerImages(StyleController style, String styleUrl) async {
@@ -575,19 +635,13 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               GestureDetector(
                 onTap: () {
                   setState(() {
-                    _is3D = !_is3D;
-                    if (_is3D) {
-                      _gpsFollow = true;
-                      _lastCameraBearing = _lastBearing;
-                      _safeMoveCamera(pitch: 45, bearing: _lastBearing);
-                      _startCompassFollow();
-                    } else {
-                      _gpsFollow = false;
-                      _stopCompassFollow();
-                      _safeMoveCamera(pitch: 0, bearing: 0);
-                    }
-                    _lastRadiusDataHash = '';
+                    _set3DMode(enabled: !_is3D, compassFollow: true);
                   });
+                },
+                onLongPress: () {
+                  final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
+                  if (haptic) Vibration.vibrate(duration: 30);
+                  setState(_toggle3DFixedMode);
                 },
                 child: Container(
                   width: 44, height: 44,
@@ -601,7 +655,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                     boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 2))],
                   ),
                   child: Icon(
-                    _is3D ? Icons.view_in_ar : Icons.threed_rotation,
+                    _is3D && !_gpsFollow ? Icons.screen_rotation_alt : (_is3D ? Icons.view_in_ar : Icons.threed_rotation),
                     color: _is3D ? Colors.white : (Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.grey[800]),
                     size: 22,
                   ),

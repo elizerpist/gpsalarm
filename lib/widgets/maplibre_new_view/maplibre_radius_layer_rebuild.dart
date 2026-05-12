@@ -1,21 +1,60 @@
 part of '../maplibre_new_view.dart';
 
 extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
-  Future<void> _restoreRadiusCircleLayer(StyleController style, _RadiusCircleData circle) async {
-    try {
-      await style.removeLayer('radius-circle-${circle.id}');
-    } catch (_) {}
-    try {
-      await style.removeLayer('radius-line-${circle.id}');
-    } catch (_) {}
-    try {
-      await style.removeLayer('radius-fill-${circle.id}');
-    } catch (_) {}
-    try {
-      await style.updateGeoJsonSource(
-        id: 'radius-pt-${circle.id}',
-        data: _pointGeoJson(circle.lng, circle.lat),
+  String _markerLabelForCircle(_RadiusCircleData circle) {
+    return circle.isTime
+        ? '${(circle.radiusMeters / 1000).toStringAsFixed(1)}km'
+        : AlarmMarkerRenderer.formatDistance(circle.radiusMeters);
+  }
+
+  Color _markerColorForCircle(_RadiusCircleData circle) {
+    return circle.isTime
+        ? (circle.active ? Colors.orange : Colors.grey)
+        : (circle.active ? Colors.red : Colors.grey);
+  }
+
+  Future<String> _ensureRadiusMarkerImage(
+    StyleController style,
+    _RadiusCircleData circle,
+  ) async {
+    final labelText = _markerLabelForCircle(circle);
+    final markerColor = _markerColorForCircle(circle);
+    final imageId = 'alarm-marker-${circle.id}';
+    final visualKey = '$labelText-${markerColor.value}-$_deviceDpr';
+    if (_registeredMarkerImageKeys[imageId] == visualKey) return imageId;
+
+    final cacheKey = '$labelText-${markerColor.value}-$_deviceDpr';
+    var markerPng = _markerBitmapCache[cacheKey];
+    if (markerPng == null) {
+      markerPng = await AlarmMarkerRenderer.render(
+        label: labelText,
+        color: markerColor,
+        dpr: _deviceDpr,
       );
+      _markerBitmapCache[cacheKey] = markerPng;
+    }
+
+    try {
+      await style.removeImage(imageId);
+    } catch (_) {}
+    try {
+      await style.addImage(imageId, markerPng);
+      _registeredMarkerImageKeys[imageId] = visualKey;
+    } catch (_) {
+      _registeredMarkerImageKeys.remove(imageId);
+    }
+    return imageId;
+  }
+
+  Future<void> _updateRadiusCircleSources(
+    StyleController style,
+    _RadiusCircleData circle,
+  ) async {
+    await style.updateGeoJsonSource(
+      id: 'radius-pt-${circle.id}',
+      data: _pointGeoJson(circle.lng, circle.lat),
+    );
+    if (_is3D) {
       await style.updateGeoJsonSource(
         id: 'radius-fill-${circle.id}',
         data: _radiusFillSourceGeoJson(circle),
@@ -24,12 +63,68 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
         id: 'radius-line-${circle.id}',
         data: _radiusLineSourceGeoJson(circle),
       );
+    }
+  }
+
+  Future<void> _updateExistingNativeAssignLayer(
+    StyleController style,
+    AlarmProvider alarmProv,
+  ) async {
+    final circle = this._currentAssignCircle(alarmProv);
+    if (circle == null) return;
+    await this._updateRadiusCircleSources(style, circle);
+  }
+
+  Future<void> _removeRadiusVisual(
+    StyleController style,
+    String id, {
+    required bool clearSources,
+  }) async {
+    try {
+      await style.removeLayer('radius-label-$id');
     } catch (_) {}
-    await this._addRadiusCircleLayer(
-      style,
-      circle,
-      belowLayerId: 'radius-label-${circle.id}',
-    );
+    try {
+      await style.removeLayer('radius-circle-$id');
+    } catch (_) {}
+    try {
+      await style.removeLayer('radius-line-$id');
+    } catch (_) {}
+    try {
+      await style.removeLayer('radius-fill-$id');
+    } catch (_) {}
+    if (!clearSources) return;
+    try {
+      await style.updateGeoJsonSource(id: 'radius-pt-$id', data: _emptyGeoJson);
+    } catch (_) {}
+    try {
+      await style.updateGeoJsonSource(id: 'radius-fill-$id', data: _emptyGeoJson);
+    } catch (_) {}
+    try {
+      await style.updateGeoJsonSource(id: 'radius-line-$id', data: _emptyGeoJson);
+    } catch (_) {}
+  }
+
+  Future<void> _upsertRadiusVisual(
+    StyleController style,
+    _RadiusCircleData circle,
+  ) async {
+    await this._removeRadiusVisual(style, circle.id, clearSources: false);
+    await this._updateRadiusCircleSources(style, circle);
+    await this._addRadiusCircleLayer(style, circle);
+    final imageId = await this._ensureRadiusMarkerImage(style, circle);
+    final markerSize = AlarmMarkerRenderer.measureLogicalSize(_markerLabelForCircle(circle));
+    final pinTipCorrection = markerSize.height - AlarmMarkerSpec.pinSize;
+    await style.addLayer(SymbolStyleLayer(
+      id: 'radius-label-${circle.id}',
+      sourceId: 'radius-pt-${circle.id}',
+      layout: {
+        'icon-image': imageId,
+        'icon-size': 1.0,
+        'icon-anchor': 'bottom',
+        'icon-offset': [0.0, pinTipCorrection],
+        'icon-allow-overlap': true,
+      },
+    ));
   }
 
   Future<void> _addRadiusCircleLayer(
@@ -56,6 +151,10 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
       final lineLayer = LineStyleLayer(
         id: 'radius-line-${circle.id}',
         sourceId: 'radius-line-${circle.id}',
+        layout: const {
+          'line-cap': 'round',
+          'line-join': 'round',
+        },
         paint: {
           'line-color': strokeColor,
           'line-width': strokeWidth,
@@ -134,30 +233,10 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     final markerImageIds = <String, String>{};
     final markerLabels = <String, String>{};
     for (final c in circles) {
-      final labelText = c.isTime
-          ? '${(c.radiusMeters / 1000).toStringAsFixed(1)}km'
-          : AlarmMarkerRenderer.formatDistance(c.radiusMeters);
-      final markerColor = c.isTime
-          ? (c.active ? Colors.orange : Colors.grey)
-          : (c.active ? Colors.red : Colors.grey);
-      final imageId = 'alarm-marker-${c.id}-${labelText}-${markerColor.value}';
-      final cacheKey = '$labelText-${markerColor.value}-$_deviceDpr';
+      final labelText = _markerLabelForCircle(c);
+      final imageId = await this._ensureRadiusMarkerImage(style, c);
       markerImageIds[c.id] = imageId;
       markerLabels[c.id] = labelText;
-      var markerPng = _markerBitmapCache[cacheKey];
-      if (markerPng == null) {
-        markerPng = await AlarmMarkerRenderer.render(
-          label: labelText,
-          color: markerColor,
-          dpr: _deviceDpr,
-        );
-        _markerBitmapCache[cacheKey] = markerPng;
-      }
-      try {
-        await style.addImage(imageId, markerPng);
-      } catch (_) {
-        // The same visual image may already be registered from a previous swap.
-      }
     }
 
     if (version != _radiusLayerVersion || generation != _styleGeneration) return;
@@ -176,27 +255,14 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
       try {
         await style.removeLayer('radius-fill-$id');
       } catch (_) {}
-      try { style.updateGeoJsonSource(id: 'radius-pt-$id', data: _emptyGeoJson); } catch (_) {}
-      try { style.updateGeoJsonSource(id: 'radius-fill-$id', data: _emptyGeoJson); } catch (_) {}
-      try { style.updateGeoJsonSource(id: 'radius-line-$id', data: _emptyGeoJson); } catch (_) {}
+      try { await style.updateGeoJsonSource(id: 'radius-pt-$id', data: _emptyGeoJson); } catch (_) {}
+      try { await style.updateGeoJsonSource(id: 'radius-fill-$id', data: _emptyGeoJson); } catch (_) {}
+      try { await style.updateGeoJsonSource(id: 'radius-line-$id', data: _emptyGeoJson); } catch (_) {}
     }
 
     for (final c in circles) {
       try {
-        style.updateGeoJsonSource(
-          id: 'radius-pt-${c.id}',
-          data: _pointGeoJson(c.lng, c.lat),
-        );
-        if (_is3D) {
-          style.updateGeoJsonSource(
-            id: 'radius-fill-${c.id}',
-            data: _radiusFillSourceGeoJson(c),
-          );
-          style.updateGeoJsonSource(
-            id: 'radius-line-${c.id}',
-            data: _radiusLineSourceGeoJson(c),
-          );
-        }
+        await this._updateRadiusCircleSources(style, c);
         await this._addRadiusCircleLayer(style, c);
         final imageId = markerImageIds[c.id];
         if (imageId == null) continue;

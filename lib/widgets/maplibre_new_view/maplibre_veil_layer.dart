@@ -2,14 +2,24 @@ part of '../maplibre_new_view.dart';
 
 extension _MaplibreVeilLayer on _MaplibreNewViewState {
   void _updateVeil(StyleController style, AlarmProvider alarmProv, {bool ignoreAssign = false}) {
+    final useLiveAssignHole = !ignoreAssign &&
+        _isAssigning &&
+        _assignZoneTrigger == ZoneTrigger.onLeave &&
+        (_showAssignOverlay || _useNativeExistingAssignLayer);
     final leaveAlarms = alarmProv.alarmPoints
         .where(
           (p) =>
               p.zoneTrigger == ZoneTrigger.onLeave &&
               !(!ignoreAssign && _isAssigning && _assignNativeHidden && _assignExisting?.id == p.id),
         )
+        .where(
+          (p) =>
+              !(useLiveAssignHole &&
+                  _assignExisting != null &&
+                  _assignExisting!.id == p.id),
+        )
         .toList();
-    final hasFastLeave = !ignoreAssign && _showAssignOverlay && _assignZoneTrigger == ZoneTrigger.onLeave;
+    final hasFastLeave = useLiveAssignHole;
 
     if (leaveAlarms.isEmpty && !hasFastLeave) {
       try { style.updateGeoJsonSource(id: 'veil-src', data: _emptyGeoJson); } catch (_) {}

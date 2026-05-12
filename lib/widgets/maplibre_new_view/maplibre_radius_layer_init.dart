@@ -27,6 +27,10 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
     await style.addLayer(LineStyleLayer(
       id: 'fast-line',
       sourceId: 'fast-line-src',
+      layout: const {
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
       paint: {
         'line-color': [
           'case',

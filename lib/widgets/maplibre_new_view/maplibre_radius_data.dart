@@ -53,4 +53,46 @@ extension _MaplibreRadiusData on _MaplibreNewViewState {
     final modeHash = _is3D ? '3d' : '2d';
     return editingId == null ? '$modeHash|$dataHash' : '$modeHash|$dataHash|e$editingId';
   }
+
+  String? _alarmLayerId(AlarmProvider alarmProv, String alarmId) {
+    final index = alarmProv.alarmPoints.indexWhere((p) => p.id == alarmId);
+    return index < 0 ? null : 'alarm-$index';
+  }
+
+  _RadiusCircleData? _circleForAlarmId(
+    AlarmProvider alarmProv,
+    String alarmId, {
+    List<_RadiusCircleData>? circles,
+  }) {
+    final id = _alarmLayerId(alarmProv, alarmId);
+    if (id == null) return null;
+    final source = circles ?? _buildRadiusCircles(alarmProv, excludeEditing: false);
+    for (final circle in source) {
+      if (circle.id == id) return circle;
+    }
+    return null;
+  }
+
+  _RadiusCircleData? _currentAssignCircle(AlarmProvider alarmProv) {
+    final existing = _assignExisting;
+    if (existing == null) return null;
+    final id = _alarmLayerId(alarmProv, existing.id) ?? _assignNativeAlarmLayerId;
+    if (id == null) return null;
+    final index = alarmProv.alarmPoints.indexWhere((p) => p.id == existing.id);
+    final providerPoint = index < 0 ? null : alarmProv.alarmPoints[index];
+    double radius = _assignRadius;
+    final isTime = _assignTriggerType == TriggerType.time;
+    if (isTime) {
+      radius = math.max(200.0, (_speedKmh / 3.6) * _assignTimeMinutes * 60);
+    }
+    return (
+      id: id,
+      lng: _assignLng,
+      lat: _assignLat,
+      radiusMeters: radius,
+      active: providerPoint?.isActive ?? existing.isActive,
+      isTime: isTime,
+      isLeave: _assignZoneTrigger == ZoneTrigger.onLeave,
+    );
+  }
 }
