@@ -443,6 +443,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           style != null &&
           _radiusLayerReady &&
           (!wasExisting || nativeWasHidden || visualChanged);
+      DebugConsole.log('SAVE_FLOW: shouldRebuild=$shouldRebuildNative wasExisting=$wasExisting nativeHidden=$nativeWasHidden visualChanged=$visualChanged useNativeCircle=$_useNativeAssignCircle');
       if (shouldRebuildNative) _lastRadiusDataHash = '';
       if (shouldRebuildNative) await this._ensureAssignMarkerBitmap();
       if (shouldRebuildNative) {
@@ -459,10 +460,13 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
                 circles: circles,
               )
             : null;
+        DebugConsole.log('SAVE_FLOW: singleCircle=${singleCircle?.id} circles=${circles.length}');
         if (_useNativeAssignCircle && singleCircle != null) {
+          DebugConsole.log('SAVE_FLOW: promote draft layer');
           await this._promoteDraftRadiusCircleLayer(liveStyle, singleCircle);
           _lastRadiusDataHash = this._radiusHash(circles);
         } else {
+          DebugConsole.log('SAVE_FLOW: full rebuildRadiusLayers');
           await this._rebuildRadiusLayers(
             liveStyle,
             circles,
@@ -470,17 +474,17 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           );
           _lastRadiusDataHash = this._radiusHash(circles);
         }
+        DebugConsole.log('SAVE_FLOW: updateVeil ignoreAssign=true');
         this._updateVeil(liveStyle, alarmProv, ignoreAssign: true);
       }
       // Keep overlay visible while native layers render
+      DebugConsole.log('SAVE_FLOW: beginClosingAssignVisual keepCircle=$shouldRebuildNative');
       _beginClosingAssignVisual(keepCircle: shouldRebuildNative);
-      _finishClosingAssignCircle();
-      // Give MapLibre enough time to render native layers before killing overlay
-      _scheduleAssignVisualClear(
-        shouldRebuildNative
-            ? const Duration(milliseconds: 300)
-            : const Duration(milliseconds: 80),
-      );
+      // DON'T call _finishClosingAssignCircle here — it kills the overlay circle immediately.
+      // Let _scheduleAssignVisualClear handle it after the delay.
+      final clearDelay = shouldRebuildNative ? const Duration(milliseconds: 300) : const Duration(milliseconds: 80);
+      DebugConsole.log('SAVE_FLOW: scheduleAssignVisualClear ${clearDelay.inMilliseconds}ms');
+      _scheduleAssignVisualClear(clearDelay);
     } finally {
       _suppressRadiusSync = false;
     }
