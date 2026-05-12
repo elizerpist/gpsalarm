@@ -358,7 +358,11 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         _lastRadiusDataHash = this._radiusHash(circles);
         this._updateVeil(liveStyle, alarmProv, ignoreAssign: true);
       }
-      // Hide overlay AFTER native layers are ready (prevents flash)
+      // Give MapLibre 2 frames to render the native marker before hiding overlay pin
+      if (shouldRebuildNative) {
+        await Future.delayed(const Duration(milliseconds: 80));
+      }
+      // Hide overlay AFTER native layers are rendered (prevents pin flash)
       _beginClosingAssignVisual(keepCircle: false);
       _finishClosingAssignCircle();
       if (style != null) {
