@@ -9,8 +9,6 @@ extension _MaplibreStyleState on _MaplibreNewViewState {
     _radiusLayerReady = false;
     _lastRadiusDataHash = '';
     _radiusDebounce?.cancel();
-    _fastCircleDebounce?.cancel();
-    _fastCircleUpdating = false;
     _radiusLayerVersion++;
     _styleGeneration++;
     _controller = null;

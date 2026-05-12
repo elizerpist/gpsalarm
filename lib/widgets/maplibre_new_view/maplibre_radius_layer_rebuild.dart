@@ -5,6 +5,26 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     try {
       await style.removeLayer('radius-circle-${circle.id}');
     } catch (_) {}
+    try {
+      await style.removeLayer('radius-line-${circle.id}');
+    } catch (_) {}
+    try {
+      await style.removeLayer('radius-fill-${circle.id}');
+    } catch (_) {}
+    try {
+      await style.updateGeoJsonSource(
+        id: 'radius-pt-${circle.id}',
+        data: _pointGeoJson(circle.lng, circle.lat),
+      );
+      await style.updateGeoJsonSource(
+        id: 'radius-fill-${circle.id}',
+        data: _radiusFillSourceGeoJson(circle),
+      );
+      await style.updateGeoJsonSource(
+        id: 'radius-line-${circle.id}',
+        data: _radiusLineSourceGeoJson(circle),
+      );
+    } catch (_) {}
     await this._addRadiusCircleLayer(
       style,
       circle,
@@ -17,7 +37,6 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     _RadiusCircleData circle, {
     String? belowLayerId,
   }) async {
-    final basePx = 2 * circle.radiusMeters / (156543.03392 * math.cos(circle.lat * math.pi / 180));
     final String fillColor = circle.isLeave
         ? 'rgba(0,0,0,0)'
         : (circle.isTime
@@ -25,34 +44,83 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
             : (circle.active ? 'rgba(255,0,0,0.12)' : 'rgba(158,158,158,0.05)'));
     final String strokeColor = circle.isTime
         ? (circle.active ? 'rgba(255,152,0,0.7)' : 'rgba(158,158,158,0.3)')
-        : (circle.active ? 'rgba(255,0,0,0.6)' : 'rgba(158,158,158,0.3)');
+            : (circle.active ? 'rgba(255,0,0,0.6)' : 'rgba(158,158,158,0.3)');
     final strokeWidth = circle.active ? 2.0 : 1.0;
 
-    final layer = CircleStyleLayer(
-      id: 'radius-circle-${circle.id}',
-      sourceId: 'radius-pt-${circle.id}',
-      paint: {
-        'circle-radius': [
-          'interpolate',
-          ['exponential', 2.0],
-          ['zoom'],
-          0.0,
-          basePx,
-          22.0,
-          basePx * 4194304.0,
-        ],
-        'circle-color': fillColor,
-        'circle-stroke-color': strokeColor,
-        'circle-stroke-width': strokeWidth,
-        'circle-pitch-alignment': 'map',
-        'circle-pitch-scale': 'map',
-      },
-    );
-    try {
-      await style.addLayer(layer, belowLayerId: belowLayerId);
-    } catch (_) {
-      await style.addLayer(layer);
+    if (_is3D) {
+      final fillLayer = FillStyleLayer(
+        id: 'radius-fill-${circle.id}',
+        sourceId: 'radius-fill-${circle.id}',
+        paint: {'fill-color': fillColor},
+      );
+      final lineLayer = LineStyleLayer(
+        id: 'radius-line-${circle.id}',
+        sourceId: 'radius-line-${circle.id}',
+        paint: {
+          'line-color': strokeColor,
+          'line-width': strokeWidth,
+        },
+      );
+      try {
+        await style.addLayer(fillLayer, belowLayerId: belowLayerId);
+      } catch (_) {
+        await style.addLayer(fillLayer);
+      }
+      try {
+        await style.addLayer(lineLayer, belowLayerId: belowLayerId);
+      } catch (_) {
+        await style.addLayer(lineLayer);
+      }
+    } else {
+      final basePx = 2 * circle.radiusMeters / (156543.03392 * math.cos(circle.lat * math.pi / 180));
+      final layer = CircleStyleLayer(
+        id: 'radius-circle-${circle.id}',
+        sourceId: 'radius-pt-${circle.id}',
+        paint: {
+          'circle-radius': [
+            'interpolate',
+            ['exponential', 2.0],
+            ['zoom'],
+            0.0,
+            basePx,
+            22.0,
+            basePx * 4194304.0,
+          ],
+          'circle-color': fillColor,
+          'circle-stroke-color': strokeColor,
+          'circle-stroke-width': strokeWidth,
+          'circle-pitch-alignment': 'map',
+          'circle-pitch-scale': 'map',
+        },
+      );
+      try {
+        await style.addLayer(layer, belowLayerId: belowLayerId);
+      } catch (_) {
+        await style.addLayer(layer);
+      }
     }
+  }
+
+  String _radiusFillSourceGeoJson(_RadiusCircleData circle) {
+    if (!_is3D) return _emptyGeoJson;
+    return _circlePolygonGeoJson(
+      circle.lng,
+      circle.lat,
+      circle.radiusMeters,
+      isTime: circle.isTime,
+      isLeave: circle.isLeave,
+    );
+  }
+
+  String _radiusLineSourceGeoJson(_RadiusCircleData circle) {
+    if (!_is3D) return _emptyGeoJson;
+    return _circleLineGeoJson(
+      circle.lng,
+      circle.lat,
+      circle.radiusMeters,
+      isTime: circle.isTime,
+      isLeave: circle.isLeave,
+    );
   }
 
   Future<void> _rebuildRadiusLayers(
@@ -102,7 +170,15 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
       try {
         await style.removeLayer('radius-circle-$id');
       } catch (_) {}
+      try {
+        await style.removeLayer('radius-line-$id');
+      } catch (_) {}
+      try {
+        await style.removeLayer('radius-fill-$id');
+      } catch (_) {}
       try { style.updateGeoJsonSource(id: 'radius-pt-$id', data: _emptyGeoJson); } catch (_) {}
+      try { style.updateGeoJsonSource(id: 'radius-fill-$id', data: _emptyGeoJson); } catch (_) {}
+      try { style.updateGeoJsonSource(id: 'radius-line-$id', data: _emptyGeoJson); } catch (_) {}
     }
 
     for (final c in circles) {
@@ -111,6 +187,16 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
           id: 'radius-pt-${c.id}',
           data: _pointGeoJson(c.lng, c.lat),
         );
+        if (_is3D) {
+          style.updateGeoJsonSource(
+            id: 'radius-fill-${c.id}',
+            data: _radiusFillSourceGeoJson(c),
+          );
+          style.updateGeoJsonSource(
+            id: 'radius-line-${c.id}',
+            data: _radiusLineSourceGeoJson(c),
+          );
+        }
         await this._addRadiusCircleLayer(style, c);
         final imageId = markerImageIds[c.id];
         if (imageId == null) continue;

@@ -61,6 +61,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   bool _is3D = false;
   bool _gpsFollow = false;
   double _lastBearing = 0;
+  double _lastCameraBearing = 0;
+  DateTime _lastCompassCameraUpdate = DateTime.fromMillisecondsSinceEpoch(0);
   StreamSubscription<CompassEvent>? _compassSub;
   // Unified assign state
   bool _isAssigning = false;
@@ -148,7 +150,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
       final pos = await _locationService.getCurrentPosition();
       if (pos != null && mounted) {
         setState(() => _userPos = Position(pos.longitude, pos.latitude));
-        _controller?.moveCamera(
+        _safeMoveCamera(
           center: Position(pos.longitude, pos.latitude), zoom: 14);
       }
       _locationService.startTracking(onPosition: (position) {
@@ -164,7 +166,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
         // GPS follow: auto-center + bearing in 3D mode
         // GPS follow: auto-center (bearing handled by compass stream, not GPS heading)
         if (_gpsFollow) {
-          _controller?.animateCamera(
+          _safeAnimateCamera(
             center: newPos,
             nativeDuration: const Duration(milliseconds: 1500),
           );
@@ -179,25 +181,48 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     }
   }
 
+  double _effectiveAlarmRadius(AlarmPoint point) {
+    if (point.triggerType == TriggerType.time && point.timeTrigger != null) {
+      final speedMs = _speedKmh / 3.6;
+      return math.max(200.0, speedMs * point.timeTrigger!.inSeconds.toDouble());
+    }
+    return point.radiusMeters;
+  }
+
+  bool _alarmContainsUser(AlarmPoint point, double userLat, double userLng) {
+    return AlarmService.isWithinRadius(
+      userLat: userLat,
+      userLng: userLng,
+      pointLat: point.latitude,
+      pointLng: point.longitude,
+      radiusMeters: _effectiveAlarmRadius(point),
+    );
+  }
+
+  void _seedAlarmInsideState(AlarmPoint point) {
+    final pos = _userPos;
+    if (pos == null) return;
+    _alarmInsideState[point.id] = _alarmContainsUser(
+      point,
+      pos.lat.toDouble(),
+      pos.lng.toDouble(),
+    );
+  }
+
   void _checkAlarms(double userLat, double userLng) {
     final alarmProv = context.read<AlarmProvider>();
-    for (final point in alarmProv.alarmPoints.where((p) => p.isActive)) {
-      bool shouldTrigger = false;
+    final activeIds = alarmProv.alarmPoints.where((p) => p.isActive).map((p) => p.id).toSet();
+    _alarmInsideState.removeWhere((id, _) => !activeIds.contains(id));
 
-      if (point.triggerType == TriggerType.distance) {
-        final isInside = AlarmService.isWithinRadius(
-          userLat: userLat, userLng: userLng,
-          pointLat: point.latitude, pointLng: point.longitude,
-          radiusMeters: point.radiusMeters,
-        );
-        shouldTrigger = point.zoneTrigger == ZoneTrigger.onEntry ? isInside : !isInside;
-      } else if (point.triggerType == TriggerType.time && point.timeTrigger != null) {
-        final speedMs = _speedKmh / 3.6;
-        final timeRadius = math.max(200.0, speedMs * point.timeTrigger!.inSeconds.toDouble());
-        final dist = AlarmService.distanceMeters(userLat, userLng, point.latitude, point.longitude);
-        final insideTimeCircle = dist <= timeRadius;
-        shouldTrigger = point.zoneTrigger == ZoneTrigger.onEntry ? insideTimeCircle : !insideTimeCircle;
-      }
+    for (final point in alarmProv.alarmPoints.where((p) => p.isActive)) {
+      final isInside = _alarmContainsUser(point, userLat, userLng);
+      final wasInside = _alarmInsideState[point.id];
+      _alarmInsideState[point.id] = isInside;
+      if (wasInside == null) continue;
+
+      final shouldTrigger = point.zoneTrigger == ZoneTrigger.onEntry
+          ? !wasInside && isInside
+          : wasInside && !isInside;
 
       if (shouldTrigger) {
         alarmProv.toggleActive(point.id);
@@ -223,7 +248,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   void dispose() {
     _compassSub?.cancel();
     _radiusDebounce?.cancel();
-    _fastCircleDebounce?.cancel();
     _assignVisualClearTimer?.cancel();
     _speedInterpolTimer?.cancel();
     _radiusNotifier.dispose();
@@ -235,6 +259,76 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
     _controller = controller;
     DebugConsole.log('VECTOR: MapController created');
     DebugConsole.log('VECTOR: controller type = ${controller.runtimeType}');
+  }
+
+  void _safeMoveCamera({
+    Position? center,
+    double? zoom,
+    double? bearing,
+    double? pitch,
+  }) {
+    final controller = _controller;
+    if (controller == null) return;
+    unawaited(controller.animateCamera(
+      center: center,
+      zoom: zoom,
+      bearing: bearing,
+      pitch: pitch,
+      nativeDuration: const Duration(milliseconds: 1),
+    ).catchError((_) {}));
+  }
+
+  void _safeAnimateCamera({
+    Position? center,
+    double? zoom,
+    double? bearing,
+    double? pitch,
+    Duration nativeDuration = const Duration(seconds: 2),
+  }) {
+    final controller = _controller;
+    if (controller == null) return;
+    unawaited(controller.animateCamera(
+      center: center,
+      zoom: zoom,
+      bearing: bearing,
+      pitch: pitch,
+      nativeDuration: nativeDuration,
+    ).catchError((_) {}));
+  }
+
+  double _normalizeBearing(double value) => (value % 360 + 360) % 360;
+
+  double _bearingDelta(double from, double to) {
+    return (to - from + 540) % 360 - 180;
+  }
+
+  void _startCompassFollow() {
+    _compassSub?.cancel();
+    _compassSub = FlutterCompass.events?.listen(_handleCompassEvent);
+  }
+
+  void _stopCompassFollow() {
+    _compassSub?.cancel();
+    _compassSub = null;
+  }
+
+  void _handleCompassEvent(CompassEvent event) {
+    if (!_is3D || !_gpsFollow || event.heading == null) return;
+
+    final heading = _normalizeBearing(event.heading!);
+    final delta = _bearingDelta(_lastBearing, heading);
+    _lastBearing = _normalizeBearing(_lastBearing + delta * 0.16);
+
+    final now = DateTime.now();
+    if (now.difference(_lastCompassCameraUpdate).inMilliseconds < 140) return;
+    if (_bearingDelta(_lastCameraBearing, _lastBearing).abs() < 1.8) return;
+
+    _lastCompassCameraUpdate = now;
+    _lastCameraBearing = _lastBearing;
+    _safeAnimateCamera(
+      bearing: _lastBearing,
+      nativeDuration: const Duration(milliseconds: 120),
+    );
   }
 
   Future<void> _registerImages(StyleController style, String styleUrl) async {
@@ -260,12 +354,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
   /// Radius circle version tracker for stale async rebuild detection.
   int _radiusLayerVersion = 0;
   Timer? _radiusDebounce;
-  Timer? _fastCircleDebounce;
-  int _fastCircleVersion = 0;
-  bool _fastCircleUpdating = false; // guard against concurrent async updates
   int _dragLogCounter = 0;
   String _lastRadiusDataHash = ''; // skip rebuild if alarm data unchanged
   bool _suppressRadiusSync = false;
+  final Map<String, bool> _alarmInsideState = {};
+  bool get _useNativeAssignCircle => _is3D;
 
   @override
   Widget build(BuildContext context) {
@@ -306,6 +399,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               _assignTimeMinutes = (dist * 0.3).clamp(5.0, 120.0).round();
             }
             _radiusNotifier.value = this._currentRadiusPx;
+            if (_useNativeAssignCircle) unawaited(this._activateAssignOverlay());
             this._refreshAssignMarker();
             setState(() {});
           },
@@ -329,7 +423,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
               // Restore MapProvider values after style loads.
               final mp = context.read<MapProvider>();
               DebugConsole.log('STYLE_LOADED: restoring zoom=${mp.zoom.toStringAsFixed(2)} center=${mp.center}');
-              _controller?.moveCamera(
+              _safeMoveCamera(
                 center: Position(mp.center.longitude, mp.center.latitude),
                 zoom: mp.zoom,
               );
@@ -484,20 +578,15 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                     _is3D = !_is3D;
                     if (_is3D) {
                       _gpsFollow = true;
-                      _controller?.moveCamera(pitch: 45, bearing: _lastBearing);
-                      // Start compass stream for live device heading
-                      _compassSub?.cancel();
-                      _compassSub = FlutterCompass.events?.listen((event) {
-                        if (!_is3D || !_gpsFollow || event.heading == null) return;
-                        _lastBearing = event.heading!;
-                        _controller?.moveCamera(bearing: event.heading!);
-                      });
+                      _lastCameraBearing = _lastBearing;
+                      _safeMoveCamera(pitch: 45, bearing: _lastBearing);
+                      _startCompassFollow();
                     } else {
                       _gpsFollow = false;
-                      _compassSub?.cancel();
-                      _compassSub = null;
-                      _controller?.moveCamera(pitch: 0, bearing: 0);
+                      _stopCompassFollow();
+                      _safeMoveCamera(pitch: 0, bearing: 0);
                     }
+                    _lastRadiusDataHash = '';
                   });
                 },
                 child: Container(
@@ -527,8 +616,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
             selector: (_, p) => p.searchActive,
             builder: (_, searchActive, __) => MapControls(
               onMenuTap: () => widget.scaffoldKey.currentState?.openDrawer(),
-              onZoomIn: () => _controller?.moveCamera(zoom: _currentZoom + 1),
-              onZoomOut: () => _controller?.moveCamera(zoom: _currentZoom - 1),
+              onZoomIn: () => _safeMoveCamera(zoom: _currentZoom + 1),
+              onZoomOut: () => _safeMoveCamera(zoom: _currentZoom - 1),
               onSearchTap: () => context.read<MapProvider>().toggleSearch(),
               searchActive: searchActive,
               onMyLocation: () async {
@@ -536,19 +625,18 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                 if (pos != null) {
                   if (_is3D) {
                     setState(() => _gpsFollow = true);
-                    // Re-start compass if it was stopped
-                    _compassSub?.cancel();
-                    _compassSub = FlutterCompass.events?.listen((event) {
-                      if (!_is3D || !_gpsFollow || event.heading == null) return;
-                      _lastBearing = event.heading!;
-                      _controller?.moveCamera(bearing: event.heading!);
-                    });
-                    _controller?.moveCamera(
+                    _startCompassFollow();
+                    _safeMoveCamera(
                       center: Position(pos.longitude, pos.latitude),
-                      zoom: 15, pitch: 45, bearing: _lastBearing);
+                      zoom: 15,
+                      pitch: 45,
+                      bearing: _lastBearing,
+                    );
                   } else {
-                    _controller?.moveCamera(
-                      center: Position(pos.longitude, pos.latitude), zoom: 15);
+                    _safeMoveCamera(
+                      center: Position(pos.longitude, pos.latitude),
+                      zoom: 15,
+                    );
                   }
                 }
               },
@@ -561,8 +649,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                 ? SearchPill(
                     onResultSelected: (result) {
                       context.read<MapProvider>().goToSearchResult(result);
-                      _controller?.moveCamera(
-                        center: Position(result.longitude, result.latitude), zoom: 14);
+                      _safeMoveCamera(
+                        center: Position(result.longitude, result.latitude),
+                        zoom: 14,
+                      );
                     },
                     onClose: () => context.read<MapProvider>().toggleSearch(),
                   )
@@ -614,7 +704,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView> {
                   _dragPointerId = null;
                 },
                 child: CustomPaint(
-                  painter: _assignScreenCenter != null && (this._showAssignOverlay || _closingAssignCircle)
+                  painter: !_useNativeAssignCircle &&
+                          _assignScreenCenter != null &&
+                          (this._showAssignOverlay || _closingAssignCircle)
                       ? _RadiusOverlayPainter(
                           center: _assignScreenCenter!,
                           radiusNotifier: _radiusNotifier,

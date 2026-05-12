@@ -46,7 +46,11 @@ extension _MaplibreRadiusData on _MaplibreNewViewState {
   }
 
   String _radiusHash(List<_RadiusCircleData> circles, {String? editingId}) {
-    final dataHash = circles.map((c) => '${c.lng},${c.lat},${c.radiusMeters.toStringAsFixed(1)},${c.active},${c.isTime},${c.isLeave}').join('|');
-    return editingId == null ? dataHash : '$dataHash|e$editingId';
+    final dataHash = circles
+        .map((c) =>
+            '${c.lng},${c.lat},${c.radiusMeters.toStringAsFixed(1)},${c.active},${c.isTime},${c.isLeave}')
+        .join('|');
+    final modeHash = _is3D ? '3d' : '2d';
+    return editingId == null ? '$modeHash|$dataHash' : '$modeHash|$dataHash|e$editingId';
   }
 }

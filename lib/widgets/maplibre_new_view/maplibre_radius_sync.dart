@@ -7,16 +7,6 @@ extension _MaplibreRadiusSync on _MaplibreNewViewState {
     final style = _controller?.style;
     if (style == null) return;
 
-    _fastCircleDebounce?.cancel();
-    if (_fastCircleVersion > 0) {
-      _fastCircleVersion = 0;
-      _fastCircleUpdating = false;
-      try {
-        style.removeLayer('fast-circle');
-      } catch (_) {}
-      try { style.updateGeoJsonSource(id: 'fast-src', data: _emptyGeoJson); } catch (_) {}
-    }
-
     this._updateVeil(style, alarmProv);
 
     if (_isDraggingRadius) return;
