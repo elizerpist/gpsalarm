@@ -107,7 +107,52 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     return _pointGeoJson(
       circle.lng,
       circle.lat,
-      properties: imageId == null ? const {} : {'image': imageId},
+      properties: {
+        if (imageId != null) 'image': imageId,
+        ..._circleProps(
+          isTime: circle.isTime,
+          isLeave: circle.isLeave,
+          active: circle.active,
+        ),
+      },
+    );
+  }
+
+  String _radiusCircleLayerKey(_RadiusCircleData circle) {
+    return '${circle.lat.toStringAsFixed(6)}:${circle.radiusMeters.toStringAsFixed(1)}';
+  }
+
+  Object _radiusCircleExpression(_RadiusCircleData circle) {
+    final cosLat = math.cos(circle.lat * math.pi / 180).abs();
+    final safeCosLat = math.max(0.000001, cosLat);
+    final basePx = 2 * circle.radiusMeters / (156543.03392 * safeCosLat);
+    return [
+      'interpolate',
+      ['exponential', 2.0],
+      ['zoom'],
+      0.0,
+      basePx,
+      22.0,
+      basePx * 4194304.0,
+    ];
+  }
+
+  CircleStyleLayer _radiusCircleStyleLayer(
+    _RadiusCircleData circle, {
+    required String id,
+    required String sourceId,
+  }) {
+    return CircleStyleLayer(
+      id: id,
+      sourceId: sourceId,
+      paint: {
+        'circle-radius': _radiusCircleExpression(circle),
+        'circle-color': _radiusFillColorExpression,
+        'circle-stroke-color': _radiusStrokeColorExpression,
+        'circle-stroke-width': 2.0,
+        'circle-pitch-alignment': 'map',
+        'circle-pitch-scale': 'map',
+      },
     );
   }
 
@@ -123,14 +168,9 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
       id: 'radius-pt-${circle.id}',
       data: _radiusPointSourceGeoJson(circle),
     );
-    await style.updateGeoJsonSource(
-      id: 'radius-fill-${circle.id}',
-      data: _radiusFillSourceGeoJson(circle),
-    );
-    await style.updateGeoJsonSource(
-      id: 'radius-line-${circle.id}',
-      data: _radiusLineSourceGeoJson(circle),
-    );
+    if (_radiusVisualIds.contains(circle.id)) {
+      await this._ensureRadiusCircleLayer(style, circle);
+    }
   }
 
   Future<void> _updateExistingNativeAssignLayer(
@@ -153,34 +193,17 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     required bool clearSources,
   }) async {
     _radiusVisualIds.remove(id);
+    _radiusCircleLayerKeys.remove(id);
     try {
       await style.removeLayer('radius-label-$id');
     } catch (_) {}
     try {
       await style.removeLayer('radius-circle-$id');
     } catch (_) {}
-    try {
-      await style.removeLayer('radius-line-$id');
-    } catch (_) {}
-    try {
-      await style.removeLayer('radius-fill-$id');
-    } catch (_) {}
     if (!clearSources) return;
     _radiusPointImageIds.remove(id);
     try {
       await style.updateGeoJsonSource(id: 'radius-pt-$id', data: _emptyGeoJson);
-    } catch (_) {}
-    try {
-      await style.updateGeoJsonSource(
-        id: 'radius-fill-$id',
-        data: _emptyGeoJson,
-      );
-    } catch (_) {}
-    try {
-      await style.updateGeoJsonSource(
-        id: 'radius-line-$id',
-        data: _emptyGeoJson,
-      );
     } catch (_) {}
   }
 
@@ -217,49 +240,49 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     _RadiusCircleData circle, {
     String? belowLayerId,
   }) async {
-    final fillLayer = FillStyleLayer(
-      id: 'radius-fill-${circle.id}',
-      sourceId: 'radius-fill-${circle.id}',
-      paint: {'fill-color': _radiusFillColorExpression},
-    );
-    final lineLayer = LineStyleLayer(
-      id: 'radius-line-${circle.id}',
-      sourceId: 'radius-line-${circle.id}',
-      layout: const {'line-cap': 'round', 'line-join': 'round'},
-      paint: {'line-color': _radiusStrokeColorExpression, 'line-width': 2.0},
+    final circleLayer = _radiusCircleStyleLayer(
+      circle,
+      id: 'radius-circle-${circle.id}',
+      sourceId: 'radius-pt-${circle.id}',
     );
     try {
-      await style.addLayer(fillLayer, belowLayerId: belowLayerId);
+      await style.addLayer(circleLayer, belowLayerId: belowLayerId);
     } catch (_) {
-      await style.addLayer(fillLayer);
+      await style.addLayer(circleLayer);
     }
+    _radiusCircleLayerKeys[circle.id] = _radiusCircleLayerKey(circle);
+  }
+
+  Future<void> _ensureRadiusCircleLayer(
+    StyleController style,
+    _RadiusCircleData circle, {
+    String? belowLayerId,
+  }) async {
+    final nextKey = _radiusCircleLayerKey(circle);
+    if (_radiusCircleLayerKeys[circle.id] == nextKey) return;
     try {
-      await style.addLayer(lineLayer, belowLayerId: belowLayerId);
-    } catch (_) {
-      await style.addLayer(lineLayer);
-    }
+      await style.removeLayer('radius-circle-${circle.id}');
+    } catch (_) {}
+    await this._addRadiusCircleLayer(style, circle, belowLayerId: belowLayerId);
   }
 
-  String _radiusFillSourceGeoJson(_RadiusCircleData circle) {
-    return _circlePolygonGeoJson(
-      circle.lng,
-      circle.lat,
-      circle.radiusMeters,
-      isTime: circle.isTime,
-      isLeave: circle.isLeave,
-      active: circle.active,
+  Future<void> _ensureFastCircleLayer(
+    StyleController style,
+    _RadiusCircleData circle,
+  ) async {
+    final nextKey = _radiusCircleLayerKey(circle);
+    if (_fastCircleLayerKey == nextKey) return;
+    try {
+      await style.removeLayer('fast-circle');
+    } catch (_) {}
+    await style.addLayer(
+      _radiusCircleStyleLayer(
+        circle,
+        id: 'fast-circle',
+        sourceId: 'fast-pt-src',
+      ),
     );
-  }
-
-  String _radiusLineSourceGeoJson(_RadiusCircleData circle) {
-    return _circleLineGeoJson(
-      circle.lng,
-      circle.lat,
-      circle.radiusMeters,
-      isTime: circle.isTime,
-      isLeave: circle.isLeave,
-      active: circle.active,
-    );
+    _fastCircleLayerKey = nextKey;
   }
 
   Future<void> _rebuildRadiusLayers(
@@ -293,29 +316,12 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
         await style.removeLayer('radius-circle-$id');
       } catch (_) {}
       try {
-        await style.removeLayer('radius-line-$id');
-      } catch (_) {}
-      try {
-        await style.removeLayer('radius-fill-$id');
-      } catch (_) {}
-      try {
         await style.updateGeoJsonSource(
           id: 'radius-pt-$id',
           data: _emptyGeoJson,
         );
       } catch (_) {}
-      try {
-        await style.updateGeoJsonSource(
-          id: 'radius-fill-$id',
-          data: _emptyGeoJson,
-        );
-      } catch (_) {}
-      try {
-        await style.updateGeoJsonSource(
-          id: 'radius-line-$id',
-          data: _emptyGeoJson,
-        );
-      } catch (_) {}
+      _radiusCircleLayerKeys.remove(id);
     }
 
     final activeVisualIds = <String>{};

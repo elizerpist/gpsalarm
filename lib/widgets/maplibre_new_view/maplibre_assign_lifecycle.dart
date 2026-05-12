@@ -63,14 +63,9 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     final style = _controller?.style;
     if (style == null) return;
     final id = 'alarm-$index';
+    _radiusCircleLayerKeys.remove(id);
     try {
       await style.removeLayer('radius-circle-$id');
-    } catch (_) {}
-    try {
-      await style.removeLayer('radius-line-$id');
-    } catch (_) {}
-    try {
-      await style.removeLayer('radius-fill-$id');
     } catch (_) {}
   }
 
@@ -353,6 +348,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
               )
             : null;
         if (_useNativeAssignCircle && singleCircle != null) {
+          await this._clearFastCircleLayer(liveStyle);
           await this._upsertRadiusVisual(liveStyle, singleCircle);
         } else {
           await this._rebuildRadiusLayers(
@@ -366,9 +362,6 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       }
       _finishClosingAssignCircle();
       if (style != null) {
-        if (!wasExisting && _useNativeAssignCircle) {
-          await Future.delayed(const Duration(milliseconds: 120));
-        }
         await this._clearFastCircleLayer(style);
       }
       _scheduleAssignVisualClear(

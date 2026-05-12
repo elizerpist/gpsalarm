@@ -3,52 +3,20 @@ part of '../maplibre_new_view.dart';
 extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
   Future<void> _initRadiusLayer(StyleController style) async {
     await style.addSource(GeoJsonSource(id: 'veil-src', data: _emptyGeoJson));
-    await style.addLayer(FillStyleLayer(
-      id: 'veil-fill',
-      sourceId: 'veil-src',
-      paint: {'fill-color': '#FF0000', 'fill-opacity': 0.15},
-    ));
-    await style.addSource(GeoJsonSource(id: 'fast-fill-src', data: _emptyGeoJson));
-    await style.addSource(GeoJsonSource(id: 'fast-line-src', data: _emptyGeoJson));
-    await style.addLayer(FillStyleLayer(
-      id: 'fast-fill',
-      sourceId: 'fast-fill-src',
-      paint: {
-        'fill-color': [
-          'case',
-          ['==', ['get', 'isLeave'], true],
-          'rgba(0,0,0,0)',
-          ['==', ['get', 'active'], false],
-          'rgba(158,158,158,0.08)',
-          ['==', ['get', 'isTime'], true],
-          'rgba(255,152,0,0.10)',
-          'rgba(255,0,0,0.12)',
-        ],
-      },
-    ));
-    await style.addLayer(LineStyleLayer(
-      id: 'fast-line',
-      sourceId: 'fast-line-src',
-      layout: const {
-        'line-cap': 'round',
-        'line-join': 'round',
-      },
-      paint: {
-        'line-color': [
-          'case',
-          ['==', ['get', 'active'], false],
-          'rgba(158,158,158,0.70)',
-          ['==', ['get', 'isTime'], true],
-          'rgba(255,152,0,0.7)',
-          'rgba(255,0,0,0.6)',
-        ],
-        'line-width': 2.0,
-      },
-    ));
+    await style.addLayer(
+      FillStyleLayer(
+        id: 'veil-fill',
+        sourceId: 'veil-src',
+        paint: {'fill-color': '#FF0000', 'fill-opacity': 0.15},
+      ),
+    );
+    await style.addSource(
+      GeoJsonSource(id: 'fast-pt-src', data: _emptyGeoJson),
+    );
     for (int i = 0; i < 20; i++) {
-      await style.addSource(GeoJsonSource(id: 'radius-pt-alarm-$i', data: _emptyGeoJson));
-      await style.addSource(GeoJsonSource(id: 'radius-fill-alarm-$i', data: _emptyGeoJson));
-      await style.addSource(GeoJsonSource(id: 'radius-line-alarm-$i', data: _emptyGeoJson));
+      await style.addSource(
+        GeoJsonSource(id: 'radius-pt-alarm-$i', data: _emptyGeoJson),
+      );
     }
     _radiusLayerReady = true;
     DebugConsole.log('VECTOR: radius layer system ready');
@@ -63,34 +31,36 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
 
     try {
       await style.updateGeoJsonSource(
-        id: 'fast-fill-src',
-        data: _circlePolygonGeoJson(
+        id: 'fast-pt-src',
+        data: _pointGeoJson(
           _assignLng,
           _assignLat,
-          radius,
-          isTime: isTime,
-          isLeave: _assignZoneTrigger == ZoneTrigger.onLeave,
-          active: _assignActive,
+          properties: _circleProps(
+            isTime: isTime,
+            isLeave: _assignZoneTrigger == ZoneTrigger.onLeave,
+            active: _assignActive,
+          ),
         ),
       );
-      await style.updateGeoJsonSource(
-        id: 'fast-line-src',
-        data: _circleLineGeoJson(
-          _assignLng,
-          _assignLat,
-          radius,
-          isTime: isTime,
-          isLeave: _assignZoneTrigger == ZoneTrigger.onLeave,
-          active: _assignActive,
-        ),
-      );
+      await this._ensureFastCircleLayer(style, (
+        id: 'fast',
+        lng: _assignLng,
+        lat: _assignLat,
+        radiusMeters: radius,
+        active: _assignActive,
+        isTime: isTime,
+        isLeave: _assignZoneTrigger == ZoneTrigger.onLeave,
+      ));
     } catch (_) {}
   }
 
   Future<void> _clearFastCircleLayer(StyleController style) async {
     try {
-      await style.updateGeoJsonSource(id: 'fast-fill-src', data: _emptyGeoJson);
-      await style.updateGeoJsonSource(id: 'fast-line-src', data: _emptyGeoJson);
+      await style.removeLayer('fast-circle');
+    } catch (_) {}
+    _fastCircleLayerKey = null;
+    try {
+      await style.updateGeoJsonSource(id: 'fast-pt-src', data: _emptyGeoJson);
     } catch (_) {}
   }
 }

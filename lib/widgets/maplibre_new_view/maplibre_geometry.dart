@@ -30,59 +30,6 @@ Map<String, Object> _circleProps({
   return {'isTime': isTime, 'isLeave': isLeave, 'active': active};
 }
 
-String _circlePolygonGeoJson(
-  double lng,
-  double lat,
-  double radiusMeters, {
-  bool isTime = false,
-  bool isLeave = false,
-  bool active = true,
-}) {
-  final ring = _geoCircle(lng, lat, radiusMeters);
-  return jsonEncode({
-    'type': 'FeatureCollection',
-    'features': [
-      {
-        'type': 'Feature',
-        'geometry': {
-          'type': 'Polygon',
-          'coordinates': [ring],
-        },
-        'properties': _circleProps(
-          isTime: isTime,
-          isLeave: isLeave,
-          active: active,
-        ),
-      },
-    ],
-  });
-}
-
-String _circleLineGeoJson(
-  double lng,
-  double lat,
-  double radiusMeters, {
-  bool isTime = false,
-  bool isLeave = false,
-  bool active = true,
-}) {
-  final ring = _geoCircle(lng, lat, radiusMeters);
-  return jsonEncode({
-    'type': 'FeatureCollection',
-    'features': [
-      {
-        'type': 'Feature',
-        'geometry': {'type': 'LineString', 'coordinates': ring},
-        'properties': _circleProps(
-          isTime: isTime,
-          isLeave: isLeave,
-          active: active,
-        ),
-      },
-    ],
-  });
-}
-
 /// Meters per pixel for MapLibre vector tiles (512px effective tile size).
 /// Standard slippy-map formula uses 256px; MapLibre vector renders at 512px
 /// scale, so zoom+1 gives the correct conversion.
@@ -90,7 +37,7 @@ double _vectorMetersPerPx(double lat, double zoom) {
   return 156543.03392 * math.cos(lat * math.pi / 180) / math.pow(2, zoom + 1);
 }
 
-/// Polygon circle for veil holes and 3D native radius layers.
+/// Polygon ring for veil holes only. Radius circles must stay CircleStyleLayer.
 List<List<double>> _geoCircle(double lng, double lat, double radiusMeters) {
   const segments = 128;
   final coords = <List<double>>[];

@@ -104,7 +104,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   final Map<String, Size> _markerSizeCache = {};
   final Map<String, String> _registeredMarkerImageKeys = {};
   final Map<String, String> _radiusPointImageIds = {};
+  final Map<String, String> _radiusCircleLayerKeys = {};
   final Set<String> _radiusVisualIds = {};
+  String? _fastCircleLayerKey;
   // Overlay radius notifier — drives CustomPainter repaint without setState
   final ValueNotifier<double> _radiusNotifier = ValueNotifier(500);
   // Speed interpolation
