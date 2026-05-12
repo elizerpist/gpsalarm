@@ -345,8 +345,9 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
             : null;
         if (_useNativeAssignCircle && singleCircle != null) {
           // Atomic swap: remove fast-circle BEFORE adding permanent (prevents duplication)
-          await this._clearFastCircleLayer(liveStyle);
+          // Add permanent FIRST, then remove fast (no gap = no flicker)
           await this._upsertRadiusVisual(liveStyle, singleCircle);
+          await this._clearFastCircleLayer(liveStyle);
         } else {
           await this._rebuildRadiusLayers(
             liveStyle,
