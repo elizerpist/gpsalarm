@@ -58,7 +58,6 @@ class SettingsDrawer extends StatelessWidget {
               subtitle: tr('active_alarms',
                   args: [alarmProv.activeCount.toString()]),
               onTap: () {
-                Navigator.pop(context);
                 Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -71,7 +70,6 @@ class SettingsDrawer extends StatelessWidget {
               title: tr('alarm_settings'),
               subtitle: tr('sound_and_vibration'),
               onTap: () {
-                Navigator.pop(context);
                 Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -86,7 +84,6 @@ class SettingsDrawer extends StatelessWidget {
                   ? tr('continuous')
                   : tr('custom_interval'),
               onTap: () {
-                Navigator.pop(context);
                 Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -99,7 +96,6 @@ class SettingsDrawer extends StatelessWidget {
               title: tr('map_settings'),
               subtitle: tr('start_view'),
               onTap: () {
-                Navigator.pop(context);
                 Navigator.push(
                     context,
                     MaterialPageRoute(
