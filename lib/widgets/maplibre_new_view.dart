@@ -829,9 +829,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                 ),
               ),
               const SizedBox(height: 8),
-              // Skin cycle — single tap
+              // Skin cycle — single tap (with haptic)
               GestureDetector(
                 onTap: () {
+                  final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
+                  if (haptic) Vibration.vibrate(duration: 30);
                   if (_isAssigning) this._cancelAssign();
                   final settings = context.read<SettingsProvider>();
                   final keys = _styleUrls.keys.toList();
