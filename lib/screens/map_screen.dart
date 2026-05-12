@@ -344,6 +344,7 @@ class _MapScreenState extends State<MapScreen> {
             children: [
               TileLayer(
                 urlTemplate: tileUrl,
+                retinaMode: _retinaMode,
                 userAgentPackageName: 'com.gpsalarm.app',
                 tileProvider: kIsWeb ? null : _cachedTileProvider,
                 fallbackUrl: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
@@ -840,23 +841,25 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  // All tiles use @2x (512px) for consistent HiDPI quality.
+  // TileLayer retinaMode: true tells flutter_map to request @2x tiles
+  // and render them at 256px logical size = crisp on all devices.
+  static const _retinaMode = true;
+
   String _getFreeTileUrl(MapTileStyle style) {
     switch (style) {
       case MapTileStyle.standard:
-        // OSM standard nem támogat @2x, CartoDB Voyager az OSM-hez legközelebbi @2x
-        return 'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png';
+        return 'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
       case MapTileStyle.humanitarian:
-        // HOT stílus nem támogat @2x, CartoDB light az ehhez legközelebbi
-        return 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png';
+        return 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
       case MapTileStyle.topo:
-        // OpenTopoMap nem támogat @2x — marad eredeti
-        return 'https://tile.opentopomap.org/{z}/{x}/{y}.png';
+        return 'https://a.basemaps.cartocdn.com/rastertiles/voyager_labels_under/{z}/{x}/{y}{r}.png';
       case MapTileStyle.positron:
-        return 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png';
+        return 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
       case MapTileStyle.voyager:
-        return 'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png';
+        return 'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
       case MapTileStyle.darkMatter:
-        return 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png';
+        return 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
     }
   }
 }
