@@ -11,21 +11,45 @@ extension _MaplibreRadiusSync on _MaplibreNewViewState {
 
     if (_isDraggingRadius) return;
 
-    final alarmCircles = this._buildRadiusCircles(alarmProv, excludeEditing: true);
+    final alarmCircles = this._buildRadiusCircles(
+      alarmProv,
+      excludeEditing: true,
+    );
     final fullHash = this._radiusHash(
       alarmCircles,
-      editingId: _isAssigning && _assignNativeHidden && _assignExisting != null ? _assignExisting!.id : null,
+      editingId: _isAssigning && _assignNativeHidden && _assignExisting != null
+          ? _assignExisting!.id
+          : null,
     );
     if (fullHash == _lastRadiusDataHash) return;
     _lastRadiusDataHash = fullHash;
 
     _radiusLayerVersion++;
     final v = _radiusLayerVersion;
+    final circleIds = alarmCircles.map((c) => c.id).toSet();
+    final canUpdateInPlace =
+        circleIds.length == _radiusVisualIds.length &&
+        _radiusVisualIds.containsAll(circleIds);
     _radiusDebounce?.cancel();
-    _radiusDebounce = Timer(const Duration(milliseconds: 200), () {
-      if (v == _radiusLayerVersion) {
-        this._rebuildRadiusLayers(style, alarmCircles, v);
-      }
-    });
+    _radiusDebounce = Timer(
+      Duration(milliseconds: canUpdateInPlace ? 40 : 200),
+      () {
+        if (v != _radiusLayerVersion) return;
+        if (!canUpdateInPlace) {
+          this._rebuildRadiusLayers(style, alarmCircles, v);
+          return;
+        }
+        unawaited(() async {
+          for (final circle in alarmCircles) {
+            if (!mounted || v != _radiusLayerVersion) return;
+            await this._updateRadiusCircleSources(
+              style,
+              circle,
+              updateMarker: true,
+            );
+          }
+        }());
+      },
+    );
   }
 }

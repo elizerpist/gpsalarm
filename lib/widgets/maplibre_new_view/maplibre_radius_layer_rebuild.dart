@@ -13,25 +13,56 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
         : (circle.active ? Colors.red : Colors.grey);
   }
 
+  String _markerImageIdForCircle(
+    _RadiusCircleData circle,
+    String labelText,
+    Color markerColor,
+  ) {
+    final labelKey = labelText.replaceAll(RegExp(r'[^a-zA-Z0-9]+'), '_');
+    final colorKey = markerColor.value.toRadixString(16);
+    final dprKey = (_deviceDpr * 100).round();
+    return 'alarm-marker-${circle.id}-$labelKey-$colorKey-$dprKey';
+  }
+
   Object get _radiusFillColorExpression => [
-        'case',
-        ['==', ['get', 'isLeave'], true],
-        'rgba(0,0,0,0)',
-        ['==', ['get', 'active'], false],
-        'rgba(158,158,158,0.08)',
-        ['==', ['get', 'isTime'], true],
-        'rgba(255,152,0,0.10)',
-        'rgba(255,0,0,0.12)',
-      ];
+    'case',
+    [
+      '==',
+      ['get', 'isLeave'],
+      true,
+    ],
+    'rgba(0,0,0,0)',
+    [
+      '==',
+      ['get', 'active'],
+      false,
+    ],
+    'rgba(158,158,158,0.08)',
+    [
+      '==',
+      ['get', 'isTime'],
+      true,
+    ],
+    'rgba(255,152,0,0.10)',
+    'rgba(255,0,0,0.12)',
+  ];
 
   Object get _radiusStrokeColorExpression => [
-        'case',
-        ['==', ['get', 'active'], false],
-        'rgba(158,158,158,0.70)',
-        ['==', ['get', 'isTime'], true],
-        'rgba(255,152,0,0.7)',
-        'rgba(255,0,0,0.6)',
-      ];
+    'case',
+    [
+      '==',
+      ['get', 'active'],
+      false,
+    ],
+    'rgba(158,158,158,0.70)',
+    [
+      '==',
+      ['get', 'isTime'],
+      true,
+    ],
+    'rgba(255,152,0,0.7)',
+    'rgba(255,0,0,0.6)',
+  ];
 
   Future<String> _ensureRadiusMarkerImage(
     StyleController style,
@@ -39,7 +70,7 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
   ) async {
     final labelText = _markerLabelForCircle(circle);
     final markerColor = _markerColorForCircle(circle);
-    final imageId = 'alarm-marker-${circle.id}';
+    final imageId = _markerImageIdForCircle(circle, labelText, markerColor);
     final visualKey = '$labelText-${markerColor.value}-$_deviceDpr';
     if (_registeredMarkerImageKeys[imageId] == visualKey) return imageId;
 
@@ -55,45 +86,65 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     }
 
     try {
-      await style.removeImage(imageId);
-    } catch (_) {}
-    try {
       await style.addImage(imageId, markerPng);
       _registeredMarkerImageKeys[imageId] = visualKey;
     } catch (_) {
-      _registeredMarkerImageKeys.remove(imageId);
+      _registeredMarkerImageKeys[imageId] = visualKey;
     }
     return imageId;
   }
 
-  Future<void> _updateRadiusCircleSources(
+  Future<void> _syncRadiusMarkerImage(
     StyleController style,
     _RadiusCircleData circle,
   ) async {
+    final imageId = await this._ensureRadiusMarkerImage(style, circle);
+    _radiusPointImageIds[circle.id] = imageId;
+  }
+
+  String _radiusPointSourceGeoJson(_RadiusCircleData circle) {
+    final imageId = _radiusPointImageIds[circle.id];
+    return _pointGeoJson(
+      circle.lng,
+      circle.lat,
+      properties: imageId == null ? const {} : {'image': imageId},
+    );
+  }
+
+  Future<void> _updateRadiusCircleSources(
+    StyleController style,
+    _RadiusCircleData circle, {
+    bool updateMarker = false,
+  }) async {
+    if (updateMarker || !_radiusPointImageIds.containsKey(circle.id)) {
+      await this._syncRadiusMarkerImage(style, circle);
+    }
     await style.updateGeoJsonSource(
       id: 'radius-pt-${circle.id}',
-      data: _pointGeoJson(circle.lng, circle.lat),
+      data: _radiusPointSourceGeoJson(circle),
     );
-    if (_is3D) {
-      await style.updateGeoJsonSource(
-        id: 'radius-fill-${circle.id}',
-        data: _radiusFillSourceGeoJson(circle),
-      );
-      await style.updateGeoJsonSource(
-        id: 'radius-line-${circle.id}',
-        data: _radiusLineSourceGeoJson(circle),
-      );
-    }
+    await style.updateGeoJsonSource(
+      id: 'radius-fill-${circle.id}',
+      data: _radiusFillSourceGeoJson(circle),
+    );
+    await style.updateGeoJsonSource(
+      id: 'radius-line-${circle.id}',
+      data: _radiusLineSourceGeoJson(circle),
+    );
   }
 
   Future<void> _updateExistingNativeAssignLayer(
     StyleController style,
-    AlarmProvider alarmProv,
-  ) async {
+    AlarmProvider alarmProv, {
+    bool updateMarker = false,
+  }) async {
     final circle = this._currentAssignCircle(alarmProv);
     if (circle == null) return;
-    await this._updateRadiusCircleSources(style, circle);
-    await this._ensureRadiusMarkerImage(style, circle);
+    await this._updateRadiusCircleSources(
+      style,
+      circle,
+      updateMarker: updateMarker,
+    );
   }
 
   Future<void> _removeRadiusVisual(
@@ -101,6 +152,7 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     String id, {
     required bool clearSources,
   }) async {
+    _radiusVisualIds.remove(id);
     try {
       await style.removeLayer('radius-label-$id');
     } catch (_) {}
@@ -114,14 +166,21 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
       await style.removeLayer('radius-fill-$id');
     } catch (_) {}
     if (!clearSources) return;
+    _radiusPointImageIds.remove(id);
     try {
       await style.updateGeoJsonSource(id: 'radius-pt-$id', data: _emptyGeoJson);
     } catch (_) {}
     try {
-      await style.updateGeoJsonSource(id: 'radius-fill-$id', data: _emptyGeoJson);
+      await style.updateGeoJsonSource(
+        id: 'radius-fill-$id',
+        data: _emptyGeoJson,
+      );
     } catch (_) {}
     try {
-      await style.updateGeoJsonSource(id: 'radius-line-$id', data: _emptyGeoJson);
+      await style.updateGeoJsonSource(
+        id: 'radius-line-$id',
+        data: _emptyGeoJson,
+      );
     } catch (_) {}
   }
 
@@ -130,22 +189,27 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     _RadiusCircleData circle,
   ) async {
     await this._removeRadiusVisual(style, circle.id, clearSources: false);
+    await this._syncRadiusMarkerImage(style, circle);
     await this._updateRadiusCircleSources(style, circle);
     await this._addRadiusCircleLayer(style, circle);
-    final imageId = await this._ensureRadiusMarkerImage(style, circle);
-    final markerSize = AlarmMarkerRenderer.measureLogicalSize(_markerLabelForCircle(circle));
+    final markerSize = AlarmMarkerRenderer.measureLogicalSize(
+      _markerLabelForCircle(circle),
+    );
     final pinTipCorrection = markerSize.height - AlarmMarkerSpec.pinSize;
-    await style.addLayer(SymbolStyleLayer(
-      id: 'radius-label-${circle.id}',
-      sourceId: 'radius-pt-${circle.id}',
-      layout: {
-        'icon-image': imageId,
-        'icon-size': 1.0,
-        'icon-anchor': 'bottom',
-        'icon-offset': [0.0, pinTipCorrection],
-        'icon-allow-overlap': true,
-      },
-    ));
+    await style.addLayer(
+      SymbolStyleLayer(
+        id: 'radius-label-${circle.id}',
+        sourceId: 'radius-pt-${circle.id}',
+        layout: {
+          'icon-image': ['get', 'image'],
+          'icon-size': 1.0,
+          'icon-anchor': 'bottom',
+          'icon-offset': [0.0, pinTipCorrection],
+          'icon-allow-overlap': true,
+        },
+      ),
+    );
+    _radiusVisualIds.add(circle.id);
   }
 
   Future<void> _addRadiusCircleLayer(
@@ -153,66 +217,30 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     _RadiusCircleData circle, {
     String? belowLayerId,
   }) async {
-    if (_is3D) {
-      final fillLayer = FillStyleLayer(
-        id: 'radius-fill-${circle.id}',
-        sourceId: 'radius-fill-${circle.id}',
-        paint: {'fill-color': _radiusFillColorExpression},
-      );
-      final lineLayer = LineStyleLayer(
-        id: 'radius-line-${circle.id}',
-        sourceId: 'radius-line-${circle.id}',
-        layout: const {
-          'line-cap': 'round',
-          'line-join': 'round',
-        },
-        paint: {
-          'line-color': _radiusStrokeColorExpression,
-          'line-width': 2.0,
-        },
-      );
-      try {
-        await style.addLayer(fillLayer, belowLayerId: belowLayerId);
-      } catch (_) {
-        await style.addLayer(fillLayer);
-      }
-      try {
-        await style.addLayer(lineLayer, belowLayerId: belowLayerId);
-      } catch (_) {
-        await style.addLayer(lineLayer);
-      }
-    } else {
-      final basePx = 2 * circle.radiusMeters / (156543.03392 * math.cos(circle.lat * math.pi / 180));
-      final layer = CircleStyleLayer(
-        id: 'radius-circle-${circle.id}',
-        sourceId: 'radius-pt-${circle.id}',
-        paint: {
-          'circle-radius': [
-            'interpolate',
-            ['exponential', 2.0],
-            ['zoom'],
-            0.0,
-            basePx,
-            22.0,
-            basePx * 4194304.0,
-          ],
-          'circle-color': _radiusFillColorExpression,
-          'circle-stroke-color': _radiusStrokeColorExpression,
-          'circle-stroke-width': 2.0,
-          'circle-pitch-alignment': 'map',
-          'circle-pitch-scale': 'map',
-        },
-      );
-      try {
-        await style.addLayer(layer, belowLayerId: belowLayerId);
-      } catch (_) {
-        await style.addLayer(layer);
-      }
+    final fillLayer = FillStyleLayer(
+      id: 'radius-fill-${circle.id}',
+      sourceId: 'radius-fill-${circle.id}',
+      paint: {'fill-color': _radiusFillColorExpression},
+    );
+    final lineLayer = LineStyleLayer(
+      id: 'radius-line-${circle.id}',
+      sourceId: 'radius-line-${circle.id}',
+      layout: const {'line-cap': 'round', 'line-join': 'round'},
+      paint: {'line-color': _radiusStrokeColorExpression, 'line-width': 2.0},
+    );
+    try {
+      await style.addLayer(fillLayer, belowLayerId: belowLayerId);
+    } catch (_) {
+      await style.addLayer(fillLayer);
+    }
+    try {
+      await style.addLayer(lineLayer, belowLayerId: belowLayerId);
+    } catch (_) {
+      await style.addLayer(lineLayer);
     }
   }
 
   String _radiusFillSourceGeoJson(_RadiusCircleData circle) {
-    if (!_is3D) return _emptyGeoJson;
     return _circlePolygonGeoJson(
       circle.lng,
       circle.lat,
@@ -224,7 +252,6 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
   }
 
   String _radiusLineSourceGeoJson(_RadiusCircleData circle) {
-    if (!_is3D) return _emptyGeoJson;
     return _circleLineGeoJson(
       circle.lng,
       circle.lat,
@@ -242,20 +269,23 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
   ) async {
     if (!_radiusLayerReady) return;
     final generation = _styleGeneration;
-    DebugConsole.log('REBUILD_LAYERS: START ${circles.length} circles v=$version gen=$generation');
-    final markerImageIds = <String, String>{};
+    DebugConsole.log(
+      'REBUILD_LAYERS: START ${circles.length} circles v=$version gen=$generation',
+    );
     final markerLabels = <String, String>{};
     for (final c in circles) {
       final labelText = _markerLabelForCircle(c);
       final imageId = await this._ensureRadiusMarkerImage(style, c);
-      markerImageIds[c.id] = imageId;
       markerLabels[c.id] = labelText;
+      _radiusPointImageIds[c.id] = imageId;
     }
 
-    if (version != _radiusLayerVersion || generation != _styleGeneration) return;
+    if (version != _radiusLayerVersion || generation != _styleGeneration)
+      return;
 
     for (int i = 0; i < 20; i++) {
       final id = 'alarm-$i';
+      _radiusVisualIds.remove(id);
       try {
         await style.removeLayer('radius-label-$id');
       } catch (_) {}
@@ -268,33 +298,55 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
       try {
         await style.removeLayer('radius-fill-$id');
       } catch (_) {}
-      try { await style.updateGeoJsonSource(id: 'radius-pt-$id', data: _emptyGeoJson); } catch (_) {}
-      try { await style.updateGeoJsonSource(id: 'radius-fill-$id', data: _emptyGeoJson); } catch (_) {}
-      try { await style.updateGeoJsonSource(id: 'radius-line-$id', data: _emptyGeoJson); } catch (_) {}
+      try {
+        await style.updateGeoJsonSource(
+          id: 'radius-pt-$id',
+          data: _emptyGeoJson,
+        );
+      } catch (_) {}
+      try {
+        await style.updateGeoJsonSource(
+          id: 'radius-fill-$id',
+          data: _emptyGeoJson,
+        );
+      } catch (_) {}
+      try {
+        await style.updateGeoJsonSource(
+          id: 'radius-line-$id',
+          data: _emptyGeoJson,
+        );
+      } catch (_) {}
     }
 
+    final activeVisualIds = <String>{};
     for (final c in circles) {
       try {
         await this._updateRadiusCircleSources(style, c);
         await this._addRadiusCircleLayer(style, c);
-        final imageId = markerImageIds[c.id];
-        if (imageId == null) continue;
-        final markerSize = AlarmMarkerRenderer.measureLogicalSize(markerLabels[c.id]!);
+        final markerSize = AlarmMarkerRenderer.measureLogicalSize(
+          markerLabels[c.id]!,
+        );
         final pinTipCorrection = markerSize.height - AlarmMarkerSpec.pinSize;
-        await style.addLayer(SymbolStyleLayer(
-          id: 'radius-label-${c.id}',
-          sourceId: 'radius-pt-${c.id}',
-          layout: {
-            'icon-image': imageId,
-            'icon-size': 1.0,
-            'icon-anchor': 'bottom',
-            'icon-offset': [0.0, pinTipCorrection],
-            'icon-allow-overlap': true,
-          },
-        ));
+        await style.addLayer(
+          SymbolStyleLayer(
+            id: 'radius-label-${c.id}',
+            sourceId: 'radius-pt-${c.id}',
+            layout: {
+              'icon-image': ['get', 'image'],
+              'icon-size': 1.0,
+              'icon-anchor': 'bottom',
+              'icon-offset': [0.0, pinTipCorrection],
+              'icon-allow-overlap': true,
+            },
+          ),
+        );
+        activeVisualIds.add(c.id);
       } catch (e) {
         DebugConsole.log('VECTOR: radius layer error for ${c.id}: $e');
       }
     }
+    _radiusVisualIds
+      ..clear()
+      ..addAll(activeVisualIds);
   }
 }

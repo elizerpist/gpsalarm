@@ -12,7 +12,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         previous.timeTrigger != next.timeTrigger;
   }
 
-  Future<void> _activateAssignOverlay() async {
+  Future<void> _activateAssignOverlay({bool updateMarker = false}) async {
     if (!_isAssigning) return;
     if (_assignOverlayActivating) return;
     _assignOverlayActivating = true;
@@ -22,7 +22,11 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       final style = _controller?.style;
       final alarmProv = context.read<AlarmProvider>();
       if (_useNativeExistingAssignLayer && style != null) {
-        await this._updateExistingNativeAssignLayer(style, alarmProv);
+        await this._updateExistingNativeAssignLayer(
+          style,
+          alarmProv,
+          updateMarker: updateMarker,
+        );
         this._updateVeil(style, alarmProv);
         return;
       }
@@ -112,12 +116,17 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     });
   }
 
-  Future<void> _startAssign(double lat, double lng, {AlarmPoint? existing}) async {
+  Future<void> _startAssign(
+    double lat,
+    double lng, {
+    AlarmPoint? existing,
+  }) async {
     _assignVisualClearTimer?.cancel();
     _suspendCompassForAssign();
     _closingAssignVisual = false;
     _assignScreenCenter = existing != null
-        ? (this._geoToScreen(existing.latitude, existing.longitude) ?? _lastPointerDownPos)
+        ? (this._geoToScreen(existing.latitude, existing.longitude) ??
+              _lastPointerDownPos)
         : _lastPointerDownPos;
     _assignExisting = existing;
     _assignLat = lat;
@@ -136,7 +145,9 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _isAssigning = true;
     _radiusNotifier.value = this._currentRadiusPx;
     this._refreshAssignMarker();
-    DebugConsole.log('ASSIGN_START: lat=$lat lng=$lng existing=${existing?.id} screenCenter=$_assignScreenCenter radiusPx=${this._currentRadiusPx.toStringAsFixed(1)} radiusM=$_assignRadius');
+    DebugConsole.log(
+      'ASSIGN_START: lat=$lat lng=$lng existing=${existing?.id} screenCenter=$_assignScreenCenter radiusPx=${this._currentRadiusPx.toStringAsFixed(1)} radiusM=$_assignRadius',
+    );
     final style = _controller?.style;
     if (style != null && _showAssignOverlay) {
       if (_useNativeAssignCircle) await this._updateFastCircleLayer(style);
@@ -149,7 +160,9 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
   }
 
   Future<void> _cancelAssign({bool nativeAlreadySynced = false}) async {
-    DebugConsole.log('CANCEL_ASSIGN: isAssigning=$_isAssigning existing=${_assignExisting?.id}');
+    DebugConsole.log(
+      'CANCEL_ASSIGN: isAssigning=$_isAssigning existing=${_assignExisting?.id}',
+    );
     final previousSuppress = _suppressRadiusSync;
     _suppressRadiusSync = true;
     _radiusDebounce?.cancel();
@@ -157,7 +170,8 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     final nativeWasHidden = _assignNativeHidden;
     final style = _controller?.style;
     final alarmProv = context.read<AlarmProvider>();
-    final canRestoreInPlace = !nativeAlreadySynced &&
+    final canRestoreInPlace =
+        !nativeAlreadySynced &&
         _useNativeAssignCircle &&
         !nativeWasHidden &&
         wasExisting != null &&
@@ -165,13 +179,27 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         _radiusLayerReady;
     if (canRestoreInPlace) {
       final liveStyle = style!;
-      final circles = this._buildRadiusCircles(alarmProv, excludeEditing: false);
-      final circle = this._circleForAlarmId(alarmProv, wasExisting!.id, circles: circles);
+      final circles = this._buildRadiusCircles(
+        alarmProv,
+        excludeEditing: false,
+      );
+      final circle = this._circleForAlarmId(
+        alarmProv,
+        wasExisting!.id,
+        circles: circles,
+      );
       if (circle != null) {
-        await this._updateRadiusCircleSources(liveStyle, circle);
-        await this._ensureRadiusMarkerImage(liveStyle, circle);
+        await this._updateRadiusCircleSources(
+          liveStyle,
+          circle,
+          updateMarker: true,
+        );
       } else if (_assignNativeAlarmLayerId != null) {
-        await this._removeRadiusVisual(liveStyle, _assignNativeAlarmLayerId!, clearSources: true);
+        await this._removeRadiusVisual(
+          liveStyle,
+          _assignNativeAlarmLayerId!,
+          clearSources: true,
+        );
       }
       _lastRadiusDataHash = this._radiusHash(circles);
       this._updateVeil(liveStyle, alarmProv, ignoreAssign: true);
@@ -181,16 +209,28 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       _suppressRadiusSync = previousSuppress;
       return;
     }
-    final shouldRebuildNative = !nativeAlreadySynced && nativeWasHidden && wasExisting != null && style != null && _radiusLayerReady;
-    _beginClosingAssignVisual(keepCircle: shouldRebuildNative && !_useNativeAssignCircle);
+    final shouldRebuildNative =
+        !nativeAlreadySynced &&
+        nativeWasHidden &&
+        wasExisting != null &&
+        style != null &&
+        _radiusLayerReady;
+    _beginClosingAssignVisual(
+      keepCircle: shouldRebuildNative && !_useNativeAssignCircle,
+    );
 
     if (shouldRebuildNative) {
       final liveStyle = style!;
-      final circles = this._buildRadiusCircles(alarmProv, excludeEditing: false);
+      final circles = this._buildRadiusCircles(
+        alarmProv,
+        excludeEditing: false,
+      );
       _radiusLayerVersion++;
       _RadiusCircleData? circle;
       if (wasExisting != null) {
-        final index = alarmProv.alarmPoints.indexWhere((p) => p.id == wasExisting.id);
+        final index = alarmProv.alarmPoints.indexWhere(
+          (p) => p.id == wasExisting.id,
+        );
         final id = 'alarm-$index';
         for (final c in circles) {
           if (c.id == id) {
@@ -202,11 +242,16 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       if (circle != null) {
         await this._upsertRadiusVisual(liveStyle, circle);
       } else {
-        await this._rebuildRadiusLayers(liveStyle, circles, _radiusLayerVersion);
+        await this._rebuildRadiusLayers(
+          liveStyle,
+          circles,
+          _radiusLayerVersion,
+        );
       }
       _lastRadiusDataHash = this._radiusHash(circles);
     }
-    if (style != null && nativeWasHidden) this._updateVeil(style, alarmProv, ignoreAssign: true);
+    if (style != null && nativeWasHidden)
+      this._updateVeil(style, alarmProv, ignoreAssign: true);
     if (style != null) await this._clearFastCircleLayer(style);
     _finishClosingAssignCircle();
 
@@ -221,22 +266,33 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       name: alarm.name,
       latitude: _assignLat,
       longitude: _assignLng,
-      radiusMeters: _assignTriggerType == TriggerType.distance ? _assignRadius : 0,
+      radiusMeters: _assignTriggerType == TriggerType.distance
+          ? _assignRadius
+          : 0,
       triggerType: _assignTriggerType,
       zoneTrigger: _assignZoneTrigger,
       isActive: alarm.isActive,
-      timeTrigger: _assignTriggerType == TriggerType.time ? Duration(minutes: _assignTimeMinutes) : null,
-      customAlarmSound: _assignExisting?.customAlarmSound ?? alarm.customAlarmSound,
-      customAlarmType: _assignExisting?.customAlarmType ?? alarm.customAlarmType,
+      timeTrigger: _assignTriggerType == TriggerType.time
+          ? Duration(minutes: _assignTimeMinutes)
+          : null,
+      customAlarmSound:
+          _assignExisting?.customAlarmSound ?? alarm.customAlarmSound,
+      customAlarmType:
+          _assignExisting?.customAlarmType ?? alarm.customAlarmType,
       createdAt: _assignExisting?.createdAt ?? alarm.createdAt,
     );
-    DebugConsole.log('SAVE_ASSIGN: existing=${_assignExisting?.id} lat=${effectiveAlarm.latitude} lng=${effectiveAlarm.longitude} r=${effectiveAlarm.radiusMeters.round()}m');
+    DebugConsole.log(
+      'SAVE_ASSIGN: existing=${_assignExisting?.id} lat=${effectiveAlarm.latitude} lng=${effectiveAlarm.longitude} r=${effectiveAlarm.radiusMeters.round()}m',
+    );
     _suppressRadiusSync = true;
     final alarmProv = context.read<AlarmProvider>();
     try {
       final wasExisting = _assignExisting != null;
       final nativeWasHidden = _assignNativeHidden;
-      final visualChanged = _alarmVisualChanged(_assignExisting, effectiveAlarm);
+      final visualChanged = _alarmVisualChanged(
+        _assignExisting,
+        effectiveAlarm,
+      );
       if (wasExisting) {
         alarmProv.updateAlarmPoint(effectiveAlarm);
       } else if (alarmProv.canAddAlarm) {
@@ -245,18 +301,25 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       _seedAlarmInsideState(effectiveAlarm);
       _radiusDebounce?.cancel();
       final style = _controller?.style;
-      final canUpdateInPlace = wasExisting &&
-          _useNativeAssignCircle &&
-          !nativeWasHidden &&
-          style != null &&
-          _radiusLayerReady;
+      final canUpdateInPlace =
+          wasExisting && !nativeWasHidden && style != null && _radiusLayerReady;
       if (canUpdateInPlace) {
         final liveStyle = style!;
-        final circles = this._buildRadiusCircles(alarmProv, excludeEditing: false);
-        final circle = this._circleForAlarmId(alarmProv, effectiveAlarm.id, circles: circles);
+        final circles = this._buildRadiusCircles(
+          alarmProv,
+          excludeEditing: false,
+        );
+        final circle = this._circleForAlarmId(
+          alarmProv,
+          effectiveAlarm.id,
+          circles: circles,
+        );
         if (circle != null) {
-          await this._updateRadiusCircleSources(liveStyle, circle);
-          await this._ensureRadiusMarkerImage(liveStyle, circle);
+          await this._updateRadiusCircleSources(
+            liveStyle,
+            circle,
+            updateMarker: true,
+          );
         }
         _lastRadiusDataHash = this._radiusHash(circles);
         this._updateVeil(liveStyle, alarmProv, ignoreAssign: true);
@@ -265,28 +328,49 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         _scheduleAssignVisualClear();
         return;
       }
-      final shouldRebuildNative = style != null && _radiusLayerReady && (!wasExisting || nativeWasHidden || visualChanged);
+      final shouldRebuildNative =
+          style != null &&
+          _radiusLayerReady &&
+          (!wasExisting || nativeWasHidden || visualChanged);
       if (shouldRebuildNative) _lastRadiusDataHash = '';
       if (shouldRebuildNative) await this._ensureAssignMarkerBitmap();
       // Keep overlay circle visible during rebuild to prevent flash
-      _beginClosingAssignVisual(keepCircle: shouldRebuildNative && !_useNativeAssignCircle);
+      _beginClosingAssignVisual(
+        keepCircle: shouldRebuildNative && !_useNativeAssignCircle,
+      );
       if (shouldRebuildNative) {
         final liveStyle = style!;
-        final circles = this._buildRadiusCircles(alarmProv, excludeEditing: false);
+        final circles = this._buildRadiusCircles(
+          alarmProv,
+          excludeEditing: false,
+        );
         _radiusLayerVersion++;
         final singleCircle = !wasExisting
-            ? this._circleForAlarmId(alarmProv, effectiveAlarm.id, circles: circles)
+            ? this._circleForAlarmId(
+                alarmProv,
+                effectiveAlarm.id,
+                circles: circles,
+              )
             : null;
         if (_useNativeAssignCircle && singleCircle != null) {
           await this._upsertRadiusVisual(liveStyle, singleCircle);
         } else {
-          await this._rebuildRadiusLayers(liveStyle, circles, _radiusLayerVersion);
+          await this._rebuildRadiusLayers(
+            liveStyle,
+            circles,
+            _radiusLayerVersion,
+          );
         }
         _lastRadiusDataHash = this._radiusHash(circles);
         this._updateVeil(liveStyle, alarmProv, ignoreAssign: true);
       }
       _finishClosingAssignCircle();
-      if (style != null) await this._clearFastCircleLayer(style);
+      if (style != null) {
+        if (!wasExisting && _useNativeAssignCircle) {
+          await Future.delayed(const Duration(milliseconds: 120));
+        }
+        await this._clearFastCircleLayer(style);
+      }
       _scheduleAssignVisualClear(
         !wasExisting && _useNativeAssignCircle
             ? const Duration(milliseconds: 500)

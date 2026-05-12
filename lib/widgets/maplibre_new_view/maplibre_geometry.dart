@@ -2,14 +2,23 @@ part of '../maplibre_new_view.dart';
 
 const _emptyGeoJson = '{"type":"FeatureCollection","features":[]}';
 
-String _pointGeoJson(double lng, double lat) {
+String _pointGeoJson(
+  double lng,
+  double lat, {
+  Map<String, Object?> properties = const {},
+}) {
   return jsonEncode({
     'type': 'FeatureCollection',
-    'features': [{
-      'type': 'Feature',
-      'geometry': {'type': 'Point', 'coordinates': [lng, lat]},
-      'properties': {},
-    }],
+    'features': [
+      {
+        'type': 'Feature',
+        'geometry': {
+          'type': 'Point',
+          'coordinates': [lng, lat],
+        },
+        'properties': properties,
+      },
+    ],
   });
 }
 
@@ -18,11 +27,7 @@ Map<String, Object> _circleProps({
   required bool isLeave,
   required bool active,
 }) {
-  return {
-    'isTime': isTime,
-    'isLeave': isLeave,
-    'active': active,
-  };
+  return {'isTime': isTime, 'isLeave': isLeave, 'active': active};
 }
 
 String _circlePolygonGeoJson(
@@ -67,10 +72,7 @@ String _circleLineGeoJson(
     'features': [
       {
         'type': 'Feature',
-        'geometry': {
-          'type': 'LineString',
-          'coordinates': ring,
-        },
+        'geometry': {'type': 'LineString', 'coordinates': ring},
         'properties': _circleProps(
           isTime: isTime,
           isLeave: isLeave,
@@ -101,11 +103,15 @@ List<List<double>> _geoCircle(double lng, double lat, double radiusMeters) {
   final cosAng = math.cos(angDist);
   for (int i = 0; i <= segments; i++) {
     final bearing = 2 * math.pi * i / segments;
-    final pLat = math.asin(sinLat * cosAng + cosLat * sinAng * math.cos(bearing));
-    final pLng = lngR + math.atan2(
-      math.sin(bearing) * sinAng * cosLat,
-      cosAng - sinLat * math.sin(pLat),
+    final pLat = math.asin(
+      sinLat * cosAng + cosLat * sinAng * math.cos(bearing),
     );
+    final pLng =
+        lngR +
+        math.atan2(
+          math.sin(bearing) * sinAng * cosLat,
+          cosAng - sinLat * math.sin(pLat),
+        );
     coords.add([pLng * 180 / math.pi, pLat * 180 / math.pi]);
   }
   return coords;
@@ -114,7 +120,10 @@ List<List<double>> _geoCircle(double lng, double lat, double radiusMeters) {
 /// Render a Material icon to PNG bytes using PictureRecorder.
 Future<Uint8List> _renderIconToPng(IconData icon, Color color, int size) async {
   final recorder = ui.PictureRecorder();
-  final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, size.toDouble(), size.toDouble()));
+  final canvas = Canvas(
+    recorder,
+    Rect.fromLTWH(0, 0, size.toDouble(), size.toDouble()),
+  );
   final textPainter = TextPainter(textDirection: ui.TextDirection.ltr);
   textPainter.text = TextSpan(
     text: String.fromCharCode(icon.codePoint),

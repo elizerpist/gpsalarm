@@ -49,7 +49,8 @@ class MaplibreNewView extends StatefulWidget {
   State<MaplibreNewView> createState() => _MaplibreNewViewState();
 }
 
-class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProviderStateMixin {
+class _MaplibreNewViewState extends State<MaplibreNewView>
+    with SingleTickerProviderStateMixin {
   MapController? _controller;
   bool _imagesRegistered = false;
   bool _radiusLayerReady = false;
@@ -102,6 +103,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
   final Map<String, Uint8List> _markerBitmapCache = {};
   final Map<String, Size> _markerSizeCache = {};
   final Map<String, String> _registeredMarkerImageKeys = {};
+  final Map<String, String> _radiusPointImageIds = {};
+  final Set<String> _radiusVisualIds = {};
   // Overlay radius notifier — drives CustomPainter repaint without setState
   final ValueNotifier<double> _radiusNotifier = ValueNotifier(500);
   // Speed interpolation
@@ -138,7 +141,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
     if (!_zoomInitialized) {
       _zoomInitialized = true;
       _currentZoom = context.read<MapProvider>().zoom;
-      DebugConsole.log('VECTOR_INIT: zoom from MapProvider=${_currentZoom.toStringAsFixed(2)} center=${context.read<MapProvider>().center} dpr=$_deviceDpr');
+      DebugConsole.log(
+        'VECTOR_INIT: zoom from MapProvider=${_currentZoom.toStringAsFixed(2)} center=${context.read<MapProvider>().center} dpr=$_deviceDpr',
+      );
     }
   }
 
@@ -146,13 +151,17 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
   void _startSpeedInterpolation() {
     _speedInterpolTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
       if (!mounted) return;
-      final gpsInterval = _currentGpsTime.difference(_prevGpsTime).inMilliseconds;
+      final gpsInterval = _currentGpsTime
+          .difference(_prevGpsTime)
+          .inMilliseconds;
       double estimated;
       if (gpsInterval <= 0) {
         estimated = _currentGpsSpeed;
       } else {
         final accelPerMs = (_currentGpsSpeed - _prevGpsSpeed) / gpsInterval;
-        final elapsed = DateTime.now().difference(_currentGpsTime).inMilliseconds;
+        final elapsed = DateTime.now()
+            .difference(_currentGpsTime)
+            .inMilliseconds;
         estimated = (_currentGpsSpeed + accelPerMs * elapsed).clamp(0.0, 300.0);
         if (elapsed > gpsInterval * 2) estimated = _currentGpsSpeed;
       }
@@ -173,33 +182,41 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
       if (pos != null && mounted) {
         setState(() => _userPos = Position(pos.longitude, pos.latitude));
         _safeMoveCamera(
-          center: Position(pos.longitude, pos.latitude), zoom: 14);
+          center: Position(pos.longitude, pos.latitude),
+          zoom: 14,
+        );
       }
-      _locationService.startTracking(onPosition: (position) {
-        if (!mounted) return;
-        final newPos = Position(position.longitude, position.latitude);
-        if (_userPos == null ||
-            AlarmService.distanceMeters(
-                _userPos!.lat.toDouble(), _userPos!.lng.toDouble(),
-                position.latitude, position.longitude) > 5) {
-          setState(() => _userPos = newPos);
-        }
-        _checkAlarms(position.latitude, position.longitude);
-        // GPS follow: auto-center + bearing in 3D mode
-        // GPS follow: auto-center (bearing handled by compass stream, not GPS heading)
-        if (_gpsFollow) {
-          _safeAnimateCamera(
-            center: newPos,
-            nativeDuration: const Duration(milliseconds: 1500),
-          );
-        }
-        // Feed speed interpolation
-        final newSpeed = _locationService.averageSpeedKmh;
-        _prevGpsSpeed = _currentGpsSpeed;
-        _prevGpsTime = _currentGpsTime;
-        _currentGpsSpeed = newSpeed;
-        _currentGpsTime = DateTime.now();
-      });
+      _locationService.startTracking(
+        onPosition: (position) {
+          if (!mounted) return;
+          final newPos = Position(position.longitude, position.latitude);
+          if (_userPos == null ||
+              AlarmService.distanceMeters(
+                    _userPos!.lat.toDouble(),
+                    _userPos!.lng.toDouble(),
+                    position.latitude,
+                    position.longitude,
+                  ) >
+                  5) {
+            setState(() => _userPos = newPos);
+          }
+          _checkAlarms(position.latitude, position.longitude);
+          // GPS follow: auto-center + bearing in 3D mode
+          // GPS follow: auto-center (bearing handled by compass stream, not GPS heading)
+          if (_gpsFollow) {
+            _safeAnimateCamera(
+              center: newPos,
+              nativeDuration: const Duration(milliseconds: 1500),
+            );
+          }
+          // Feed speed interpolation
+          final newSpeed = _locationService.averageSpeedKmh;
+          _prevGpsSpeed = _currentGpsSpeed;
+          _prevGpsTime = _currentGpsTime;
+          _currentGpsSpeed = newSpeed;
+          _currentGpsTime = DateTime.now();
+        },
+      );
     }
   }
 
@@ -233,7 +250,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
 
   void _checkAlarms(double userLat, double userLng) {
     final alarmProv = context.read<AlarmProvider>();
-    final activeIds = alarmProv.alarmPoints.where((p) => p.isActive).map((p) => p.id).toSet();
+    final activeIds = alarmProv.alarmPoints
+        .where((p) => p.isActive)
+        .map((p) => p.id)
+        .toSet();
     _alarmInsideState.removeWhere((id, _) => !activeIds.contains(id));
 
     for (final point in alarmProv.alarmPoints.where((p) => p.isActive)) {
@@ -249,18 +269,29 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
       if (shouldTrigger) {
         alarmProv.toggleActive(point.id);
         final title = point.name ?? tr('no_name');
-        final zoneText = point.zoneTrigger == ZoneTrigger.onEntry ? 'Belépés' : 'Kilépés';
+        final zoneText = point.zoneTrigger == ZoneTrigger.onEntry
+            ? 'Belépés'
+            : 'Kilépés';
         NotificationService.showAlarmNotification(
           title: 'GPS Alarm: $title',
           body: '$zoneText — ${point.radiusMeters.round()}m',
           id: point.id.hashCode,
         );
         if (mounted) {
-          showDialog(context: context, barrierDismissible: false, builder: (_) => AlertDialog(
-            icon: const Icon(Icons.alarm, color: Colors.red, size: 48),
-            title: Text(title),
-            actions: [FilledButton(onPressed: () => Navigator.pop(context), child: Text(tr('dismiss')))],
-          ));
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => AlertDialog(
+              icon: const Icon(Icons.alarm, color: Colors.red, size: 48),
+              title: Text(title),
+              actions: [
+                FilledButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text(tr('dismiss')),
+                ),
+              ],
+            ),
+          );
         }
       }
     }
@@ -292,12 +323,16 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
   }) {
     final controller = _controller;
     if (controller == null) return;
-    unawaited(controller.moveCamera(
-      center: center,
-      zoom: zoom,
-      bearing: bearing,
-      pitch: pitch,
-    ).catchError((_) {}));
+    unawaited(
+      controller
+          .moveCamera(
+            center: center,
+            zoom: zoom,
+            bearing: bearing,
+            pitch: pitch,
+          )
+          .catchError((_) {}),
+    );
   }
 
   void _safeAnimateCamera({
@@ -309,13 +344,17 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
   }) {
     final controller = _controller;
     if (controller == null) return;
-    unawaited(controller.animateCamera(
-      center: center,
-      zoom: zoom,
-      bearing: bearing,
-      pitch: pitch,
-      nativeDuration: nativeDuration,
-    ).catchError((_) {}));
+    unawaited(
+      controller
+          .animateCamera(
+            center: center,
+            zoom: zoom,
+            bearing: bearing,
+            pitch: pitch,
+            nativeDuration: nativeDuration,
+          )
+          .catchError((_) {}),
+    );
   }
 
   double _normalizeBearing(double value) => (value % 360 + 360) % 360;
@@ -359,7 +398,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
     if (enabled) {
       _gpsFollow = compassFollow;
       _lastCameraBearing = _lastBearing;
-      _safeMoveCamera(pitch: 45, bearing: compassFollow ? _lastBearing : _lastCameraBearing);
+      _safeMoveCamera(
+        pitch: 45,
+        bearing: compassFollow ? _lastBearing : _lastCameraBearing,
+      );
       if (compassFollow) {
         _startCompassFollow();
       } else {
@@ -415,13 +457,27 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
     if (_imagesRegistered && _registeredStyleUrl == styleUrl) return;
     final generation = _styleGeneration;
     try {
-      final redPin = await _renderIconToPng(Icons.location_on, const Color(0xFFFF0000), 160);
-      final greyPin = await _renderIconToPng(Icons.location_on, const Color(0xFF9E9E9E), 160);
-      if (!mounted || generation != _styleGeneration || _activeStyleUrl != styleUrl) return;
+      final redPin = await _renderIconToPng(
+        Icons.location_on,
+        const Color(0xFFFF0000),
+        160,
+      );
+      final greyPin = await _renderIconToPng(
+        Icons.location_on,
+        const Color(0xFF9E9E9E),
+        160,
+      );
+      if (!mounted ||
+          generation != _styleGeneration ||
+          _activeStyleUrl != styleUrl)
+        return;
       await style.addImage('pin-red', redPin);
       await style.addImage('pin-grey', greyPin);
       await this._initRadiusLayer(style);
-      if (!mounted || generation != _styleGeneration || _activeStyleUrl != styleUrl) return;
+      if (!mounted ||
+          generation != _styleGeneration ||
+          _activeStyleUrl != styleUrl)
+        return;
       _imagesRegistered = true;
       _registeredStyleUrl = styleUrl;
       if (mounted) setState(() {});
@@ -438,12 +494,57 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
   String _lastRadiusDataHash = ''; // skip rebuild if alarm data unchanged
   bool _suppressRadiusSync = false;
   final Map<String, bool> _alarmInsideState = {};
-  bool get _useNativeAssignCircle => _is3D;
+  bool get _useNativeAssignCircle => true;
+
+  Position? _cachedUserPosition() {
+    final cached = _userPos;
+    if (cached != null) return cached;
+    final last = _locationService.lastPosition;
+    if (last == null) return null;
+    return Position(last.longitude, last.latitude);
+  }
+
+  void _animateToUserPosition(Position target) {
+    if (!mounted) return;
+    setState(() {
+      _userPos = target;
+      _cameraAtUser = true;
+    });
+    _safeAnimateCamera(
+      center: target,
+      zoom: 15,
+      pitch: _is3D ? 45 : null,
+      bearing: _is3D ? (_gpsFollow ? _lastBearing : _lastCameraBearing) : null,
+      nativeDuration: const Duration(milliseconds: 450),
+    );
+  }
+
+  Future<void> _jumpToUserPosition() async {
+    final cached = _cachedUserPosition();
+    if (cached != null) {
+      _animateToUserPosition(cached);
+    }
+    final fresh = await _locationService.getCurrentPosition();
+    if (fresh == null || !mounted) return;
+    final target = Position(fresh.longitude, fresh.latitude);
+    if (cached != null &&
+        AlarmService.distanceMeters(
+              cached.lat.toDouble(),
+              cached.lng.toDouble(),
+              target.lat.toDouble(),
+              target.lng.toDouble(),
+            ) <
+            5) {
+      return;
+    }
+    _animateToUserPosition(target);
+  }
 
   @override
   Widget build(BuildContext context) {
     final styleUrl = context.select<SettingsProvider, String>(
-        (p) => _styleUrls[p.settings.vectorStyleUrl] ?? _styleUrls['liberty']!);
+      (p) => _styleUrls[p.settings.vectorStyleUrl] ?? _styleUrls['liberty']!,
+    );
     final alarmProv = context.watch<AlarmProvider>();
 
     this._prepareVectorStyle(styleUrl);
@@ -453,39 +554,58 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
       children: [
         // GestureDetector for immediate swipe + native projection for exact geo
         GestureDetector(
-          onLongPressStart: _isAssigning ? null : (details) {
-            final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
-            if (haptic) Vibration.vibrate(duration: 30);
-            _assignScreenCenter = details.localPosition;
-            _isDraggingRadius = true;
-            // Native fromScreenLocation expects physical pixels; Flutter gives logical
-            final dpr = MediaQuery.devicePixelRatioOf(context);
-            final geo = _controller?.toLngLatSync(details.localPosition * dpr);
-            if (geo != null) {
-              unawaited(this._startAssign(geo.lat.toDouble(), geo.lng.toDouble()));
-            } else {
-              unawaited(this._startAssign(
-                _controller?.camera?.center?.lat.toDouble() ?? 0,
-                _controller?.camera?.center?.lng.toDouble() ?? 0,
-              ));
-            }
-          },
-          onLongPressMoveUpdate: !_isAssigning ? null : (details) {
-            if (!_isDraggingRadius || _assignScreenCenter == null) return;
-            final dist = (details.localPosition - _assignScreenCenter!).distance;
-            if (_assignTriggerType == TriggerType.distance) {
-              _assignRadius = (dist * _vectorMetersPerPx(_assignLat, _currentZoom)).clamp(100.0, 5000.0);
-            } else {
-              _assignTimeMinutes = (dist * 0.3).clamp(5.0, 120.0).round();
-            }
-            _radiusNotifier.value = this._currentRadiusPx;
-            if (_useNativeAssignCircle) unawaited(this._activateAssignOverlay());
-            this._refreshAssignMarker();
-            setState(() {});
-          },
-          onLongPressEnd: !_isAssigning ? null : (details) {
-            _isDraggingRadius = false;
-          },
+          onLongPressStart: _isAssigning
+              ? null
+              : (details) {
+                  final haptic = context
+                      .read<SettingsProvider>()
+                      .settings
+                      .hapticFeedback;
+                  if (haptic) Vibration.vibrate(duration: 30);
+                  _assignScreenCenter = details.localPosition;
+                  _isDraggingRadius = true;
+                  // Native fromScreenLocation expects physical pixels; Flutter gives logical
+                  final dpr = MediaQuery.devicePixelRatioOf(context);
+                  final geo = _controller?.toLngLatSync(
+                    details.localPosition * dpr,
+                  );
+                  if (geo != null) {
+                    unawaited(
+                      this._startAssign(geo.lat.toDouble(), geo.lng.toDouble()),
+                    );
+                  } else {
+                    unawaited(
+                      this._startAssign(
+                        _controller?.camera?.center?.lat.toDouble() ?? 0,
+                        _controller?.camera?.center?.lng.toDouble() ?? 0,
+                      ),
+                    );
+                  }
+                },
+          onLongPressMoveUpdate: !_isAssigning
+              ? null
+              : (details) {
+                  if (!_isDraggingRadius || _assignScreenCenter == null) return;
+                  final dist =
+                      (details.localPosition - _assignScreenCenter!).distance;
+                  if (_assignTriggerType == TriggerType.distance) {
+                    _assignRadius =
+                        (dist * _vectorMetersPerPx(_assignLat, _currentZoom))
+                            .clamp(100.0, 5000.0);
+                  } else {
+                    _assignTimeMinutes = (dist * 0.3).clamp(5.0, 120.0).round();
+                  }
+                  _radiusNotifier.value = this._currentRadiusPx;
+                  if (_useNativeAssignCircle)
+                    unawaited(this._activateAssignOverlay());
+                  this._refreshAssignMarker();
+                  setState(() {});
+                },
+          onLongPressEnd: !_isAssigning
+              ? null
+              : (details) {
+                  _isDraggingRadius = false;
+                },
           child: MapLibreMap(
             key: ValueKey(styleUrl),
             options: MapOptions(
@@ -502,7 +622,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
               // Style JSON may override initZoom/initCenter with its defaults.
               // Restore MapProvider values after style loads.
               final mp = context.read<MapProvider>();
-              DebugConsole.log('STYLE_LOADED: restoring zoom=${mp.zoom.toStringAsFixed(2)} center=${mp.center}');
+              DebugConsole.log(
+                'STYLE_LOADED: restoring zoom=${mp.zoom.toStringAsFixed(2)} center=${mp.center}',
+              );
               _safeMoveCamera(
                 center: Position(mp.center.longitude, mp.center.latitude),
                 zoom: mp.zoom,
@@ -511,7 +633,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
             onEvent: (event) {
               if (event is MapEventClick) {
                 this._onTap(event.point);
-              } else if (event is MapEventMoveCamera || event is MapEventCameraIdle) {
+              } else if (event is MapEventMoveCamera ||
+                  event is MapEventCameraIdle) {
                 final newZoom = _controller?.camera?.zoom ?? _currentZoom;
                 if ((newZoom - _currentZoom).abs() > 0.05) {
                   setState(() => _currentZoom = newZoom);
@@ -523,45 +646,50 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
                   mp.updateZoomSilent(newZoom);
                   final cam = _controller?.camera;
                   if (cam?.center != null) {
-                    mp.updateCenterSilent(LatLng(
-                      cam!.center.lat.toDouble(),
-                      cam.center.lng.toDouble(),
-                    ));
+                    mp.updateCenterSilent(
+                      LatLng(
+                        cam!.center.lat.toDouble(),
+                        cam.center.lng.toDouble(),
+                      ),
+                    );
                     // Track if camera is near user position (for my-location/3D button swap)
                     if (_userPos != null) {
                       final dist = AlarmService.distanceMeters(
-                        cam.center.lat.toDouble(), cam.center.lng.toDouble(),
-                        _userPos!.lat.toDouble(), _userPos!.lng.toDouble(),
+                        cam.center.lat.toDouble(),
+                        cam.center.lng.toDouble(),
+                        _userPos!.lat.toDouble(),
+                        _userPos!.lng.toDouble(),
                       );
                       final atUser = dist < 100;
-                      if (atUser != _cameraAtUser) setState(() => _cameraAtUser = atUser);
+                      if (atUser != _cameraAtUser)
+                        setState(() => _cameraAtUser = atUser);
                     }
                   }
                 }
               }
             },
-          layers: [
-            // Pin+chip markers are rendered as bitmap icons in _rebuildRadiusLayers
-            // (SymbolStyleLayer with composite icon-image, not MarkerLayer)
-            // User position — blue dot with white border + glow
-            if (_userPos != null) ...[
-              CircleLayer(
-                points: [Point(coordinates: _userPos!)],
-                radius: 16,
-                color: const Color(0x262196F3),
-                strokeColor: const Color(0x00000000),
-                strokeWidth: 0,
-              ),
-              CircleLayer(
-                points: [Point(coordinates: _userPos!)],
-                radius: 8,
-                color: const Color(0xFF2196F3),
-                strokeColor: const Color(0xFFFFFFFF),
-                strokeWidth: 3,
-              ),
+            layers: [
+              // Pin+chip markers are rendered as bitmap icons in _rebuildRadiusLayers
+              // (SymbolStyleLayer with composite icon-image, not MarkerLayer)
+              // User position — blue dot with white border + glow
+              if (_userPos != null) ...[
+                CircleLayer(
+                  points: [Point(coordinates: _userPos!)],
+                  radius: 16,
+                  color: const Color(0x262196F3),
+                  strokeColor: const Color(0x00000000),
+                  strokeWidth: 0,
+                ),
+                CircleLayer(
+                  points: [Point(coordinates: _userPos!)],
+                  radius: 8,
+                  color: const Color(0xFF2196F3),
+                  strokeColor: const Color(0xFFFFFFFF),
+                  strokeWidth: 3,
+                ),
+              ],
             ],
-          ],
-        ),
+          ),
         ), // close GestureDetector
         // Capture pointer position before map processes it
         if (!_isAssigning)
@@ -570,7 +698,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
               behavior: HitTestBehavior.translucent,
               onPointerDown: (e) {
                 _lastPointerDownPos = e.localPosition;
-                DebugConsole.log('CAPTURE_POINTER: pos=${e.localPosition} pointer=${e.pointer}');
+                DebugConsole.log(
+                  'CAPTURE_POINTER: pos=${e.localPosition} pointer=${e.pointer}',
+                );
               },
               child: const SizedBox.expand(),
             ),
@@ -596,12 +726,17 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
               builder: (_) => const DebugConsoleDialog(),
             ),
             child: Container(
-              width: 36, height: 36,
+              width: 36,
+              height: 36,
               decoration: BoxDecoration(
                 color: Colors.black.withOpacity(0.5),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(Icons.terminal, color: Color(0xFF2ECDC4), size: 18),
+              child: const Icon(
+                Icons.terminal,
+                color: Color(0xFF2ECDC4),
+                size: 18,
+              ),
             ),
           ),
         ),
@@ -617,15 +752,28 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
                   widget.scaffoldKey.currentState?.openDrawer();
                 },
                 child: Container(
-                  width: 44, height: 44,
+                  width: 44,
+                  height: 44,
                   decoration: BoxDecoration(
                     color: Theme.of(context).brightness == Brightness.dark
                         ? Colors.grey[900]!.withOpacity(0.92)
                         : Colors.white.withOpacity(0.92),
                     borderRadius: BorderRadius.circular(12),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 2))],
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.15),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
-                  child: Icon(Icons.menu, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.grey[800], size: 24),
+                  child: Icon(
+                    Icons.menu,
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? Colors.white
+                        : Colors.grey[800],
+                    size: 24,
+                  ),
                 ),
               ),
               const SizedBox(height: 8),
@@ -638,26 +786,48 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
                   final currentKey = settings.settings.vectorStyleUrl;
                   final idx = keys.indexOf(currentKey);
                   final nextKey = keys[(idx + 1) % keys.length];
-                  settings.updateSettings(settings.settings.copyWith(vectorStyleUrl: nextKey));
+                  settings.updateSettings(
+                    settings.settings.copyWith(vectorStyleUrl: nextKey),
+                  );
                 },
                 onLongPress: () {
                   // Long tap: toggle raster/vector (with haptic)
-                  final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
+                  final haptic = context
+                      .read<SettingsProvider>()
+                      .settings
+                      .hapticFeedback;
                   if (haptic) Vibration.vibrate(duration: 30);
                   if (_isAssigning) this._cancelAssign();
                   final settings = context.read<SettingsProvider>();
-                  settings.updateSettings(settings.settings.copyWith(mapProvider: MapTileProvider.free));
+                  settings.updateSettings(
+                    settings.settings.copyWith(
+                      mapProvider: MapTileProvider.free,
+                    ),
+                  );
                 },
                 child: Container(
-                  width: 44, height: 44,
+                  width: 44,
+                  height: 44,
                   decoration: BoxDecoration(
                     color: Theme.of(context).brightness == Brightness.dark
                         ? Colors.grey[900]!.withOpacity(0.92)
                         : Colors.white.withOpacity(0.92),
                     borderRadius: BorderRadius.circular(12),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 2))],
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.15),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
-                  child: Icon(Icons.layers, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.grey[800], size: 22),
+                  child: Icon(
+                    Icons.layers,
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? Colors.white
+                        : Colors.grey[800],
+                    size: 22,
+                  ),
                 ),
               ),
               // 3D button — ejects from toggle button with spring animation
@@ -667,11 +837,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
                   // Slide from 0 (overlapping toggle) to 1 (final position)
                   final t = _3dButtonSlide.value;
                   return Transform.translate(
-                    offset: Offset(0, (1 - t) * -52), // -52 = slide up from toggle position
-                    child: Opacity(
-                      opacity: t.clamp(0.0, 1.0),
-                      child: child,
-                    ),
+                    offset: Offset(
+                      0,
+                      (1 - t) * -52,
+                    ), // -52 = slide up from toggle position
+                    child: Opacity(opacity: t.clamp(0.0, 1.0), child: child),
                   );
                 },
                 child: Padding(
@@ -683,24 +853,42 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
                       });
                     },
                     onLongPress: () {
-                      final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
+                      final haptic = context
+                          .read<SettingsProvider>()
+                          .settings
+                          .hapticFeedback;
                       if (haptic) Vibration.vibrate(duration: 30);
                       setState(_toggle3DFixedMode);
                     },
                     child: Container(
-                      width: 44, height: 44,
+                      width: 44,
+                      height: 44,
                       decoration: BoxDecoration(
                         color: _is3D
                             ? Theme.of(context).colorScheme.primary
                             : (Theme.of(context).brightness == Brightness.dark
-                                ? Colors.grey[900]!.withOpacity(0.92)
-                                : Colors.white.withOpacity(0.92)),
+                                  ? Colors.grey[900]!.withOpacity(0.92)
+                                  : Colors.white.withOpacity(0.92)),
                         borderRadius: BorderRadius.circular(12),
-                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 2))],
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.15),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                       ),
                       child: Icon(
-                        _is3D && !_gpsFollow ? Icons.screen_rotation_alt : (_is3D ? Icons.view_in_ar : Icons.threed_rotation),
-                        color: _is3D ? Colors.white : (Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.grey[800]),
+                        _is3D && !_gpsFollow
+                            ? Icons.screen_rotation_alt
+                            : (_is3D
+                                  ? Icons.view_in_ar
+                                  : Icons.threed_rotation),
+                        color: _is3D
+                            ? Colors.white
+                            : (Theme.of(context).brightness == Brightness.dark
+                                  ? Colors.white
+                                  : Colors.grey[800]),
                         size: 22,
                       ),
                     ),
@@ -720,49 +908,16 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
               onZoomOut: () => _safeMoveCamera(zoom: _currentZoom - 1),
               onSearchTap: () => context.read<MapProvider>().toggleSearch(),
               searchActive: searchActive,
-              // When camera is at user position: button becomes 3D toggle
-              // When camera is elsewhere: button jumps to user position
-              myLocationIcon: _cameraAtUser
-                  ? (_is3D ? Icons.view_in_ar : Icons.threed_rotation)
-                  : Icons.my_location,
-              myLocationIconColor: _cameraAtUser && _is3D ? Colors.white : null,
-              myLocationBgColor: _cameraAtUser && _is3D
-                  ? Theme.of(context).colorScheme.primary
-                  : null,
-              onMyLocation: _cameraAtUser
-                  ? () {
-                      // At user position: toggle 3D
-                      setState(() {
-                        _set3DMode(enabled: !_is3D, compassFollow: true);
-                      });
-                    }
-                  : () async {
-                      // Not at user position: jump to user
-                      final pos = await _locationService.getCurrentPosition();
-                      if (pos != null) {
-                        setState(() => _cameraAtUser = true);
-                        if (_is3D) {
-                          setState(() => _gpsFollow = true);
-                          _startCompassFollow();
-                          _safeMoveCamera(
-                            center: Position(pos.longitude, pos.latitude),
-                            zoom: 15, pitch: 45, bearing: _lastBearing,
-                          );
-                        } else {
-                          _safeMoveCamera(
-                            center: Position(pos.longitude, pos.latitude),
-                            zoom: 15,
-                          );
-                        }
-                      }
-                    },
-              onMyLocationLongPress: _cameraAtUser
-                  ? () {
-                      final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
-                      if (haptic) Vibration.vibrate(duration: 30);
-                      setState(_toggle3DFixedMode);
-                    }
-                  : null,
+              myLocationIcon: Icons.my_location,
+              onMyLocation: () => unawaited(_jumpToUserPosition()),
+              onMyLocationLongPress: () {
+                final haptic = context
+                    .read<SettingsProvider>()
+                    .settings
+                    .hapticFeedback;
+                if (haptic) Vibration.vibrate(duration: 30);
+                setState(_toggle3DFixedMode);
+              },
             ),
           ),
         if (!_isAssigning)
@@ -782,20 +937,26 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
                 : const SizedBox.shrink(),
           ),
         // Radius drag overlay — blocks map gestures, 60fps via ValueNotifier
-        if ((_isAssigning || _closingAssignCircle) && _assignScreenCenter != null)
+        if ((_isAssigning || _closingAssignCircle) &&
+            _assignScreenCenter != null)
           Positioned.fill(
             child: RepaintBoundary(
               child: Listener(
-                behavior: _isAssigning ? HitTestBehavior.opaque : HitTestBehavior.translucent,
+                behavior: _isAssigning
+                    ? HitTestBehavior.opaque
+                    : HitTestBehavior.translucent,
                 onPointerDown: (e) {
                   if (!_isAssigning) return;
                   if (_assignScreenCenter == null) {
                     DebugConsole.log('OVERLAY_DOWN: screenCenter is null!');
                     return;
                   }
-                  final dist = (e.localPosition - _assignScreenCenter!).distance;
+                  final dist =
+                      (e.localPosition - _assignScreenCenter!).distance;
                   final radiusPx = _radiusNotifier.value;
-                  DebugConsole.log('OVERLAY_DOWN: pos=${e.localPosition} center=$_assignScreenCenter dist=${dist.round()} radiusPx=${radiusPx.round()} inside=${dist <= radiusPx * 1.5}');
+                  DebugConsole.log(
+                    'OVERLAY_DOWN: pos=${e.localPosition} center=$_assignScreenCenter dist=${dist.round()} radiusPx=${radiusPx.round()} inside=${dist <= radiusPx * 1.5}',
+                  );
                   if (dist <= radiusPx * 1.5) {
                     _dragPointerId = e.pointer;
                     _isDraggingRadius = true;
@@ -806,9 +967,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
                   if (!_isAssigning) return;
                   if (!_isDraggingRadius || _assignScreenCenter == null) return;
                   if (e.pointer != _dragPointerId) return;
-                  final dist = (e.localPosition - _assignScreenCenter!).distance;
+                  final dist =
+                      (e.localPosition - _assignScreenCenter!).distance;
                   if (_assignTriggerType == TriggerType.distance) {
-                    _assignRadius = (dist * _vectorMetersPerPx(_assignLat, _currentZoom)).clamp(100.0, 5000.0);
+                    _assignRadius =
+                        (dist * _vectorMetersPerPx(_assignLat, _currentZoom))
+                            .clamp(100.0, 5000.0);
                   } else {
                     _assignTimeMinutes = (dist * 0.3).clamp(5.0, 120.0).round();
                   }
@@ -821,13 +985,16 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
                 },
                 onPointerUp: (e) {
                   if (!_isAssigning) return;
-                  DebugConsole.log('OVERLAY_UP: pointer=${e.pointer} dragPointer=$_dragPointerId isDragging=$_isDraggingRadius');
+                  DebugConsole.log(
+                    'OVERLAY_UP: pointer=${e.pointer} dragPointer=$_dragPointerId isDragging=$_isDraggingRadius',
+                  );
                   if (e.pointer != _dragPointerId) return;
                   _isDraggingRadius = false;
                   _dragPointerId = null;
                 },
                 child: CustomPaint(
-                  painter: !_useNativeAssignCircle &&
+                  painter:
+                      !_useNativeAssignCircle &&
                           _assignScreenCenter != null &&
                           (this._showAssignOverlay || _closingAssignCircle)
                       ? _RadiusOverlayPainter(
@@ -862,7 +1029,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
         // Alarm card — unified assign/edit (same widget as raster map)
         if (_isAssigning)
           Positioned(
-            bottom: 0, left: 0, right: 0,
+            bottom: 0,
+            left: 0,
+            right: 0,
             child: AlarmCard(
               latitude: _assignLat,
               longitude: _assignLng,
@@ -880,7 +1049,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
               },
               onTriggerTypeChanged: (v) {
                 setState(() => _assignTriggerType = v);
-                unawaited(this._activateAssignOverlay());
+                unawaited(this._activateAssignOverlay(updateMarker: true));
                 this._refreshAssignMarker();
               },
               onTimeChanged: (v) {
@@ -891,19 +1060,22 @@ class _MaplibreNewViewState extends State<MaplibreNewView> with SingleTickerProv
               },
               onActiveChanged: (v) {
                 setState(() => _assignActive = v);
-                unawaited(this._activateAssignOverlay());
+                unawaited(this._activateAssignOverlay(updateMarker: true));
                 this._refreshAssignMarker();
               },
               onSave: (alarm) => this._saveAssign(alarm),
               onCancel: () => this._cancelAssign(),
-              onDelete: _assignExisting != null ? () {
-                context.read<AlarmProvider>().removeAlarmPoint(_assignExisting!.id);
-                this._cancelAssign();
-              } : null,
+              onDelete: _assignExisting != null
+                  ? () {
+                      context.read<AlarmProvider>().removeAlarmPoint(
+                        _assignExisting!.id,
+                      );
+                      this._cancelAssign();
+                    }
+                  : null,
             ),
           ),
       ],
     );
   }
-
 }
