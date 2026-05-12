@@ -605,15 +605,17 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   } else {
                     _assignTimeMinutes = (dist * 0.3).clamp(5.0, 120.0).round();
                   }
+                  // Overlay circle via ValueNotifier (smooth, no native calls during drag)
                   _radiusNotifier.value = this._currentRadiusPx;
-                  if (_useNativeAssignCircle)
-                    this._scheduleAssignNativeOverlayUpdate();
                   this._scheduleAssignCardSync();
                 },
           onLongPressEnd: !_isAssigning
               ? null
               : (details) {
                   _isDraggingRadius = false;
+                  // Sync native layer after drag ends
+                  if (_useNativeAssignCircle)
+                    this._scheduleAssignNativeOverlayUpdate();
                   this._flushAssignCardSync();
                 },
           child: MapLibreMap(
@@ -959,9 +961,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   } else {
                     _assignTimeMinutes = (dist * 0.3).clamp(5.0, 120.0).round();
                   }
-                  // Update overlay circle instantly (no widget rebuild)
+                  // Update overlay circle instantly via ValueNotifier (no widget rebuild, no native calls)
+                  // Native layer update deferred to onPointerUp to avoid 8-12ms per-frame jank
                   _radiusNotifier.value = this._currentRadiusPx;
-                  this._scheduleAssignNativeOverlayUpdate();
                   this._scheduleAssignCardSync();
                 },
                 onPointerUp: (e) {
@@ -971,6 +973,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   );
                   if (e.pointer != _dragPointerId) return;
                   _isDraggingRadius = false;
+                  // Sync native layer now that drag ended
+                  this._scheduleAssignNativeOverlayUpdate();
                   _dragPointerId = null;
                   this._flushAssignCardSync();
                 },
