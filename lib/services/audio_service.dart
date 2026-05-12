@@ -15,16 +15,9 @@ class AudioService {
     systemAlarmKey: 'Rendszer alarm',
     systemNotificationKey: 'Rendszer értesítés',
     systemRingtoneKey: 'Rendszer csengőhang',
-    'classic_bell': 'Classic Bell',
-    'radar_ping': 'Radar Ping',
-    'gentle_wake': 'Gentle Wake',
   };
 
-  static const Map<String, String> assetSounds = {
-    'classic_bell': 'sounds/classic_bell.wav',
-    'radar_ping': 'sounds/radar_ping.wav',
-    'gentle_wake': 'sounds/gentle_wake.wav',
-  };
+  static const Map<String, String> assetSounds = {};
 
   Future<void> playAlarm(String soundName, {double volume = 0.7, bool loop = true}) async {
     await stop();

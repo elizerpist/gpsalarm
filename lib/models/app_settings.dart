@@ -28,7 +28,7 @@ class AppSettings {
 
   AppSettings({
     this.defaultAlarmType = AlarmType.soundAndVibration,
-    this.defaultAlarmSound = 'classic_bell',
+    this.defaultAlarmSound = 'system_alarm',
     this.vibrationEnabled = true,
     this.volume = 0.7,
     this.gpsPollingMode = GpsPollingMode.continuous,
