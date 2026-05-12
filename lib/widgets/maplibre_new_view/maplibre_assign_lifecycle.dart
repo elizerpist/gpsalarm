@@ -101,6 +101,8 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
 
   Future<void> _activateAssignOverlay({bool updateMarker = false}) async {
     if (!_isAssigning) return;
+    // Skip native circle creation during drag — Flutter overlay handles it
+    if (_isDraggingRadius) return;
     if (_assignOverlayActivating) return;
     _assignOverlayActivating = true;
     try {
