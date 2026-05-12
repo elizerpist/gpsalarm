@@ -82,6 +82,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   int _assignTimeMinutes = 10;
   bool _assignActive = true;
   bool _isDraggingRadius = false;
+  bool _handoffToNative = false; // overlay stays 1 extra frame during handoff
   int? _dragPointerId;
   double _currentZoom = 13;
   bool _zoomInitialized = false;
@@ -613,6 +614,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
               ? null
               : (details) {
                   _isDraggingRadius = false;
+                  _handoffToNative = true; // keep overlay 1 extra frame
                   // Sync native layer after drag ends
                   if (_useNativeAssignCircle)
                     this._scheduleAssignNativeOverlayUpdate();
@@ -983,15 +985,16 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   );
                   if (e.pointer != _dragPointerId) return;
                   _isDraggingRadius = false;
-                  DebugConsole.log('VECTOR_DRAG_END: r=${_assignRadius.round()}m px=${this._currentRadiusPx.round()} frames=$_dragLogCounter nativeSync=true');
-                  // Sync native layer now that drag ended
+                  _handoffToNative = true; // keep overlay 1 extra frame
+                  DebugConsole.log('VECTOR_DRAG_END: r=${_assignRadius.round()}m px=${this._currentRadiusPx.round()} frames=$_dragLogCounter handoff=true');
+                  // Sync native layer, then kill overlay after 1 frame
                   this._scheduleAssignNativeOverlayUpdate();
                   _dragPointerId = null;
                   this._flushAssignCardSync();
                 },
                 child: CustomPaint(
                   painter:
-                      (_isDraggingRadius || !_useNativeAssignCircle) &&
+                      (_isDraggingRadius || _handoffToNative || !_useNativeAssignCircle) &&
                           _assignScreenCenter != null &&
                           (this._showAssignOverlay || _closingAssignCircle)
                       ? _RadiusOverlayPainter(

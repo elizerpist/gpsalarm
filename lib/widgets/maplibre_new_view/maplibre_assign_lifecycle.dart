@@ -55,8 +55,15 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       await this._activateAssignOverlay(updateMarker: updateMarker);
     } finally {
       sw.stop();
-      DebugConsole.log('VECTOR_NATIVE_SYNC: ${sw.elapsedMilliseconds}ms marker=$updateMarker');
+      DebugConsole.log('VECTOR_NATIVE_SYNC: ${sw.elapsedMilliseconds}ms marker=$updateMarker handoff=$_handoffToNative');
       _assignNativeUpdateRunning = false;
+      // End handoff: native is ready, kill overlay after 1 frame
+      if (_handoffToNative && mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          setState(() => _handoffToNative = false);
+        });
+      }
       if (_assignNativeUpdatePending && _isAssigning) {
         this._scheduleAssignNativeOverlayUpdate(
           updateMarker: _assignNativeUpdateMarkerPending,
@@ -163,6 +170,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _cancelAssignDragUpdateTimers();
     setState(() {
       _isAssigning = false;
+      _handoffToNative = false;
       _closingAssignVisual = true;
       _closingAssignCircle = keepCircle;
       _assignExisting = null;
@@ -212,6 +220,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignVisualClearTimer?.cancel();
     _suspendCompassForAssign();
     _closingAssignVisual = false;
+    _handoffToNative = false;
     _assignScreenCenter = existing != null
         ? (this._geoToScreen(existing.latitude, existing.longitude) ??
               _lastPointerDownPos)
