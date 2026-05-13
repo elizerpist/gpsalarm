@@ -106,6 +106,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   final Map<String, String> _radiusPointImageIds = {};
   final Map<String, String> _radiusCircleLayerKeys = {};
   final Set<String> _radiusVisualIds = {};
+  final Set<String> _radiusPaintOverrideIds = {};
+  bool? _nativeCircleRadiusPaintAvailable;
   String? _fastCircleLayerKey;
   // Overlay radius notifier — drives CustomPainter repaint without setState
   final ValueNotifier<double> _radiusNotifier = ValueNotifier(500);
@@ -510,9 +512,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   String? _veilSyncRequestedReason;
   bool _assignOverlayPending = false;
   bool _assignOverlayPendingMarker = false;
+  bool _assignOverlayPendingRadiusOnly = false;
   String? _assignOverlayPendingReason;
   Timer? _assignOverlaySyncTimer;
   bool _assignOverlaySyncMarker = false;
+  bool _assignOverlaySyncRadiusOnly = false;
   String? _assignOverlaySyncReason;
   Timer? _assignCardSyncTimer;
   bool _assignCardSyncPending = false;
@@ -647,6 +651,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   _radiusNotifier.value = radiusPx;
                   if (_useNativeAssignCircle)
                     this._scheduleAssignOverlaySync(
+                      radiusOnly: true,
                       debugReason: 'longpress#$_dragLogCounter',
                     );
                   if (_dragLogCounter == 1 || _dragLogCounter % 10 == 0) {
@@ -1035,6 +1040,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                       : now.difference(_lastOverlayMoveAt!).inMilliseconds;
                   _lastOverlayMoveAt = now;
                   this._scheduleAssignOverlaySync(
+                    radiusOnly: true,
                     debugReason: 'overlay#$_dragLogCounter',
                   );
                   // Update overlay circle instantly (no widget rebuild)
@@ -1125,6 +1131,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   );
                 }
                 this._scheduleAssignOverlaySync(
+                  radiusOnly: true,
                   debugReason: 'card-radius#$_cardRadiusLogCounter',
                 );
                 if (_cardRadiusLogCounter == 1 ||
@@ -1163,6 +1170,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   );
                 }
                 this._scheduleAssignOverlaySync(
+                  radiusOnly: true,
                   debugReason: 'card-time#$_cardTimeLogCounter',
                 );
                 if (_cardTimeLogCounter == 1 ||

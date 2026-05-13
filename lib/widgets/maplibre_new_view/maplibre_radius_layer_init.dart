@@ -22,7 +22,10 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
     DebugConsole.log('VECTOR: radius layer system ready');
   }
 
-  Future<void> _updateFastCircleLayer(StyleController style) async {
+  Future<void> _updateFastCircleLayer(
+    StyleController style, {
+    bool radiusOnly = false,
+  }) async {
     final sw = Stopwatch()..start();
     final isTime = _assignTriggerType == TriggerType.time;
     double radius = _assignRadius;
@@ -41,7 +44,7 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
           active: _assignActive,
           isTime: isTime,
           isLeave: _assignZoneTrigger == ZoneTrigger.onLeave,
-        ));
+        ), radiusOnly: radiusOnly);
       } catch (_) {}
       sw.stop();
       if (_shouldLogAssignFrame(_assignSyncSeq) || sw.elapsedMilliseconds > 12) {
@@ -55,6 +58,26 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
     }
 
     try {
+      if (radiusOnly &&
+          _fastCircleLayerKey != null &&
+          await this._setCircleLayerRadiusPaint(
+            style,
+            layerId: 'fast-circle',
+            visualId: 'fast',
+            radiusPx: this._currentRadiusPx,
+            debugReason: 'fast-radius-only',
+          )) {
+        sw.stop();
+        if (_shouldLogAssignFrame(_assignSyncSeq) ||
+            sw.elapsedMilliseconds > 12) {
+          DebugConsole.log(
+            'FAST_CIRCLE_SYNC: mode=paint r=${radius.round()}m '
+            'leave=${_assignZoneTrigger == ZoneTrigger.onLeave} '
+            'ms=${sw.elapsedMilliseconds} ${_assignDebugState()}',
+          );
+        }
+        return;
+      }
       await style.updateGeoJsonSource(
         id: 'fast-pt-src',
         data: _pointGeoJson(
@@ -95,6 +118,7 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
       await style.removeLayer('fast-circle');
     } catch (_) {}
     _fastCircleLayerKey = null;
+    _radiusPaintOverrideIds.remove('fast');
     try {
       await style.updateGeoJsonSource(id: 'fast-pt-src', data: _emptyGeoJson);
     } catch (_) {}

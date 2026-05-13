@@ -14,6 +14,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
 
   Future<void> _activateAssignOverlay({
     bool updateMarker = false,
+    bool radiusOnly = false,
     String debugReason = 'unspecified',
   }) async {
     final seq = ++_assignSyncSeq;
@@ -25,6 +26,8 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       _assignSyncSkipCount++;
       _assignOverlayPending = true;
       _assignOverlayPendingMarker |= updateMarker;
+      _assignOverlayPendingRadiusOnly =
+          _assignOverlayPendingRadiusOnly && radiusOnly && !updateMarker;
       _assignOverlayPendingReason = debugReason;
       if (_assignSyncSkipCount <= 5 || _assignSyncSkipCount % 15 == 0) {
         DebugConsole.log(
@@ -48,6 +51,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           style,
           alarmProv,
           updateMarker: updateMarker,
+          radiusOnly: radiusOnly && !updateMarker,
         );
         await this._syncAssignVeilWithOverlay(debugReason: debugReason);
         return;
@@ -63,7 +67,10 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       }
       if (_useNativeAssignCircle && style != null) {
         path = 'fast-native';
-        await this._updateFastCircleLayer(style);
+        await this._updateFastCircleLayer(
+          style,
+          radiusOnly: radiusOnly && !updateMarker,
+        );
       }
       if (style != null) {
         await this._syncAssignVeilWithOverlay(debugReason: debugReason);
@@ -81,9 +88,11 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       _assignOverlayActivating = false;
       final runPending = _assignOverlayPending && mounted && _isAssigning;
       final pendingMarker = _assignOverlayPendingMarker;
+      final pendingRadiusOnly = _assignOverlayPendingRadiusOnly;
       final pendingReason = _assignOverlayPendingReason ?? 'pending';
       _assignOverlayPending = false;
       _assignOverlayPendingMarker = false;
+      _assignOverlayPendingRadiusOnly = false;
       _assignOverlayPendingReason = null;
       if (runPending) {
         scheduleMicrotask(() {
@@ -91,6 +100,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           unawaited(
             this._activateAssignOverlay(
               updateMarker: pendingMarker,
+              radiusOnly: pendingRadiusOnly && !pendingMarker,
               debugReason: 'queued:$pendingReason',
             ),
           );
@@ -101,26 +111,42 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
 
   void _scheduleAssignOverlaySync({
     bool updateMarker = false,
+    bool radiusOnly = false,
     String debugReason = 'scheduled',
   }) {
     if (_assignOverlayActivating) {
+      if (!_assignOverlayPending) {
+        _assignOverlayPendingRadiusOnly = radiusOnly && !updateMarker;
+      } else {
+        _assignOverlayPendingRadiusOnly =
+            _assignOverlayPendingRadiusOnly && radiusOnly && !updateMarker;
+      }
       _assignOverlayPending = true;
       _assignOverlayPendingMarker |= updateMarker;
       _assignOverlayPendingReason = debugReason;
       return;
     }
     _assignOverlaySyncMarker |= updateMarker;
+    if (_assignOverlaySyncTimer == null) {
+      _assignOverlaySyncRadiusOnly = radiusOnly && !updateMarker;
+    } else {
+      _assignOverlaySyncRadiusOnly =
+          _assignOverlaySyncRadiusOnly && radiusOnly && !updateMarker;
+    }
     _assignOverlaySyncReason = debugReason;
     if (_assignOverlaySyncTimer != null) return;
     _assignOverlaySyncTimer = Timer(Duration.zero, () {
       _assignOverlaySyncTimer = null;
       final marker = _assignOverlaySyncMarker;
+      final syncRadiusOnly = _assignOverlaySyncRadiusOnly;
       final reason = _assignOverlaySyncReason ?? 'scheduled';
       _assignOverlaySyncMarker = false;
+      _assignOverlaySyncRadiusOnly = false;
       _assignOverlaySyncReason = null;
       unawaited(
         this._activateAssignOverlay(
           updateMarker: marker,
+          radiusOnly: syncRadiusOnly && !marker,
           debugReason: 'scheduled:$reason',
         ),
       );
@@ -135,6 +161,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignOverlaySyncTimer = null;
     final marker = _assignOverlaySyncMarker || updateMarker;
     _assignOverlaySyncMarker = false;
+    _assignOverlaySyncRadiusOnly = false;
     _assignOverlaySyncReason = null;
     await this._activateAssignOverlay(
       updateMarker: marker,
@@ -195,7 +222,12 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignOverlaySyncTimer?.cancel();
     _assignOverlaySyncTimer = null;
     _assignOverlaySyncMarker = false;
+    _assignOverlaySyncRadiusOnly = false;
     _assignOverlaySyncReason = null;
+    _assignOverlayPending = false;
+    _assignOverlayPendingMarker = false;
+    _assignOverlayPendingRadiusOnly = false;
+    _assignOverlayPendingReason = null;
     _veilSyncTimer?.cancel();
     _veilSyncTimer = null;
     _veilSyncRequested = false;

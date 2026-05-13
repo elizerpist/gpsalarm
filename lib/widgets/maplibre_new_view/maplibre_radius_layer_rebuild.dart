@@ -159,15 +159,83 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     );
   }
 
+  double _radiusPxForCircle(_RadiusCircleData circle) {
+    final zoom = _controller?.camera?.zoom ?? _currentZoom;
+    return circle.radiusMeters / _vectorMetersPerPx(circle.lat, zoom);
+  }
+
+  Future<bool> _setCircleLayerRadiusPaint(
+    StyleController style, {
+    required String layerId,
+    required String visualId,
+    required double radiusPx,
+    required String debugReason,
+  }) async {
+    if (_nativeCircleRadiusPaintAvailable == false) return false;
+    final sw = Stopwatch()..start();
+    try {
+      await (style as dynamic).setCircleLayerRadius(
+        layerId: layerId,
+        radius: radiusPx,
+      );
+      _nativeCircleRadiusPaintAvailable = true;
+      _radiusPaintOverrideIds.add(visualId);
+      sw.stop();
+      if (_isAssigning &&
+          (_shouldLogAssignFrame(_assignSyncSeq) || sw.elapsedMilliseconds > 8)) {
+        DebugConsole.log(
+          'RADIUS_PAINT_SYNC: layer=$layerId px=${radiusPx.toStringAsFixed(1)} '
+          'ms=${sw.elapsedMilliseconds} reason=$debugReason',
+        );
+      }
+      return true;
+    } on NoSuchMethodError {
+      _nativeCircleRadiusPaintAvailable = false;
+      return false;
+    } catch (e) {
+      sw.stop();
+      if (sw.elapsedMilliseconds > 8) {
+        DebugConsole.log(
+          'RADIUS_PAINT_SYNC_FAIL: layer=$layerId ms=${sw.elapsedMilliseconds} '
+          'reason=$debugReason err=$e',
+        );
+      }
+      return false;
+    }
+  }
+
   Future<void> _updateRadiusCircleSources(
     StyleController style,
     _RadiusCircleData circle, {
     bool updateMarker = false,
+    bool radiusOnly = false,
   }) async {
     final sw = Stopwatch()..start();
     var markerMs = 0;
     var sourceMs = 0;
     var layerMs = 0;
+    if (radiusOnly &&
+        !updateMarker &&
+        _radiusVisualIds.contains(circle.id) &&
+        await this._setCircleLayerRadiusPaint(
+          style,
+          layerId: 'radius-circle-${circle.id}',
+          visualId: circle.id,
+          radiusPx: this._radiusPxForCircle(circle),
+          debugReason: 'source-radius-only',
+        )) {
+      sw.stop();
+      if ((_isAssigning && _shouldLogAssignFrame(_assignSyncSeq)) ||
+          sw.elapsedMilliseconds > 12) {
+        DebugConsole.log(
+          'RADIUS_SRC_SYNC: id=${circle.id} r=${circle.radiusMeters.round()}m '
+          'leave=${circle.isLeave} active=${circle.active} marker=$updateMarker '
+          'radiusOnly=true ms=${sw.elapsedMilliseconds} markerMs=0 sourceMs=0 '
+          'layerMs=0 visual=${_radiusVisualIds.contains(circle.id)}',
+        );
+      }
+      return;
+    }
     if (updateMarker || !_radiusPointImageIds.containsKey(circle.id)) {
       final markerSw = Stopwatch()..start();
       await this._syncRadiusMarkerImage(style, circle);
@@ -183,6 +251,9 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     sourceMs = sourceSw.elapsedMilliseconds;
     if (_radiusVisualIds.contains(circle.id)) {
       final layerSw = Stopwatch()..start();
+      if (_radiusPaintOverrideIds.remove(circle.id)) {
+        _radiusCircleLayerKeys.remove(circle.id);
+      }
       await this._ensureRadiusCircleLayer(style, circle);
       layerSw.stop();
       layerMs = layerSw.elapsedMilliseconds;
@@ -204,6 +275,7 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     StyleController style,
     AlarmProvider alarmProv, {
     bool updateMarker = false,
+    bool radiusOnly = false,
   }) async {
     final sw = Stopwatch()..start();
     final circle = this._currentAssignCircle(alarmProv);
@@ -224,6 +296,7 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
       style,
       circle,
       updateMarker: updateMarker,
+      radiusOnly: radiusOnly,
     );
     sw.stop();
     if (logThis || sw.elapsedMilliseconds > 12) {
@@ -241,6 +314,7 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
   }) async {
     _radiusVisualIds.remove(id);
     _radiusCircleLayerKeys.remove(id);
+    _radiusPaintOverrideIds.remove(id);
     try {
       await style.removeLayer('radius-label-$id');
     } catch (_) {}
@@ -346,7 +420,20 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     StyleController style,
     _RadiusCircleData circle, {
     bool updateMarker = false,
+    bool radiusOnly = false,
   }) async {
+    if (radiusOnly &&
+        !updateMarker &&
+        _radiusCircleLayerKeys.containsKey(circle.id) &&
+        await this._setCircleLayerRadiusPaint(
+          style,
+          layerId: 'radius-circle-${circle.id}',
+          visualId: circle.id,
+          radiusPx: this._radiusPxForCircle(circle),
+          debugReason: 'draft-radius-only',
+        )) {
+      return;
+    }
     if (updateMarker || !_radiusPointImageIds.containsKey(circle.id)) {
       await this._syncRadiusMarkerImage(style, circle);
     }
@@ -354,6 +441,9 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
       id: 'radius-pt-${circle.id}',
       data: _radiusPointSourceGeoJson(circle),
     );
+    if (_radiusPaintOverrideIds.remove(circle.id)) {
+      _radiusCircleLayerKeys.remove(circle.id);
+    }
     await this._ensureRadiusCircleLayer(style, circle);
   }
 
@@ -406,6 +496,7 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
         );
       } catch (_) {}
       _radiusCircleLayerKeys.remove(id);
+      _radiusPaintOverrideIds.remove(id);
     }
 
     final activeVisualIds = <String>{};
