@@ -116,6 +116,14 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     return _veilSyncDrainFuture!;
   }
 
+  int _liveAssignVeilSegments() {
+    final radiusPx = math.max(_radiusNotifier.value, this._currentRadiusPx);
+    if (radiusPx >= 180) return 128;
+    if (radiusPx >= 80) return 96;
+    if (radiusPx >= 48) return 64;
+    return 32;
+  }
+
   Future<void> _updateVeil(
     StyleController style,
     AlarmProvider alarmProv, {
@@ -125,7 +133,6 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
   }) async {
     final sw = Stopwatch()..start();
     final seq = ++_veilUpdateSeq;
-    final segments = fullQuality ? 128 : 32;
     final useLiveAssignHole =
         !ignoreAssign &&
         _isAssigning &&
@@ -134,6 +141,9 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
         _assignActive &&
         _assignZoneTrigger == ZoneTrigger.onLeave &&
         (_showAssignOverlay || _useNativeExistingAssignLayer);
+    final segments = fullQuality
+        ? 128
+        : (useLiveAssignHole ? _liveAssignVeilSegments() : 32);
     final leaveAlarms = alarmProv.alarmPoints
         .where(
           (p) =>
