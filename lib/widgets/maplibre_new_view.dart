@@ -40,7 +40,7 @@ part 'maplibre_new_view/maplibre_style_urls.dart';
 part 'maplibre_new_view/maplibre_tap_handling.dart';
 part 'maplibre_new_view/maplibre_veil_layer.dart';
 
-enum _AssignVisualOwner { nativeLive, flutterPreview, transitionPending }
+enum _AssignVisualOwner { nativeLive, transitionPending }
 
 class MaplibreNewView extends StatefulWidget {
   final GlobalKey<ScaffoldState> scaffoldKey;
@@ -724,7 +724,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   } else {
                     _assignTimeMinutes = (dist * 0.3).clamp(5.0, 120.0).round();
                   }
-                  this._startAssignFlutterPreview(reason: 'longpress-move');
                   _dragLogCounter++;
                   final radiusPx = this._currentRadiusPx;
                   _radiusNotifier.value = radiusPx;
@@ -1006,7 +1005,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                     _isDraggingRadius = true;
                     _dragLogCounter = 0;
                     _lastOverlayMoveAt = DateTime.now();
-                    this._startAssignFlutterPreview(reason: 'overlay-down');
                   }
                 },
                 onPointerMove: (e) {
@@ -1120,7 +1118,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
               onRadiusChanged: (v) {
                 _assignRadius = v;
                 _radiusNotifier.value = this._currentRadiusPx;
-                this._startAssignFlutterPreview(reason: 'card-radius');
                 _cardRadiusLogCounter++;
                 if (_shouldLogAssignFrame(_cardRadiusLogCounter)) {
                   DebugConsole.log(
@@ -1164,7 +1161,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
               onTimeChanged: (v) {
                 _assignTimeMinutes = v;
                 _radiusNotifier.value = this._currentRadiusPx;
-                this._startAssignFlutterPreview(reason: 'card-time');
                 _cardTimeLogCounter++;
                 if (_shouldLogAssignFrame(_cardTimeLogCounter)) {
                   DebugConsole.log(

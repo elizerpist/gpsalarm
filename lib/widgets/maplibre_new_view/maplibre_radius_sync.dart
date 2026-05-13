@@ -9,7 +9,8 @@ extension _MaplibreRadiusSync on _MaplibreNewViewState {
 
     if (_isDraggingRadius && _isAssigning) return;
 
-    if (_assignVisualOwner == _AssignVisualOwner.nativeLive &&
+    if (!_isAssigning &&
+        _assignVisualOwner == _AssignVisualOwner.nativeLive &&
         !_assignFlutterPreviewActive) {
       this._scheduleVeilSync(fullQuality: true, reason: 'radius-sync');
     }

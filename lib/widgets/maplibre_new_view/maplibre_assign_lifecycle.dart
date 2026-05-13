@@ -71,7 +71,8 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           updateMarker: updateMarker,
           radiusOnly: radiusOnly && !updateMarker,
         );
-        if (_assignVisualOwner == _AssignVisualOwner.nativeLive) {
+        if (_assignVisualOwner == _AssignVisualOwner.nativeLive &&
+            !(radiusOnly && !updateMarker)) {
           await this._syncAssignVeilWithOverlay(debugReason: debugReason);
         }
         return;
@@ -92,7 +93,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           radiusOnly: radiusOnly && !updateMarker,
         );
       }
-      if (style != null) {
+      if (style != null && !(radiusOnly && !updateMarker)) {
         await this._syncAssignVeilWithOverlay(debugReason: debugReason);
       }
       if (needsState && mounted) setState(() {});
@@ -426,35 +427,6 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       DebugConsole.log('ASSIGN_START: keeping native alarm visual during edit');
     }
     setState(() {});
-  }
-
-  void _startAssignFlutterPreview({required String reason}) {
-    if (!_isAssigning) return;
-    final wasActive = _assignFlutterPreviewActive;
-    _assignFlutterPreviewActive = true;
-    if (wasActive) {
-      _assignVisualOwner = _AssignVisualOwner.flutterPreview;
-      return;
-    }
-    _assignVisualOwner = _AssignVisualOwner.transitionPending;
-    final style = _controller?.style;
-    if (style == null) {
-      _assignVisualOwner = _AssignVisualOwner.flutterPreview;
-      if (mounted) setState(() {});
-      DebugConsole.log(
-        'FLUTTER_PREVIEW_START: reason=$reason ${_assignDebugState()}',
-      );
-      return;
-    }
-    unawaited(() async {
-      await this._hideNativeAssignVisualForPreview(style, reason);
-      if (!mounted || !_isAssigning || !_assignFlutterPreviewActive) return;
-      _assignVisualOwner = _AssignVisualOwner.flutterPreview;
-      setState(() {});
-      DebugConsole.log(
-        'FLUTTER_PREVIEW_START: reason=$reason ${_assignDebugState()}',
-      );
-    }());
   }
 
   Future<void> _hideNativeAssignVisualForPreview(

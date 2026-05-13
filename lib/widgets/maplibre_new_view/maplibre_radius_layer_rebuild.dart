@@ -276,22 +276,8 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     var markerMs = 0;
     var sourceMs = 0;
     var layerMs = 0;
-    if (radiusOnly && !updateMarker && circle.isLeave && circle.active) {
-      sw.stop();
-      if ((_isAssigning && _shouldLogAssignFrame(_assignSyncSeq)) ||
-          sw.elapsedMilliseconds > 12) {
-        DebugConsole.log(
-          'RADIUS_SRC_SYNC: id=${circle.id} r=${circle.radiusMeters.round()}m '
-          'leave=${circle.isLeave} active=${circle.active} marker=$updateMarker '
-          'radiusOnly=true skip=leave-veil ms=${sw.elapsedMilliseconds} '
-          'visual=${_radiusVisualIds.contains(circle.id)}',
-        );
-      }
-      return;
-    }
     if (radiusOnly &&
         !updateMarker &&
-        !circle.isLeave &&
         _radiusVisualIds.contains(circle.id) &&
         await this._setCircleLayerRadiusPaint(
           style,
@@ -504,12 +490,8 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     bool updateMarker = false,
     bool radiusOnly = false,
   }) async {
-    if (radiusOnly && !updateMarker && circle.isLeave && circle.active) {
-      return;
-    }
     if (radiusOnly &&
         !updateMarker &&
-        !circle.isLeave &&
         _radiusCircleLayerKeys.containsKey(circle.id) &&
         await this._setCircleLayerRadiusPaint(
           style,
