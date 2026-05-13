@@ -2,7 +2,10 @@ part of '../maplibre_new_view.dart';
 
 extension _MaplibreAssignMarker on _MaplibreNewViewState {
   bool get _showAssignOverlay => _isAssigning && (_assignExisting == null || _assignNativeHidden);
-  bool get _showAssignMarkerOverlay => _isAssigning && (_assignExisting == null || _assignNativeHidden);
+  bool get _showAssignMarkerOverlay =>
+      _isAssigning &&
+      (_assignExisting == null || _assignNativeHidden) &&
+      !_assignNativePreviewReady;
   bool get _useNativeExistingAssignLayer =>
       _isAssigning && _useNativeAssignCircle && _assignExisting != null && !_assignNativeHidden;
 

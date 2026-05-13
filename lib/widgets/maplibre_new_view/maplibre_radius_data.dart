@@ -77,6 +77,17 @@ extension _MaplibreRadiusData on _MaplibreNewViewState {
     final existing = _assignExisting;
     if (existing == null) return null;
     final id = _alarmLayerId(alarmProv, existing.id) ?? _assignNativeAlarmLayerId;
+    return _assignCircleForVisualId(id);
+  }
+
+  _RadiusCircleData? _currentAssignPreviewCircle(AlarmProvider alarmProv) {
+    final existing = _assignExisting;
+    final id = _assignNativeAlarmLayerId ??
+        (existing == null ? null : _alarmLayerId(alarmProv, existing.id));
+    return _assignCircleForVisualId(id);
+  }
+
+  _RadiusCircleData? _assignCircleForVisualId(String? id) {
     if (id == null) return null;
     double radius = _assignRadius;
     final isTime = _assignTriggerType == TriggerType.time;

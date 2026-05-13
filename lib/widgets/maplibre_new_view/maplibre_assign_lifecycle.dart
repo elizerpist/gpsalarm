@@ -11,7 +11,12 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
   }
 
   void _scheduleAssignNativeOverlayUpdate({bool updateMarker = false}) {
-    if (!_isAssigning || !_useNativeAssignCircle) return;
+    if (!_isAssigning) return;
+    if (!_useNativeAssignCircle &&
+        _isDraggingRadius &&
+        _assignZoneTrigger != ZoneTrigger.onLeave) {
+      return;
+    }
     _assignNativeUpdatePending = true;
     _assignNativeUpdateMarkerPending =
         _assignNativeUpdateMarkerPending || updateMarker;
@@ -39,7 +44,6 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
   }
 
   Future<void> _drainAssignNativeUpdate() async {
-    if (!_useNativeAssignCircle) return;
     while (true) {
       _assignNativeUpdateTimer?.cancel();
       _assignNativeUpdateTimer = null;
@@ -66,7 +70,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
   }
 
   Future<void> _flushAssignNativeOverlayUpdate() async {
-    if (!_isAssigning || !_useNativeAssignCircle) {
+    if (!_isAssigning) {
       _assignNativeUpdatePending = false;
       _assignNativeUpdateMarkerPending = false;
       return;
@@ -79,7 +83,13 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignNativeUpdateRunning = true;
     final sw = Stopwatch()..start();
     try {
-      await this._activateAssignOverlay(updateMarker: updateMarker);
+      if (_useNativeAssignCircle) {
+        await this._activateAssignOverlay(updateMarker: updateMarker);
+      } else if (_isDraggingRadius) {
+        await this._syncAssignVeilOnly();
+      } else if (!_isDraggingRadius) {
+        await this._syncAssignNativePreview(updateMarker: updateMarker);
+      }
     } finally {
       sw.stop();
       DebugConsole.log(
@@ -99,6 +109,72 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         );
       }
     }
+  }
+
+  Future<bool> _syncAssignNativePreview({bool updateMarker = false}) async {
+    if (!_isAssigning || !_radiusLayerReady) return false;
+    final style = _controller?.style;
+    if (style == null) return false;
+    final alarmProv = context.read<AlarmProvider>();
+    final circle = this._currentAssignPreviewCircle(alarmProv);
+    if (circle == null) return false;
+    final removal = _assignNativePreviewRemovalFuture;
+    if (removal != null) {
+      try {
+        await removal;
+      } catch (_) {}
+      if (_assignNativePreviewRemovalFuture == removal) {
+        _assignNativePreviewRemovalFuture = null;
+      }
+    }
+    final sw = Stopwatch()..start();
+    await this._upsertRadiusVisual(
+      style,
+      circle,
+      updateMarker: updateMarker,
+    );
+    this._updateVeil(style, alarmProv);
+    sw.stop();
+    DebugConsole.log(
+      'ASSIGN_NATIVE_PREVIEW: ${sw.elapsedMilliseconds}ms id=${circle.id} r=${circle.radiusMeters.round()}m marker=$updateMarker',
+    );
+    if (mounted && !_assignNativePreviewReady) {
+      setState(() => _assignNativePreviewReady = true);
+    } else {
+      _assignNativePreviewReady = true;
+    }
+    return true;
+  }
+
+  Future<void> _syncAssignVeilOnly() async {
+    if (!_isAssigning || _assignZoneTrigger != ZoneTrigger.onLeave) return;
+    final style = _controller?.style;
+    if (style == null) return;
+    this._updateVeil(style, context.read<AlarmProvider>());
+  }
+
+  void _markAssignNativePreviewDirty({bool removeVisual = true}) {
+    if (!_assignNativePreviewReady) return;
+    _assignNativePreviewReady = false;
+    if (removeVisual) {
+      final removal = _removeAssignNativePreviewVisual();
+      _assignNativePreviewRemovalFuture = removal;
+      unawaited(
+        removal.whenComplete(() {
+          if (_assignNativePreviewRemovalFuture == removal) {
+            _assignNativePreviewRemovalFuture = null;
+          }
+        }),
+      );
+    }
+  }
+
+  Future<void> _removeAssignNativePreviewVisual() async {
+    final style = _controller?.style;
+    final id = _assignNativeAlarmLayerId;
+    if (style == null || id == null) return;
+    await this._removeRadiusVisual(style, id, clearSources: false);
+    this._updateVeil(style, context.read<AlarmProvider>());
   }
 
   void _scheduleAssignCardSync() {
@@ -201,14 +277,18 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     } catch (_) {}
   }
 
-  void _beginClosingAssignVisual({required bool keepCircle}) {
+  void _beginClosingAssignVisual({
+    required bool keepCircle,
+    bool forceKeepVisual = false,
+  }) {
     _assignVisualClearTimer?.cancel();
     _cancelAssignDragUpdateTimers();
+    final keepOverlayUntilClear = forceKeepVisual || !_assignNativePreviewReady;
     setState(() {
       _isAssigning = false;
       _handoffToNative = false;
-      _closingAssignVisual = true;
-      _closingAssignCircle = keepCircle;
+      _closingAssignVisual = keepOverlayUntilClear;
+      _closingAssignCircle = keepCircle && keepOverlayUntilClear;
       _assignExisting = null;
       _assignNativeAlarmLayerId = null;
       _assignNativeHidden = false;
@@ -236,6 +316,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         _assignMarkerKey = null;
         _assignNativeAlarmLayerId = null;
         _assignNativeHidden = false;
+        _assignNativePreviewReady = false;
         _assignTriggerType = TriggerType.distance;
         _assignZoneTrigger = ZoneTrigger.onEntry;
         _assignTimeMinutes = 10;
@@ -253,10 +334,20 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     final alarmProv = context.read<AlarmProvider>();
     _cancelAssignDragUpdateTimers();
     await _waitForAssignNativeUpdate();
+    final previewRemoval = _assignNativePreviewRemovalFuture;
+    if (previewRemoval != null) {
+      try {
+        await previewRemoval;
+      } catch (_) {}
+      if (_assignNativePreviewRemovalFuture == previewRemoval) {
+        _assignNativePreviewRemovalFuture = null;
+      }
+    }
     _assignVisualClearTimer?.cancel();
     _suspendCompassForAssign();
     _closingAssignVisual = false;
     _handoffToNative = false;
+    _assignNativePreviewReady = false;
     _assignScreenCenter = existing != null
         ? (this._geoToScreen(existing.latitude, existing.longitude) ??
               _lastPointerDownPos)
@@ -298,6 +389,8 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         } else {
           await this._updateFastCircleLayer(style);
         }
+      } else if (!_isDraggingRadius) {
+        this._scheduleAssignNativeOverlayUpdate(updateMarker: true);
       }
       DebugConsole.log(
         'ASSIGN_START: updating veil immediately isDragging=$_isDraggingRadius',
@@ -376,9 +469,6 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         clearSources: true,
       );
     }
-    _beginClosingAssignVisual(
-      keepCircle: shouldRebuildNative && !_useNativeAssignCircle,
-    );
 
     if (shouldRebuildNative) {
       final liveStyle = style!;
@@ -401,20 +491,24 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         }
       }
       if (circle != null) {
-        await this._upsertRadiusVisual(liveStyle, circle);
+        await this._upsertRadiusVisual(liveStyle, circle, updateMarker: true);
+        _assignNativePreviewReady = true;
       } else {
         await this._rebuildRadiusLayers(
           liveStyle,
           circles,
           _radiusLayerVersion,
         );
+        _assignNativePreviewReady = true;
       }
       _lastRadiusDataHash = this._radiusHash(circles);
     }
     if (style != null && nativeWasHidden)
       this._updateVeil(style, alarmProv, ignoreAssign: true);
     if (style != null) await this._clearFastCircleLayer(style);
-    _finishClosingAssignCircle();
+    _beginClosingAssignVisual(
+      keepCircle: shouldRebuildNative && !_assignNativePreviewReady,
+    );
 
     _scheduleAssignVisualClear();
     _suppressRadiusSync = previousSuppress;
@@ -487,6 +581,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         _lastRadiusDataHash = this._radiusHash(circles);
         this._updateVeil(liveStyle, alarmProv, ignoreAssign: true);
         await this._clearFastCircleLayer(liveStyle);
+        _assignNativePreviewReady = true;
         _beginClosingAssignVisual(keepCircle: false);
         _scheduleAssignVisualClear();
         return;
@@ -500,6 +595,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       );
       if (shouldRebuildNative) _lastRadiusDataHash = '';
       if (shouldRebuildNative) await this._ensureAssignMarkerBitmap();
+      final previewWasReady = _assignNativePreviewReady;
       if (shouldRebuildNative) {
         final liveStyle = style!;
         final circles = this._buildRadiusCircles(
@@ -518,10 +614,16 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         if (_useNativeAssignCircle && singleCircle != null) {
           DebugConsole.log('SAVE_FLOW: promote draft layer');
           await this._promoteDraftRadiusCircleLayer(liveStyle, singleCircle);
+          _assignNativePreviewReady = true;
           _lastRadiusDataHash = this._radiusHash(circles);
         } else if (singleCircle != null) {
           DebugConsole.log('SAVE_FLOW: upsert single circle');
-          await this._upsertRadiusVisual(liveStyle, singleCircle);
+          await this._upsertRadiusVisual(
+            liveStyle,
+            singleCircle,
+            updateMarker: true,
+          );
+          _assignNativePreviewReady = true;
           _lastRadiusDataHash = this._radiusHash(circles);
         } else {
           DebugConsole.log('SAVE_FLOW: full rebuildRadiusLayers');
@@ -530,14 +632,21 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
             circles,
             _radiusLayerVersion,
           );
+          _assignNativePreviewReady = true;
           _lastRadiusDataHash = this._radiusHash(circles);
         }
         DebugConsole.log('SAVE_FLOW: updateVeil ignoreAssign=true');
         this._updateVeil(liveStyle, alarmProv, ignoreAssign: true);
       }
-      DebugConsole.log('SAVE_FLOW: beginClosingAssignVisual keepCircle=false');
-      _beginClosingAssignVisual(keepCircle: false);
-      final clearDelay = !wasExisting && _useNativeAssignCircle
+      final keepOverlayForHandoff = shouldRebuildNative && !previewWasReady;
+      DebugConsole.log(
+        'SAVE_FLOW: beginClosingAssignVisual keepCircle=$keepOverlayForHandoff forceKeep=$keepOverlayForHandoff previewWasReady=$previewWasReady',
+      );
+      _beginClosingAssignVisual(
+        keepCircle: keepOverlayForHandoff,
+        forceKeepVisual: keepOverlayForHandoff,
+      );
+      final clearDelay = keepOverlayForHandoff
           ? const Duration(milliseconds: 300)
           : const Duration(milliseconds: 80);
       DebugConsole.log(

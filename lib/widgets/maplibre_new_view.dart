@@ -99,11 +99,13 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   bool _closingAssignVisual = false;
   bool _closingAssignCircle = false;
   bool _assignNativeHidden = false;
+  bool _assignNativePreviewReady = false;
   bool _assignOverlayActivating = false;
   Timer? _assignVisualClearTimer;
   Timer? _assignNativeUpdateTimer;
   Timer? _assignCardSyncTimer;
   Future<void>? _assignNativeUpdateFuture;
+  Future<void>? _assignNativePreviewRemovalFuture;
   bool _assignNativeUpdatePending = false;
   bool _assignNativeUpdateMarkerPending = false;
   bool _assignNativeUpdateRunning = false;
@@ -507,7 +509,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   final Map<String, bool> _alarmInsideState = {};
   // Live assign/edit uses the Flutter overlay. Android MapLibre does not
   // reliably re-evaluate circle-radius from updated GeoJSON properties, which
-  // leaves the native border stuck while the veil moves.
+  // leaves the native border stuck while the veil moves. The final native
+  // visual is prewarmed outside the drag loop and kept ready for save/cancel.
   bool get _useNativeAssignCircle => false;
 
   Position? _cachedUserPosition() {
@@ -612,7 +615,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   // Keep the live radius in the native draft layer. The update
                   // is coalesced, so long-press drag does not rebuild layers.
                   _radiusNotifier.value = this._currentRadiusPx;
-                  if (_useNativeAssignCircle) {
+                  if (_useNativeAssignCircle ||
+                      _assignZoneTrigger == ZoneTrigger.onLeave) {
                     this._scheduleAssignNativeOverlayUpdate();
                   }
                   this._scheduleAssignCardSync();
@@ -623,8 +627,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   _isDraggingRadius = false;
                   _handoffToNative = false;
                   // Flush final radius after drag ends.
-                  if (_useNativeAssignCircle)
-                    this._scheduleAssignNativeOverlayUpdate();
+                  this._scheduleAssignNativeOverlayUpdate(updateMarker: true);
                   this._flushAssignCardSync();
                 },
           child: MapLibreMap(
@@ -954,6 +957,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   if (dist <= radiusPx * 1.5) {
                     _dragPointerId = e.pointer;
                     _isDraggingRadius = true;
+                    if (_assignNativePreviewReady) {
+                      setState(() {
+                        this._markAssignNativePreviewDirty();
+                      });
+                    }
                     _dragLogCounter = 0;
                     DebugConsole.log(
                       _useNativeAssignCircle
@@ -978,7 +986,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   // Keep hit testing/card values current. In native mode the visual
                   // update is coalesced to one GeoJSON source update per frame.
                   _radiusNotifier.value = this._currentRadiusPx;
-                  if (_useNativeAssignCircle) {
+                  if (_useNativeAssignCircle ||
+                      _assignZoneTrigger == ZoneTrigger.onLeave) {
                     this._scheduleAssignNativeOverlayUpdate();
                   }
                   _dragLogCounter++;
@@ -1002,13 +1011,16 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                     'VECTOR_DRAG_END: r=${_assignRadius.round()}m px=${this._currentRadiusPx.round()} frames=$_dragLogCounter handoff=$_handoffToNative',
                   );
                   // Flush the final radius; native mode keeps the same draft layer alive.
-                  this._scheduleAssignNativeOverlayUpdate();
+                  this._scheduleAssignNativeOverlayUpdate(updateMarker: true);
                   _dragPointerId = null;
                   this._flushAssignCardSync();
                 },
                 child: CustomPaint(
                   painter:
                       !_useNativeAssignCircle &&
+                          (!_assignNativePreviewReady ||
+                              _isDraggingRadius ||
+                              _closingAssignCircle) &&
                           _assignScreenCenter != null &&
                           (this._showAssignOverlay || _closingAssignCircle)
                       ? _RadiusOverlayPainter(
@@ -1052,28 +1064,43 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
               existingPoint: _assignExisting,
               radius: _assignRadius,
               onRadiusChanged: (v) {
-                setState(() => _assignRadius = v);
-                this._scheduleAssignNativeOverlayUpdate();
+                setState(() {
+                  _assignRadius = v;
+                  this._markAssignNativePreviewDirty();
+                });
                 _radiusNotifier.value = this._currentRadiusPx;
                 this._refreshAssignMarker();
+                this._scheduleAssignNativeOverlayUpdate(updateMarker: true);
               },
               onZoneTriggerChanged: (v) {
-                setState(() => _assignZoneTrigger = v);
-                this._scheduleAssignNativeOverlayUpdate();
+                setState(() {
+                  _assignZoneTrigger = v;
+                  this._markAssignNativePreviewDirty();
+                });
+                this._scheduleAssignNativeOverlayUpdate(updateMarker: true);
               },
               onTriggerTypeChanged: (v) {
-                setState(() => _assignTriggerType = v);
+                setState(() {
+                  _assignTriggerType = v;
+                  this._markAssignNativePreviewDirty();
+                });
                 this._scheduleAssignNativeOverlayUpdate(updateMarker: true);
                 this._refreshAssignMarker();
               },
               onTimeChanged: (v) {
-                setState(() => _assignTimeMinutes = v);
-                this._scheduleAssignNativeOverlayUpdate();
+                setState(() {
+                  _assignTimeMinutes = v;
+                  this._markAssignNativePreviewDirty();
+                });
                 _radiusNotifier.value = this._currentRadiusPx;
                 this._refreshAssignMarker();
+                this._scheduleAssignNativeOverlayUpdate(updateMarker: true);
               },
               onActiveChanged: (v) {
-                setState(() => _assignActive = v);
+                setState(() {
+                  _assignActive = v;
+                  this._markAssignNativePreviewDirty();
+                });
                 this._scheduleAssignNativeOverlayUpdate(updateMarker: true);
                 this._refreshAssignMarker();
               },

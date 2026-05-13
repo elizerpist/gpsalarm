@@ -258,12 +258,21 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
   Future<void> _upsertRadiusVisual(
     StyleController style,
     _RadiusCircleData circle,
+    {bool updateMarker = true}
   ) async {
-    await this._removeRadiusVisual(style, circle.id, clearSources: false);
-    await this._syncRadiusMarkerImage(style, circle);
-    await this._updateRadiusCircleSources(style, circle);
-    await this._addRadiusCircleLayer(style, circle);
-    await this._addRadiusLabelLayer(style, circle);
+    final hadVisual = _radiusVisualIds.contains(circle.id);
+    if (updateMarker || !_radiusPointImageIds.containsKey(circle.id)) {
+      await this._syncRadiusMarkerImage(style, circle);
+    }
+    await this._updateRadiusCircleSources(
+      style,
+      circle,
+      updateMarker: updateMarker,
+    );
+    await this._ensureRadiusCircleLayer(style, circle);
+    if (!hadVisual) {
+      await this._addRadiusLabelLayer(style, circle);
+    }
     _radiusVisualIds.add(circle.id);
   }
 
