@@ -998,7 +998,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                 : const SizedBox.shrink(),
           ),
         // Radius drag overlay — blocks map gestures, 60fps via ValueNotifier
-        if ((_isAssigning || _closingAssignCircle) &&
+        if ((_isAssigning ||
+                _closingAssignCircle ||
+                _assignFlutterPreviewActive) &&
             _assignScreenCenter != null)
           Positioned.fill(
             child: RepaintBoundary(
@@ -1090,7 +1092,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                 },
                 child: CustomPaint(
                   painter:
-                      (_assignFlutterPreviewActive || !_useNativeAssignCircle) &&
+                      (_assignFlutterPreviewActive ||
+                              !_useNativeAssignCircle) &&
                           _assignScreenCenter != null &&
                           (_assignFlutterPreviewActive ||
                               this._showAssignOverlay ||
@@ -1194,8 +1197,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                     debugReason: 'card-time#$_cardTimeLogCounter',
                   );
                 }
-                if (_cardTimeLogCounter == 1 ||
-                    _cardTimeLogCounter % 10 == 0) {
+                if (_cardTimeLogCounter == 1 || _cardTimeLogCounter % 10 == 0) {
                   this._refreshAssignMarker();
                 }
               },
