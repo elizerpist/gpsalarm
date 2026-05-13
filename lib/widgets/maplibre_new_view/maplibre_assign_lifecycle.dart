@@ -43,6 +43,14 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     } catch (_) {}
   }
 
+  Future<void> _waitForAssignNativeHide() async {
+    final future = _assignNativeHideFuture;
+    if (future == null) return;
+    try {
+      await future;
+    } catch (_) {}
+  }
+
   Future<void> _drainAssignNativeUpdate() async {
     while (true) {
       _assignNativeUpdateTimer?.cancel();
@@ -149,6 +157,54 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     final style = _controller?.style;
     if (style == null) return;
     this._updateVeil(style, context.read<AlarmProvider>());
+  }
+
+  void _switchExistingAssignToOverlay({bool updateMarker = false}) {
+    if (!_isAssigning ||
+        _assignExisting == null ||
+        _assignNativeHidden ||
+        _useNativeAssignCircle) {
+      return;
+    }
+    final existing = _assignExisting!;
+    final token = ++_assignNativeHideToken;
+    setState(() => _assignNativeHidden = true);
+    if (updateMarker) this._refreshAssignMarker();
+    final future = _hideExistingNativeAfterOverlayFrame(existing, token);
+    _assignNativeHideFuture = future;
+    unawaited(
+      future.whenComplete(() {
+        if (_assignNativeHideFuture == future) {
+          _assignNativeHideFuture = null;
+        }
+      }),
+    );
+  }
+
+  Future<void> _hideExistingNativeAfterOverlayFrame(
+    AlarmPoint existing,
+    int token,
+  ) async {
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted ||
+        token != _assignNativeHideToken ||
+        !_isAssigning ||
+        !_assignNativeHidden ||
+        _assignExisting?.id != existing.id) {
+      return;
+    }
+    await this._hideExistingNativeAlarm(existing);
+    if (!mounted ||
+        token != _assignNativeHideToken ||
+        !_isAssigning ||
+        !_assignNativeHidden ||
+        _assignExisting?.id != existing.id) {
+      return;
+    }
+    final style = _controller?.style;
+    if (style != null) {
+      this._updateVeil(style, context.read<AlarmProvider>());
+    }
   }
 
   void _markAssignNativePreviewDirty({bool removeVisual = true}) {
@@ -280,8 +336,9 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     bool forceKeepVisual = false,
   }) {
     _assignVisualClearTimer?.cancel();
+    _assignNativeHideToken++;
     _cancelAssignDragUpdateTimers();
-    final keepOverlayUntilClear = forceKeepVisual || !_assignNativePreviewReady;
+    final keepOverlayUntilClear = forceKeepVisual || keepCircle;
     setState(() {
       _isAssigning = false;
       _handoffToNative = false;
@@ -332,6 +389,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     final alarmProv = context.read<AlarmProvider>();
     _cancelAssignDragUpdateTimers();
     await _waitForAssignNativeUpdate();
+    await _waitForAssignNativeHide();
     final previewRemoval = _assignNativePreviewRemovalFuture;
     if (previewRemoval != null) {
       try {
@@ -342,6 +400,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       }
     }
     _assignVisualClearTimer?.cancel();
+    _assignNativeHideToken++;
     _suspendCompassForAssign();
     _closingAssignVisual = false;
     _handoffToNative = false;
@@ -363,10 +422,10 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignNativeAlarmLayerId = existing == null
         ? 'alarm-${alarmProv.alarmPoints.length}'
         : this._alarmLayerId(alarmProv, existing.id);
-    _assignNativeHidden = existing == null || !_useNativeAssignCircle;
+    _assignNativeHidden = existing == null;
     _isAssigning = true;
     _radiusNotifier.value = this._currentRadiusPx;
-    if (existing != null && _assignNativeHidden && !_useNativeAssignCircle) {
+    if (existing != null && !_useNativeAssignCircle) {
       await this._ensureAssignMarkerBitmap();
     } else {
       this._refreshAssignMarker();
@@ -466,7 +525,6 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       );
     }
 
-    final previewWasReady = _assignNativePreviewReady;
     if (shouldRebuildNative) {
       final liveStyle = style!;
       final circles = this._buildRadiusCircles(
@@ -503,17 +561,12 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     if (style != null && nativeWasHidden)
       this._updateVeil(style, alarmProv, ignoreAssign: true);
     if (style != null) await this._clearFastCircleLayer(style);
-    final keepMarkerForCancel = shouldRebuildNative && !previewWasReady;
     _beginClosingAssignVisual(
       keepCircle: false,
-      forceKeepVisual: keepMarkerForCancel,
+      forceKeepVisual: false,
     );
 
-    _scheduleAssignVisualClear(
-      keepMarkerForCancel
-          ? const Duration(milliseconds: 300)
-          : const Duration(milliseconds: 80),
-    );
+    _scheduleAssignVisualClear();
     _suppressRadiusSync = previousSuppress;
   }
 
@@ -545,6 +598,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     final alarmProv = context.read<AlarmProvider>();
     await _drainAssignNativeUpdate();
     _cancelAssignDragUpdateTimers();
+    await _waitForAssignNativeHide();
     _suppressRadiusSync = true;
     try {
       final wasExisting = _assignExisting != null;
@@ -641,21 +695,15 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         DebugConsole.log('SAVE_FLOW: updateVeil ignoreAssign=true');
         this._updateVeil(liveStyle, alarmProv, ignoreAssign: true);
       }
-      final keepMarkerForHandoff = shouldRebuildNative && !previewWasReady;
       DebugConsole.log(
-        'SAVE_FLOW: beginClosingAssignVisual keepCircle=false forceKeep=$keepMarkerForHandoff previewWasReady=$previewWasReady',
+        'SAVE_FLOW: beginClosingAssignVisual keepCircle=false forceKeep=false previewWasReady=$previewWasReady',
       );
       _beginClosingAssignVisual(
         keepCircle: false,
-        forceKeepVisual: keepMarkerForHandoff,
+        forceKeepVisual: false,
       );
-      final clearDelay = keepMarkerForHandoff
-          ? const Duration(milliseconds: 300)
-          : const Duration(milliseconds: 80);
-      DebugConsole.log(
-        'SAVE_FLOW: scheduleAssignVisualClear ${clearDelay.inMilliseconds}ms',
-      );
-      _scheduleAssignVisualClear(clearDelay);
+      DebugConsole.log('SAVE_FLOW: scheduleAssignVisualClear 80ms');
+      _scheduleAssignVisualClear();
     } finally {
       _suppressRadiusSync = false;
     }

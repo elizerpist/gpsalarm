@@ -106,6 +106,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   Timer? _assignCardSyncTimer;
   Future<void>? _assignNativeUpdateFuture;
   Future<void>? _assignNativePreviewRemovalFuture;
+  Future<void>? _assignNativeHideFuture;
+  int _assignNativeHideToken = 0;
   bool _assignNativeUpdatePending = false;
   bool _assignNativeUpdateMarkerPending = false;
   bool _assignNativeUpdateRunning = false;
@@ -959,6 +961,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   if (dist <= radiusPx * 1.5) {
                     _dragPointerId = e.pointer;
                     _isDraggingRadius = true;
+                    this._switchExistingAssignToOverlay();
                     if (_assignNativePreviewReady) {
                       setState(() {
                         this._markAssignNativePreviewDirty();
@@ -1074,6 +1077,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                 });
                 _radiusNotifier.value = this._currentRadiusPx;
                 this._refreshAssignMarker();
+                this._switchExistingAssignToOverlay(updateMarker: true);
                 if (_useNativeAssignCircle) {
                   this._scheduleAssignNativeOverlayUpdate(updateMarker: true);
                 } else {
@@ -1085,6 +1089,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   _assignZoneTrigger = v;
                   this._markAssignNativePreviewDirty();
                 });
+                this._switchExistingAssignToOverlay(updateMarker: true);
                 if (_useNativeAssignCircle) {
                   this._scheduleAssignNativeOverlayUpdate(updateMarker: true);
                 } else {
@@ -1096,6 +1101,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   _assignTriggerType = v;
                   this._markAssignNativePreviewDirty();
                 });
+                this._switchExistingAssignToOverlay(updateMarker: true);
                 if (_useNativeAssignCircle) {
                   this._scheduleAssignNativeOverlayUpdate(updateMarker: true);
                 } else {
@@ -1110,6 +1116,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                 });
                 _radiusNotifier.value = this._currentRadiusPx;
                 this._refreshAssignMarker();
+                this._switchExistingAssignToOverlay(updateMarker: true);
                 if (_useNativeAssignCircle) {
                   this._scheduleAssignNativeOverlayUpdate(updateMarker: true);
                 } else {
@@ -1121,6 +1128,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   _assignActive = v;
                   this._markAssignNativePreviewDirty();
                 });
+                this._switchExistingAssignToOverlay(updateMarker: true);
                 if (_useNativeAssignCircle) {
                   this._scheduleAssignNativeOverlayUpdate(updateMarker: true);
                 } else {
