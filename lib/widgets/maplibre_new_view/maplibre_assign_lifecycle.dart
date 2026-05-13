@@ -53,6 +53,11 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       final existing = _assignExisting;
       final style = _controller?.style;
       final alarmProv = context.read<AlarmProvider>();
+      final shouldScheduleLiveVeil =
+          radiusOnly &&
+          !updateMarker &&
+          _assignActive &&
+          _assignZoneTrigger == ZoneTrigger.onLeave;
       if (_assignFlutterPreviewActive && !forceNative) {
         path = 'flutter-preview';
         return;
@@ -71,9 +76,15 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           updateMarker: updateMarker,
           radiusOnly: radiusOnly && !updateMarker,
         );
-        if (_assignVisualOwner == _AssignVisualOwner.nativeLive &&
-            !(radiusOnly && !updateMarker)) {
-          await this._syncAssignVeilWithOverlay(debugReason: debugReason);
+        if (_assignVisualOwner == _AssignVisualOwner.nativeLive) {
+          if (shouldScheduleLiveVeil) {
+            this._scheduleVeilSync(
+              fullQuality: false,
+              reason: 'assign-overlay:$debugReason',
+            );
+          } else {
+            await this._syncAssignVeilWithOverlay(debugReason: debugReason);
+          }
         }
         return;
       }
@@ -93,8 +104,15 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           radiusOnly: radiusOnly && !updateMarker,
         );
       }
-      if (style != null && !(radiusOnly && !updateMarker)) {
-        await this._syncAssignVeilWithOverlay(debugReason: debugReason);
+      if (style != null) {
+        if (shouldScheduleLiveVeil) {
+          this._scheduleVeilSync(
+            fullQuality: false,
+            reason: 'assign-overlay:$debugReason',
+          );
+        } else {
+          await this._syncAssignVeilWithOverlay(debugReason: debugReason);
+        }
       }
       if (needsState && mounted) setState(() {});
     } finally {
@@ -536,6 +554,11 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     Future<void>? nativeAck,
   }) async {
     if (!keepPreview || style == null) {
+      if (nativeAck != null) {
+        await nativeAck;
+        await WidgetsBinding.instance.endOfFrame;
+        if (!mounted) return;
+      }
       _assignVisualOwner = _AssignVisualOwner.nativeLive;
       return;
     }
@@ -770,9 +793,6 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           style: liveStyle,
           reason: 'save-in-place',
         );
-        final nativeAck = keepPreview
-            ? this._waitForNativeRenderAck(reason: 'save-in-place-native-flush')
-            : null;
         final circles = this._buildRadiusCircles(
           alarmProv,
           excludeEditing: false,
@@ -802,6 +822,9 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           fullQuality: true,
           reason: 'save-in-place',
         );
+        final nativeAck = this._waitForNativeRenderAck(
+          reason: 'save-in-place-native-flush',
+        );
         await this._completeFlutterPreviewNativeHandoff(
           style: liveStyle,
           keepPreview: keepPreview,
@@ -825,9 +848,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         style: style,
         reason: 'save',
       );
-      final nativeAck = keepPreview
-          ? this._waitForNativeRenderAck(reason: 'save-native-flush')
-          : null;
+      Future<void>? nativeAck;
       if (shouldRebuildNative) _lastRadiusDataHash = '';
       if (shouldRebuildNative) await this._ensureAssignMarkerBitmap();
       if (shouldRebuildNative) {
@@ -860,6 +881,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           fullQuality: true,
           reason: 'save-rebuild',
         );
+        nativeAck = this._waitForNativeRenderAck(reason: 'save-native-flush');
         if (keepPreview) {
           await this._hideNativeAssignVisualForPreview(
             liveStyle,
