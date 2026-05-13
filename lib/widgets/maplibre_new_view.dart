@@ -626,8 +626,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
               : (details) {
                   _isDraggingRadius = false;
                   _handoffToNative = false;
-                  // Flush final radius after drag ends.
-                  this._scheduleAssignNativeOverlayUpdate(updateMarker: true);
+                  if (_useNativeAssignCircle ||
+                      _assignZoneTrigger == ZoneTrigger.onLeave) {
+                    this._scheduleAssignNativeOverlayUpdate();
+                  }
                   this._flushAssignCardSync();
                 },
           child: MapLibreMap(
@@ -1010,8 +1012,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   DebugConsole.log(
                     'VECTOR_DRAG_END: r=${_assignRadius.round()}m px=${this._currentRadiusPx.round()} frames=$_dragLogCounter handoff=$_handoffToNative',
                   );
-                  // Flush the final radius; native mode keeps the same draft layer alive.
-                  this._scheduleAssignNativeOverlayUpdate(updateMarker: true);
+                  if (_useNativeAssignCircle ||
+                      _assignZoneTrigger == ZoneTrigger.onLeave) {
+                    this._scheduleAssignNativeOverlayUpdate();
+                  }
                   _dragPointerId = null;
                   this._flushAssignCardSync();
                 },
@@ -1070,21 +1074,33 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                 });
                 _radiusNotifier.value = this._currentRadiusPx;
                 this._refreshAssignMarker();
-                this._scheduleAssignNativeOverlayUpdate(updateMarker: true);
+                if (_useNativeAssignCircle) {
+                  this._scheduleAssignNativeOverlayUpdate(updateMarker: true);
+                } else {
+                  unawaited(this._syncAssignVeilOnly());
+                }
               },
               onZoneTriggerChanged: (v) {
                 setState(() {
                   _assignZoneTrigger = v;
                   this._markAssignNativePreviewDirty();
                 });
-                this._scheduleAssignNativeOverlayUpdate(updateMarker: true);
+                if (_useNativeAssignCircle) {
+                  this._scheduleAssignNativeOverlayUpdate(updateMarker: true);
+                } else {
+                  unawaited(this._syncAssignVeilOnly());
+                }
               },
               onTriggerTypeChanged: (v) {
                 setState(() {
                   _assignTriggerType = v;
                   this._markAssignNativePreviewDirty();
                 });
-                this._scheduleAssignNativeOverlayUpdate(updateMarker: true);
+                if (_useNativeAssignCircle) {
+                  this._scheduleAssignNativeOverlayUpdate(updateMarker: true);
+                } else {
+                  unawaited(this._syncAssignVeilOnly());
+                }
                 this._refreshAssignMarker();
               },
               onTimeChanged: (v) {
@@ -1094,14 +1110,22 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                 });
                 _radiusNotifier.value = this._currentRadiusPx;
                 this._refreshAssignMarker();
-                this._scheduleAssignNativeOverlayUpdate(updateMarker: true);
+                if (_useNativeAssignCircle) {
+                  this._scheduleAssignNativeOverlayUpdate(updateMarker: true);
+                } else {
+                  unawaited(this._syncAssignVeilOnly());
+                }
               },
               onActiveChanged: (v) {
                 setState(() {
                   _assignActive = v;
                   this._markAssignNativePreviewDirty();
                 });
-                this._scheduleAssignNativeOverlayUpdate(updateMarker: true);
+                if (_useNativeAssignCircle) {
+                  this._scheduleAssignNativeOverlayUpdate(updateMarker: true);
+                } else {
+                  unawaited(this._syncAssignVeilOnly());
+                }
                 this._refreshAssignMarker();
               },
               onSave: (alarm) => this._saveAssign(alarm),

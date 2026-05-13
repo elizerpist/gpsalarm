@@ -85,10 +85,8 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     try {
       if (_useNativeAssignCircle) {
         await this._activateAssignOverlay(updateMarker: updateMarker);
-      } else if (_isDraggingRadius) {
+      } else {
         await this._syncAssignVeilOnly();
-      } else if (!_isDraggingRadius) {
-        await this._syncAssignNativePreview(updateMarker: updateMarker);
       }
     } finally {
       sw.stop();
@@ -147,7 +145,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
   }
 
   Future<void> _syncAssignVeilOnly() async {
-    if (!_isAssigning || _assignZoneTrigger != ZoneTrigger.onLeave) return;
+    if (!_isAssigning) return;
     final style = _controller?.style;
     if (style == null) return;
     this._updateVeil(style, context.read<AlarmProvider>());
@@ -389,8 +387,6 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         } else {
           await this._updateFastCircleLayer(style);
         }
-      } else if (!_isDraggingRadius) {
-        this._scheduleAssignNativeOverlayUpdate(updateMarker: true);
       }
       DebugConsole.log(
         'ASSIGN_START: updating veil immediately isDragging=$_isDraggingRadius',
@@ -470,6 +466,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       );
     }
 
+    final previewWasReady = _assignNativePreviewReady;
     if (shouldRebuildNative) {
       final liveStyle = style!;
       final circles = this._buildRadiusCircles(
@@ -506,11 +503,17 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     if (style != null && nativeWasHidden)
       this._updateVeil(style, alarmProv, ignoreAssign: true);
     if (style != null) await this._clearFastCircleLayer(style);
+    final keepOverlayForCancel = shouldRebuildNative && !previewWasReady;
     _beginClosingAssignVisual(
-      keepCircle: shouldRebuildNative && !_assignNativePreviewReady,
+      keepCircle: keepOverlayForCancel,
+      forceKeepVisual: keepOverlayForCancel,
     );
 
-    _scheduleAssignVisualClear();
+    _scheduleAssignVisualClear(
+      keepOverlayForCancel
+          ? const Duration(milliseconds: 300)
+          : const Duration(milliseconds: 80),
+    );
     _suppressRadiusSync = previousSuppress;
   }
 
