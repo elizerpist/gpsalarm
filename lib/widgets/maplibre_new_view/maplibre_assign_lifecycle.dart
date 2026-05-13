@@ -239,6 +239,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
   void _beginClosingAssignVisual({
     required bool keepCircle,
     bool keepPreview = false,
+    bool keepMarker = false,
   }) {
     _assignVisualClearTimer?.cancel();
     _assignOverlaySyncTimer?.cancel();
@@ -265,11 +266,12 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       _assignFlutterPreviewActive = false;
       _assignPreviewCircleHidden = false;
       _assignPreviewVeilHidden = false;
+      _assignPreviewLabelHidden = false;
     }
     setState(() {
       _isAssigning = false;
-      _closingAssignVisual = true;
       _closingAssignCircle = keepCircle;
+      _closingAssignMarker = keepMarker;
       _assignExisting = null;
       if (!keepPreview) {
         _assignNativeAlarmLayerId = null;
@@ -293,27 +295,42 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       unawaited(() async {
         if (!mounted) return;
         final style = _controller?.style;
-        if (style != null &&
-            (_assignPreviewCircleHidden || _assignPreviewVeilHidden)) {
-          await this._restoreNativeAssignPreviewOpacity(style);
-        }
+        final shouldRestoreNativePreview =
+            style != null &&
+            (_assignPreviewCircleHidden ||
+                _assignPreviewVeilHidden ||
+                _assignPreviewLabelHidden);
         if (!mounted) return;
         setState(() {
-          _closingAssignVisual = false;
           _closingAssignCircle = false;
+          _closingAssignMarker = false;
           _assignFlutterPreviewActive = false;
-          _assignPreviewCircleHidden = false;
-          _assignPreviewVeilHidden = false;
           _assignScreenCenter = null;
           _assignMarkerPng = null;
           _assignMarkerKey = null;
-          _assignNativeAlarmLayerId = null;
-          _assignNativeHidden = false;
+          if (!shouldRestoreNativePreview) {
+            _assignPreviewCircleHidden = false;
+            _assignPreviewVeilHidden = false;
+            _assignPreviewLabelHidden = false;
+            _assignNativeAlarmLayerId = null;
+            _assignNativeHidden = false;
+          }
           _assignTriggerType = TriggerType.distance;
           _assignZoneTrigger = ZoneTrigger.onEntry;
           _assignTimeMinutes = 10;
           _assignActive = true;
         });
+        if (shouldRestoreNativePreview && style != null) {
+          await this._restoreNativeAssignPreviewOpacity(style);
+          if (!mounted) return;
+          setState(() {
+            _assignPreviewCircleHidden = false;
+            _assignPreviewVeilHidden = false;
+            _assignPreviewLabelHidden = false;
+            _assignNativeAlarmLayerId = null;
+            _assignNativeHidden = false;
+          });
+        }
         _restoreCompassAfterAssign();
       }());
     });
@@ -344,8 +361,9 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignFlutterPreviewActive = false;
     _assignPreviewCircleHidden = false;
     _assignPreviewVeilHidden = false;
+    _assignPreviewLabelHidden = false;
+    _closingAssignMarker = false;
     _suspendCompassForAssign();
-    _closingAssignVisual = false;
     _assignScreenCenter = existing != null
         ? (this._geoToScreen(existing.latitude, existing.longitude) ??
               _lastPointerDownPos)
@@ -423,6 +441,18 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       );
       _assignPreviewCircleHidden = true;
     }
+    final shouldHideLabel = _assignExisting == null || _assignNativeHidden;
+    if (id != null &&
+        shouldHideLabel &&
+        (force || !_assignPreviewLabelHidden)) {
+      final hidden = await this._setNativeLayerPaintProperty(
+        style,
+        layerId: 'radius-label-$id',
+        property: 'icon-opacity',
+        value: 0.0,
+      );
+      _assignPreviewLabelHidden = _assignPreviewLabelHidden || hidden;
+    }
     final shouldHideVeil =
         _assignActive && _assignZoneTrigger == ZoneTrigger.onLeave;
     if (shouldHideVeil && (force || !_assignPreviewVeilHidden)) {
@@ -447,7 +477,8 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
   Future<void> _stopAssignFlutterPreview({required String reason}) async {
     if (!_assignFlutterPreviewActive &&
         !_assignPreviewCircleHidden &&
-        !_assignPreviewVeilHidden) {
+        !_assignPreviewVeilHidden &&
+        !_assignPreviewLabelHidden) {
       return;
     }
     final style = _controller?.style;
@@ -468,7 +499,8 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     final shouldHold = _assignFlutterPreviewActive;
     if (!_assignFlutterPreviewActive &&
         !_assignPreviewCircleHidden &&
-        !_assignPreviewVeilHidden) {
+        !_assignPreviewVeilHidden &&
+        !_assignPreviewLabelHidden) {
       return false;
     }
     if (style != null && shouldHold) {
@@ -502,6 +534,15 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     }
     if (_assignPreviewVeilHidden) {
       await this._restoreNativeVeilOpacity(style);
+    }
+    if (id != null && _assignPreviewLabelHidden) {
+      await this._setNativeLayerPaintProperty(
+        style,
+        layerId: 'radius-label-$id',
+        property: 'icon-opacity',
+        value: 1.0,
+      );
+      _assignPreviewLabelHidden = false;
     }
   }
 
@@ -715,10 +756,14 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
               reason: 'save-in-place',
             );
         await this._clearFastCircleLayer(liveStyle);
-        _beginClosingAssignVisual(keepCircle: false, keepPreview: keepPreview);
+        _beginClosingAssignVisual(
+          keepCircle: false,
+          keepPreview: keepPreview,
+          keepMarker: keepPreview && !wasExisting,
+        );
         _scheduleAssignVisualClear(
           keepPreview
-              ? const Duration(milliseconds: 220)
+              ? const Duration(milliseconds: 120)
               : const Duration(milliseconds: 80),
         );
         return;
@@ -759,6 +804,13 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           fullQuality: true,
           reason: 'save-rebuild',
         );
+        if (_assignFlutterPreviewActive) {
+          await this._hideNativeAssignVisualForPreview(
+            liveStyle,
+            'save-rebuild-native-ready',
+            force: true,
+          );
+        }
       }
       // Wait for MapLibre to render native marker before hiding overlay pin
       if (shouldRebuildNative) {
@@ -768,13 +820,15 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         style: style,
         reason: 'save',
       );
-      _beginClosingAssignVisual(keepCircle: false, keepPreview: keepPreview);
+      _beginClosingAssignVisual(
+        keepCircle: false,
+        keepPreview: keepPreview,
+        keepMarker: keepPreview && !wasExisting,
+      );
       _finishClosingAssignCircle();
       _scheduleAssignVisualClear(
-        !wasExisting && _useNativeAssignCircle
-            ? const Duration(milliseconds: 500)
-            : keepPreview
-            ? const Duration(milliseconds: 220)
+        keepPreview
+            ? const Duration(milliseconds: 120)
             : const Duration(milliseconds: 80),
       );
     } finally {

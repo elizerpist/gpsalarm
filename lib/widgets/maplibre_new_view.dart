@@ -95,13 +95,14 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   Size _assignMarkerSize = Size.zero;
   int _assignMarkerVersion = 0;
   String? _assignNativeAlarmLayerId;
-  bool _closingAssignVisual = false;
   bool _closingAssignCircle = false;
   bool _assignNativeHidden = false;
   bool _assignOverlayActivating = false;
   bool _assignFlutterPreviewActive = false;
   bool _assignPreviewCircleHidden = false;
   bool _assignPreviewVeilHidden = false;
+  bool _assignPreviewLabelHidden = false;
+  bool _closingAssignMarker = false;
   Timer? _assignVisualClearTimer;
   final Map<String, Uint8List> _markerBitmapCache = {};
   final Map<String, Size> _markerSizeCache = {};
@@ -1052,8 +1053,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
               ),
             ),
           ),
-        if ((_isAssigning || _closingAssignVisual) &&
-            (this._showAssignMarkerOverlay || _closingAssignVisual) &&
+        if (((_isAssigning && this._showAssignMarkerOverlay) ||
+                _closingAssignMarker) &&
             _assignScreenCenter != null &&
             _assignMarkerPng != null)
           Positioned(
