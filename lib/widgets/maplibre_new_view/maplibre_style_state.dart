@@ -18,6 +18,7 @@ extension _MaplibreStyleState on _MaplibreNewViewState {
     _veilSyncRequestedReason = null;
     _assignRadiusPaintSyncPending = false;
     _assignRadiusPaintSyncReason = null;
+    _liveVeilOutlineHidden = false;
     _radiusLayerVersion++;
     _styleGeneration++;
     _registeredMarkerImageKeys.clear();

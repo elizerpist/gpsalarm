@@ -712,6 +712,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       property: 'line-opacity',
       value: 1.0,
     );
+    _liveVeilOutlineHidden = false;
     _assignPreviewVeilHidden = false;
   }
 

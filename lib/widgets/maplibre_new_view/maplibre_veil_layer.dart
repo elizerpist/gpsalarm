@@ -13,6 +13,21 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     _veilSyncRequestedReason = reason;
   }
 
+  bool _shouldHideLiveVeilOutline({
+    required bool ignoreAssign,
+    required bool fullQuality,
+  }) {
+    return !ignoreAssign &&
+        !fullQuality &&
+        _isAssigning &&
+        _isDraggingRadius &&
+        _assignVisualOwner == _AssignVisualOwner.nativeLive &&
+        !_assignFlutterPreviewActive &&
+        _assignActive &&
+        _assignZoneTrigger == ZoneTrigger.onLeave &&
+        (_showAssignOverlay || _useNativeExistingAssignLayer);
+  }
+
   void _scheduleVeilSync({
     bool ignoreAssign = false,
     bool fullQuality = false,
@@ -27,10 +42,37 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     _armVeilSyncTimer();
   }
 
+  Duration get _veilSyncDelay {
+    final isLiveExitDrag = _shouldHideLiveVeilOutline(
+      ignoreAssign: _veilSyncRequestedIgnoreAssign,
+      fullQuality: _veilSyncRequestedFullQuality,
+    );
+    if (isLiveExitDrag) return const Duration(milliseconds: 32);
+    return const Duration(milliseconds: 16);
+  }
+
+  Future<void> _setLiveVeilOutlineHidden(bool hidden) async {
+    if (_liveVeilOutlineHidden == hidden) return;
+    final style = _controller?.style;
+    if (style == null) return;
+    if (!hidden && _assignPreviewVeilHidden) {
+      _liveVeilOutlineHidden = false;
+      return;
+    }
+    final changed = await this._setNativeLayerPaintProperty(
+      style,
+      layerId: 'veil-outline',
+      property: 'line-opacity',
+      value: hidden ? 0.0 : 1.0,
+    );
+    if (changed) {
+      _liveVeilOutlineHidden = hidden;
+    }
+  }
+
   void _armVeilSyncTimer() {
     if (_veilSyncDrainFuture != null || _veilSyncTimer != null) return;
-    final delay = const Duration(milliseconds: 16);
-    _veilSyncTimer = Timer(delay, () {
+    _veilSyncTimer = Timer(_veilSyncDelay, () {
       _veilSyncTimer = null;
       unawaited(_drainVeilSyncQueue());
     });
@@ -118,9 +160,8 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
 
   int _liveAssignVeilSegments() {
     final radiusPx = math.max(_radiusNotifier.value, this._currentRadiusPx);
-    if (radiusPx >= 180) return 128;
-    if (radiusPx >= 80) return 96;
-    if (radiusPx >= 48) return 64;
+    if (radiusPx >= 80) return 64;
+    if (radiusPx >= 48) return 48;
     return 32;
   }
 
@@ -141,6 +182,12 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
         _assignActive &&
         _assignZoneTrigger == ZoneTrigger.onLeave &&
         (_showAssignOverlay || _useNativeExistingAssignLayer);
+    await this._setLiveVeilOutlineHidden(
+      _shouldHideLiveVeilOutline(
+        ignoreAssign: ignoreAssign,
+        fullQuality: fullQuality,
+      ),
+    );
     final segments = fullQuality
         ? 128
         : (useLiveAssignHole ? _liveAssignVeilSegments() : 32);

@@ -103,6 +103,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   bool _assignPreviewCircleHidden = false;
   bool _assignPreviewVeilHidden = false;
   bool _assignPreviewLabelHidden = false;
+  bool _liveVeilOutlineHidden = false;
   _AssignVisualOwner _assignVisualOwner = _AssignVisualOwner.nativeLive;
   bool _closingAssignMarker = false;
   Timer? _assignVisualClearTimer;
