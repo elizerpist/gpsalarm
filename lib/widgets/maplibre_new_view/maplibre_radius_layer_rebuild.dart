@@ -266,11 +266,30 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     }
   }
 
+  void _scheduleCircleLayerRadiusExpressionRestore(
+    StyleController style,
+    String visualId, {
+    Duration delay = const Duration(milliseconds: 180),
+  }) {
+    if (!_radiusPaintOverrideIds.contains(visualId)) return;
+    Timer(delay, () {
+      if (!mounted || !_radiusPaintOverrideIds.contains(visualId)) return;
+      unawaited(
+        this._restoreCircleLayerRadiusExpression(
+          style,
+          layerId: 'radius-circle-$visualId',
+          visualId: visualId,
+        ),
+      );
+    });
+  }
+
   Future<void> _updateRadiusCircleSources(
     StyleController style,
     _RadiusCircleData circle, {
     bool updateMarker = false,
     bool radiusOnly = false,
+    bool preserveRadiusPaintOverride = false,
   }) async {
     final sw = Stopwatch()..start();
     var markerMs = 0;
@@ -314,6 +333,7 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     if (_radiusVisualIds.contains(circle.id)) {
       final layerSw = Stopwatch()..start();
       if (_radiusPaintOverrideIds.contains(circle.id) &&
+          !preserveRadiusPaintOverride &&
           !await this._restoreCircleLayerRadiusExpression(
             style,
             layerId: 'radius-circle-${circle.id}',
@@ -489,6 +509,7 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     _RadiusCircleData circle, {
     bool updateMarker = false,
     bool radiusOnly = false,
+    bool preserveRadiusPaintOverride = false,
   }) async {
     if (radiusOnly &&
         !updateMarker &&
@@ -510,6 +531,7 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
       data: _radiusPointSourceGeoJson(circle),
     );
     if (_radiusPaintOverrideIds.contains(circle.id) &&
+        !preserveRadiusPaintOverride &&
         !await this._restoreCircleLayerRadiusExpression(
           style,
           layerId: 'radius-circle-${circle.id}',
@@ -523,9 +545,15 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
 
   Future<void> _promoteDraftRadiusCircleLayer(
     StyleController style,
-    _RadiusCircleData circle,
-  ) async {
-    await this._updateDraftRadiusCircleLayer(style, circle, updateMarker: true);
+    _RadiusCircleData circle, {
+    bool preserveRadiusPaintOverride = false,
+  }) async {
+    await this._updateDraftRadiusCircleLayer(
+      style,
+      circle,
+      updateMarker: true,
+      preserveRadiusPaintOverride: preserveRadiusPaintOverride,
+    );
     await this._addRadiusLabelLayer(style, circle);
     _radiusVisualIds.add(circle.id);
   }

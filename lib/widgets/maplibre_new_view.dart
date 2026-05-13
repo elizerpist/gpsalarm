@@ -374,7 +374,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
 
   Future<void> _waitForNativeRenderAck({
     required String reason,
-    Duration timeout = const Duration(milliseconds: 240),
+    Duration timeout = const Duration(milliseconds: 96),
   }) async {
     final previous = _nativeRenderAckCompleter;
     if (previous != null && !previous.isCompleted) {

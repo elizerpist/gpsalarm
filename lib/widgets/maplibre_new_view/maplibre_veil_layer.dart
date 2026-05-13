@@ -113,7 +113,7 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
   }) async {
     final sw = Stopwatch()..start();
     final seq = ++_veilUpdateSeq;
-    final segments = fullQuality ? 128 : 96;
+    final segments = fullQuality ? 128 : 32;
     final useLiveAssignHole =
         !ignoreAssign &&
         _isAssigning &&

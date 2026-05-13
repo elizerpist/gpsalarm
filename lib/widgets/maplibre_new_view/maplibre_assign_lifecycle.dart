@@ -807,6 +807,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
             liveStyle,
             circle,
             updateMarker: true,
+            preserveRadiusPaintOverride: true,
           );
         }
         if (keepPreview) {
@@ -831,6 +832,12 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           reason: 'save-in-place-native-flush',
           nativeAck: nativeAck,
         );
+        if (circle != null) {
+          this._scheduleCircleLayerRadiusExpressionRestore(
+            liveStyle,
+            circle.id,
+          );
+        }
         await this._clearFastCircleLayer(liveStyle);
         _beginClosingAssignVisual(
           keepCircle: false,
@@ -849,6 +856,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         reason: 'save',
       );
       Future<void>? nativeAck;
+      _RadiusCircleData? promotedCircle;
       if (shouldRebuildNative) _lastRadiusDataHash = '';
       if (shouldRebuildNative) await this._ensureAssignMarkerBitmap();
       if (shouldRebuildNative) {
@@ -866,7 +874,12 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
               )
             : null;
         if (_useNativeAssignCircle && singleCircle != null) {
-          await this._promoteDraftRadiusCircleLayer(liveStyle, singleCircle);
+          promotedCircle = singleCircle;
+          await this._promoteDraftRadiusCircleLayer(
+            liveStyle,
+            singleCircle,
+            preserveRadiusPaintOverride: true,
+          );
           _lastRadiusDataHash = this._radiusHash(circles);
         } else {
           await this._rebuildRadiusLayers(
@@ -896,6 +909,12 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         reason: 'save-native-flush',
         nativeAck: nativeAck,
       );
+      if (promotedCircle != null && style != null) {
+        this._scheduleCircleLayerRadiusExpressionRestore(
+          style,
+          promotedCircle.id,
+        );
+      }
       _beginClosingAssignVisual(
         keepCircle: false,
         keepPreview: false,
