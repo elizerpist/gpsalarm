@@ -110,6 +110,8 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
       properties: {
         if (imageId != null) 'image': imageId,
         ..._circleProps(
+          lat: circle.lat,
+          radiusMeters: circle.radiusMeters,
           isTime: circle.isTime,
           isLeave: circle.isLeave,
           active: circle.active,
@@ -119,21 +121,22 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
   }
 
   String _radiusCircleLayerKey(_RadiusCircleData circle) {
-    return '${circle.lat.toStringAsFixed(6)}:${circle.radiusMeters.toStringAsFixed(1)}';
+    return 'property-radius-v2';
   }
 
-  Object _radiusCircleExpression(_RadiusCircleData circle) {
-    final cosLat = math.cos(circle.lat * math.pi / 180).abs();
-    final safeCosLat = math.max(0.000001, cosLat);
-    final basePx = 2 * circle.radiusMeters / (156543.03392 * safeCosLat);
+  Object get _radiusCircleExpression {
     return [
       'interpolate',
       ['exponential', 2.0],
       ['zoom'],
       0.0,
-      basePx,
+      ['get', 'baseRadiusPx'],
       22.0,
-      basePx * 4194304.0,
+      [
+        '*',
+        ['get', 'baseRadiusPx'],
+        4194304.0,
+      ],
     ];
   }
 
@@ -146,7 +149,7 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
       id: id,
       sourceId: sourceId,
       paint: {
-        'circle-radius': _radiusCircleExpression(circle),
+        'circle-radius': _radiusCircleExpression,
         'circle-color': _radiusFillColorExpression,
         'circle-stroke-color': _radiusStrokeColorExpression,
         'circle-stroke-width': 2.0,

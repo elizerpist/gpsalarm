@@ -23,11 +23,21 @@ String _pointGeoJson(
 }
 
 Map<String, Object> _circleProps({
+  required double lat,
+  required double radiusMeters,
   required bool isTime,
   required bool isLeave,
   required bool active,
 }) {
-  return {'isTime': isTime, 'isLeave': isLeave, 'active': active};
+  final cosLat = math.cos(lat * math.pi / 180).abs();
+  final safeCosLat = math.max(0.000001, cosLat);
+  final baseRadiusPx = 2 * radiusMeters / (156543.03392 * safeCosLat);
+  return {
+    'isTime': isTime,
+    'isLeave': isLeave,
+    'active': active,
+    'baseRadiusPx': baseRadiusPx,
+  };
 }
 
 /// Meters per pixel for MapLibre vector tiles (512px effective tile size).

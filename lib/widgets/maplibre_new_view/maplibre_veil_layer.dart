@@ -26,7 +26,12 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     final hasFastLeave = useLiveAssignHole;
 
     if (leaveAlarms.isEmpty && !hasFastLeave) {
-      try { style.updateGeoJsonSource(id: 'veil-src', data: _emptyGeoJson); } catch (_) {}
+      if (_lastVeilGeoJson != _emptyGeoJson) {
+        try {
+          style.updateGeoJsonSource(id: 'veil-src', data: _emptyGeoJson);
+          _lastVeilGeoJson = _emptyGeoJson;
+        } catch (_) {}
+      }
       sw.stop();
       if (_isAssigning &&
           (_shouldLogAssignFrame(_assignSyncSeq) || sw.elapsedMilliseconds > 8)) {
@@ -64,20 +69,22 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
       ...holes,
     ];
 
+    final veilGeoJson = jsonEncode({
+      'type': 'FeatureCollection',
+      'features': [
+        {
+          'type': 'Feature',
+          'geometry': {'type': 'Polygon', 'coordinates': coords},
+          'properties': {},
+        },
+      ],
+    });
+
     try {
-      style.updateGeoJsonSource(
-        id: 'veil-src',
-        data: jsonEncode({
-          'type': 'FeatureCollection',
-          'features': [
-            {
-              'type': 'Feature',
-              'geometry': {'type': 'Polygon', 'coordinates': coords},
-              'properties': {},
-            },
-          ],
-        }),
-      );
+      if (_lastVeilGeoJson != veilGeoJson) {
+        style.updateGeoJsonSource(id: 'veil-src', data: veilGeoJson);
+        _lastVeilGeoJson = veilGeoJson;
+      }
     } catch (_) {}
     sw.stop();
     if ((_isAssigning && _shouldLogAssignFrame(_assignSyncSeq)) ||

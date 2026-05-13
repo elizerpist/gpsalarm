@@ -498,6 +498,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   int _assignSyncSeq = 0;
   int _assignSyncSkipCount = 0;
   int _veilUpdateSeq = 0;
+  String _lastVeilGeoJson = '';
   bool _assignOverlayPending = false;
   bool _assignOverlayPendingMarker = false;
   String? _assignOverlayPendingReason;

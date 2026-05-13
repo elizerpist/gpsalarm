@@ -61,6 +61,8 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
           _assignLng,
           _assignLat,
           properties: _circleProps(
+            lat: _assignLat,
+            radiusMeters: radius,
             isTime: isTime,
             isLeave: _assignZoneTrigger == ZoneTrigger.onLeave,
             active: _assignActive,
