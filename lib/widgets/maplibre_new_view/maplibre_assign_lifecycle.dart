@@ -20,7 +20,9 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
   }) async {
     final seq = ++_assignSyncSeq;
     if (!_isAssigning) {
-      DebugConsole.log('ASSIGN_SYNC_DROP: seq=$seq reason=$debugReason notAssigning');
+      DebugConsole.log(
+        'ASSIGN_SYNC_DROP: seq=$seq reason=$debugReason notAssigning',
+      );
       return;
     }
     if (_assignOverlayActivating) {
@@ -183,8 +185,10 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       fullQuality: true,
       reason: 'assign-overlay:$debugReason',
     );
-    if (finishPreview) {
-      await this._stopAssignFlutterPreview(reason: debugReason);
+    if (finishPreview && _assignFlutterPreviewActive) {
+      DebugConsole.log(
+        'FLUTTER_PREVIEW_NATIVE_SYNC: reason=$debugReason ${_assignDebugState()}',
+      );
     }
   }
 
@@ -232,7 +236,10 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     } catch (_) {}
   }
 
-  void _beginClosingAssignVisual({required bool keepCircle}) {
+  void _beginClosingAssignVisual({
+    required bool keepCircle,
+    bool keepPreview = false,
+  }) {
     _assignVisualClearTimer?.cancel();
     _assignOverlaySyncTimer?.cancel();
     _assignOverlaySyncTimer = null;
@@ -254,7 +261,9 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignCardSyncTimer?.cancel();
     _assignCardSyncTimer = null;
     _assignCardSyncPending = false;
-    _assignFlutterPreviewActive = false;
+    if (!keepPreview) {
+      _assignFlutterPreviewActive = false;
+    }
     _assignPreviewCircleHidden = false;
     _assignPreviewVeilHidden = false;
     setState(() {
@@ -283,6 +292,9 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       setState(() {
         _closingAssignVisual = false;
         _closingAssignCircle = false;
+        _assignFlutterPreviewActive = false;
+        _assignPreviewCircleHidden = false;
+        _assignPreviewVeilHidden = false;
         _assignScreenCenter = null;
         _assignMarkerPng = null;
         _assignMarkerKey = null;
@@ -433,7 +445,28 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     }
     _assignFlutterPreviewActive = false;
     if (mounted && _isAssigning) setState(() {});
-    DebugConsole.log('FLUTTER_PREVIEW_STOP: reason=$reason ${_assignDebugState()}');
+    DebugConsole.log(
+      'FLUTTER_PREVIEW_STOP: reason=$reason ${_assignDebugState()}',
+    );
+  }
+
+  Future<bool> _holdAssignFlutterPreviewForNativeHandoff({
+    required StyleController? style,
+    required String reason,
+  }) async {
+    final shouldHold = _assignFlutterPreviewActive;
+    if (!_assignFlutterPreviewActive &&
+        !_assignPreviewCircleHidden &&
+        !_assignPreviewVeilHidden) {
+      return false;
+    }
+    if (style != null) {
+      await this._restoreNativeAssignPreviewOpacity(style);
+    }
+    DebugConsole.log(
+      'FLUTTER_PREVIEW_HANDOFF: reason=$reason hold=$shouldHold ${_assignDebugState()}',
+    );
+    return shouldHold;
   }
 
   Future<void> _restoreNativeAssignPreviewOpacity(StyleController style) async {
@@ -663,10 +696,18 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           fullQuality: true,
           reason: 'save-in-place',
         );
-        await this._stopAssignFlutterPreview(reason: 'save-in-place');
+        final keepPreview = await this
+            ._holdAssignFlutterPreviewForNativeHandoff(
+              style: liveStyle,
+              reason: 'save-in-place',
+            );
         await this._clearFastCircleLayer(liveStyle);
-        _beginClosingAssignVisual(keepCircle: false);
-        _scheduleAssignVisualClear();
+        _beginClosingAssignVisual(keepCircle: false, keepPreview: keepPreview);
+        _scheduleAssignVisualClear(
+          keepPreview
+              ? const Duration(milliseconds: 220)
+              : const Duration(milliseconds: 80),
+        );
         return;
       }
       final shouldRebuildNative =
@@ -710,12 +751,17 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       if (shouldRebuildNative) {
         await Future.delayed(const Duration(milliseconds: 150));
       }
-      await this._stopAssignFlutterPreview(reason: 'save');
-      _beginClosingAssignVisual(keepCircle: false);
+      final keepPreview = await this._holdAssignFlutterPreviewForNativeHandoff(
+        style: style,
+        reason: 'save',
+      );
+      _beginClosingAssignVisual(keepCircle: false, keepPreview: keepPreview);
       _finishClosingAssignCircle();
       _scheduleAssignVisualClear(
         !wasExisting && _useNativeAssignCircle
             ? const Duration(milliseconds: 500)
+            : keepPreview
+            ? const Duration(milliseconds: 220)
             : const Duration(milliseconds: 80),
       );
     } finally {
