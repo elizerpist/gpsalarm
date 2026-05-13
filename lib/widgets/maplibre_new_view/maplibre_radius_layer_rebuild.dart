@@ -102,17 +102,13 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     _radiusPointImageIds[circle.id] = imageId;
   }
 
-  String _radiusPointSourceGeoJson(
-    _RadiusCircleData circle, {
-    double? radiusPx,
-  }) {
+  String _radiusPointSourceGeoJson(_RadiusCircleData circle) {
     final imageId = _radiusPointImageIds[circle.id];
     return _pointGeoJson(
       circle.lng,
       circle.lat,
       properties: {
         if (imageId != null) 'image': imageId,
-        if (radiusPx != null) 'radiusPx': radiusPx,
         ..._circleProps(
           isTime: circle.isTime,
           isLeave: circle.isLeave,
@@ -122,44 +118,22 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     );
   }
 
-  String _radiusCircleLayerKey(
-    _RadiusCircleData circle, {
-    bool liveScreenRadius = false,
-  }) {
-    if (liveScreenRadius) return 'live-radius-px';
-    return [
-      'saved-radius-v3',
-      circle.radiusMeters.toStringAsFixed(1),
-      circle.lat.toStringAsFixed(6),
-      circle.active,
-      circle.isTime,
-      circle.isLeave,
-    ].join('|');
+  String _radiusCircleLayerKey(_RadiusCircleData circle) {
+    return '${circle.lat.toStringAsFixed(6)}:${circle.radiusMeters.toStringAsFixed(1)}';
   }
 
-  (double, double) _radiusCircleZoomStops(_RadiusCircleData circle) {
+  Object _radiusCircleExpression(_RadiusCircleData circle) {
     final cosLat = math.cos(circle.lat * math.pi / 180).abs();
     final safeCosLat = math.max(0.000001, cosLat);
     final basePx = 2 * circle.radiusMeters / (156543.03392 * safeCosLat);
-    return (basePx, basePx * 4194304.0);
-  }
-
-  Object _radiusCircleExpression(
-    _RadiusCircleData circle, {
-    required bool liveScreenRadius,
-  }) {
-    if (liveScreenRadius) {
-      return ['get', 'radiusPx'];
-    }
-    final stops = _radiusCircleZoomStops(circle);
     return [
       'interpolate',
       ['exponential', 2.0],
       ['zoom'],
       0.0,
-      stops.$1,
+      basePx,
       22.0,
-      stops.$2,
+      basePx * 4194304.0,
     ];
   }
 
@@ -167,16 +141,12 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     _RadiusCircleData circle, {
     required String id,
     required String sourceId,
-    bool liveScreenRadius = false,
   }) {
     return CircleStyleLayer(
       id: id,
       sourceId: sourceId,
       paint: {
-        'circle-radius': _radiusCircleExpression(
-          circle,
-          liveScreenRadius: liveScreenRadius,
-        ),
+        'circle-radius': _radiusCircleExpression(circle),
         'circle-color': _radiusFillColorExpression,
         'circle-stroke-color': _radiusStrokeColorExpression,
         'circle-stroke-width': 2.0,
@@ -190,32 +160,16 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     StyleController style,
     _RadiusCircleData circle, {
     bool updateMarker = false,
-    bool liveScreenRadius = false,
-    double? radiusPx,
   }) async {
     if (updateMarker || !_radiusPointImageIds.containsKey(circle.id)) {
       await this._syncRadiusMarkerImage(style, circle);
     }
-    final hasLayer =
-        _radiusVisualIds.contains(circle.id) ||
-        _radiusCircleLayerKeys.containsKey(circle.id);
-    final switchingFromLive =
-        !liveScreenRadius &&
-        _radiusCircleLayerKeys[circle.id] ==
-            _radiusCircleLayerKey(circle, liveScreenRadius: true);
-    if (switchingFromLive) {
-      await this._ensureRadiusCircleLayer(style, circle);
-    }
     await style.updateGeoJsonSource(
       id: 'radius-pt-${circle.id}',
-      data: _radiusPointSourceGeoJson(circle, radiusPx: radiusPx),
+      data: _radiusPointSourceGeoJson(circle),
     );
-    if (hasLayer && !switchingFromLive) {
-      await this._ensureRadiusCircleLayer(
-        style,
-        circle,
-        liveScreenRadius: liveScreenRadius,
-      );
+    if (_radiusVisualIds.contains(circle.id)) {
+      await this._ensureRadiusCircleLayer(style, circle);
     }
   }
 
@@ -230,8 +184,6 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
       style,
       circle,
       updateMarker: updateMarker,
-      liveScreenRadius: true,
-      radiusPx: this._currentRadiusPx,
     );
   }
 
@@ -258,21 +210,12 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
   Future<void> _upsertRadiusVisual(
     StyleController style,
     _RadiusCircleData circle,
-    {bool updateMarker = true}
   ) async {
-    final hadVisual = _radiusVisualIds.contains(circle.id);
-    if (updateMarker || !_radiusPointImageIds.containsKey(circle.id)) {
-      await this._syncRadiusMarkerImage(style, circle);
-    }
-    await this._updateRadiusCircleSources(
-      style,
-      circle,
-      updateMarker: updateMarker,
-    );
-    await this._ensureRadiusCircleLayer(style, circle);
-    if (!hadVisual) {
-      await this._addRadiusLabelLayer(style, circle);
-    }
+    await this._removeRadiusVisual(style, circle.id, clearSources: false);
+    await this._syncRadiusMarkerImage(style, circle);
+    await this._updateRadiusCircleSources(style, circle);
+    await this._addRadiusCircleLayer(style, circle);
+    await this._addRadiusLabelLayer(style, circle);
     _radiusVisualIds.add(circle.id);
   }
 
@@ -306,52 +249,38 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     StyleController style,
     _RadiusCircleData circle, {
     String? belowLayerId,
-    bool liveScreenRadius = false,
   }) async {
     final circleLayer = _radiusCircleStyleLayer(
       circle,
       id: 'radius-circle-${circle.id}',
       sourceId: 'radius-pt-${circle.id}',
-      liveScreenRadius: liveScreenRadius,
     );
     try {
       await style.addLayer(circleLayer, belowLayerId: belowLayerId);
     } catch (_) {
       await style.addLayer(circleLayer);
     }
-    _radiusCircleLayerKeys[circle.id] = _radiusCircleLayerKey(
-      circle,
-      liveScreenRadius: liveScreenRadius,
-    );
+    _radiusCircleLayerKeys[circle.id] = _radiusCircleLayerKey(circle);
   }
 
   Future<void> _ensureRadiusCircleLayer(
     StyleController style,
     _RadiusCircleData circle, {
     String? belowLayerId,
-    bool liveScreenRadius = false,
   }) async {
-    final nextKey = _radiusCircleLayerKey(
-      circle,
-      liveScreenRadius: liveScreenRadius,
-    );
+    final nextKey = _radiusCircleLayerKey(circle);
     if (_radiusCircleLayerKeys[circle.id] == nextKey) return;
     try {
       await style.removeLayer('radius-circle-${circle.id}');
     } catch (_) {}
-    await this._addRadiusCircleLayer(
-      style,
-      circle,
-      belowLayerId: belowLayerId,
-      liveScreenRadius: liveScreenRadius,
-    );
+    await this._addRadiusCircleLayer(style, circle, belowLayerId: belowLayerId);
   }
 
   Future<void> _ensureFastCircleLayer(
     StyleController style,
     _RadiusCircleData circle,
   ) async {
-    final nextKey = _radiusCircleLayerKey(circle, liveScreenRadius: true);
+    final nextKey = _radiusCircleLayerKey(circle);
     if (_fastCircleLayerKey == nextKey) return;
     try {
       await style.removeLayer('fast-circle');
@@ -361,7 +290,6 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
         circle,
         id: 'fast-circle',
         sourceId: 'fast-pt-src',
-        liveScreenRadius: true,
       ),
     );
     _fastCircleLayerKey = nextKey;
@@ -372,26 +300,21 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     _RadiusCircleData circle, {
     bool updateMarker = false,
   }) async {
-    if (updateMarker) {
+    if (updateMarker || !_radiusPointImageIds.containsKey(circle.id)) {
       await this._syncRadiusMarkerImage(style, circle);
     }
     await style.updateGeoJsonSource(
       id: 'radius-pt-${circle.id}',
-      data: _radiusPointSourceGeoJson(circle, radiusPx: this._currentRadiusPx),
+      data: _radiusPointSourceGeoJson(circle),
     );
-    await this._ensureRadiusCircleLayer(style, circle, liveScreenRadius: true);
+    await this._ensureRadiusCircleLayer(style, circle);
   }
 
   Future<void> _promoteDraftRadiusCircleLayer(
     StyleController style,
     _RadiusCircleData circle,
   ) async {
-    await this._syncRadiusMarkerImage(style, circle);
-    await this._ensureRadiusCircleLayer(style, circle);
-    await style.updateGeoJsonSource(
-      id: 'radius-pt-${circle.id}',
-      data: _radiusPointSourceGeoJson(circle),
-    );
+    await this._updateDraftRadiusCircleLayer(style, circle, updateMarker: true);
     await this._addRadiusLabelLayer(style, circle);
     _radiusVisualIds.add(circle.id);
   }
