@@ -47,7 +47,7 @@ def main() -> None:
 
 """
 
-    method = """\
+    circle_method = """\
   Future<void> setCircleLayerRadius({
     required String layerId,
     required Object radius,
@@ -70,6 +70,31 @@ def main() -> None:
 
 """
 
+    paint_method = """\
+  Future<void> setLayerPaintProperty({
+    required String layerId,
+    required String property,
+    required Object value,
+  }) async =>
+      using((arena) {
+        final jLayer = _jniStyle.getLayer(layerId.toJString());
+        if (jLayer == null) return;
+        jLayer.releasedBy(arena);
+        final props = JArray(
+          jni.PropertyValue.nullableType(JObject.nullableType),
+          1,
+        )..releasedBy(arena);
+        props[0] = jni.PaintPropertyValue(
+          property.toJString(),
+          value.toJObject(arena),
+          T: JObject.type,
+        );
+        jLayer.setProperties(props);
+      });
+
+"""
+    method = circle_method + paint_method
+
     marker = "  @override\n  Future<void> updateGeoJsonSource({"
     if old_method in text:
         text = text.replace(old_method, method)
@@ -77,6 +102,10 @@ def main() -> None:
         if marker not in text:
             raise RuntimeError("Could not find updateGeoJsonSource insertion point")
         text = text.replace(marker, method + marker)
+    elif "Future<void> setLayerPaintProperty(" not in text:
+        if marker not in text:
+            raise RuntimeError("Could not find updateGeoJsonSource insertion point")
+        text = text.replace(marker, paint_method + marker)
 
     controller.write_text(text)
     print(f"Patched: {controller}")

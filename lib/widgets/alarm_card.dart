@@ -244,7 +244,7 @@ class _AlarmCardState extends State<AlarmCard> {
                   child: _triggerType == TriggerType.distance
                       ? Slider(
                           value: _radius.clamp(100, 5000),
-                          min: 100, max: 5000, divisions: 49,
+                          min: 100, max: 5000,
                           activeColor: Colors.red,
                           onChanged: (v) {
                             setState(() => _radius = v);

@@ -15,6 +15,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
   Future<void> _activateAssignOverlay({
     bool updateMarker = false,
     bool radiusOnly = false,
+    bool forceNative = false,
     String debugReason = 'unspecified',
   }) async {
     final seq = ++_assignSyncSeq;
@@ -50,6 +51,10 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       final existing = _assignExisting;
       final style = _controller?.style;
       final alarmProv = context.read<AlarmProvider>();
+      if (_assignFlutterPreviewActive && !forceNative) {
+        path = 'flutter-preview';
+        return;
+      }
       if (_useNativeExistingAssignLayer && style != null) {
         path = 'existing-native';
         await this._updateExistingNativeAssignLayer(
@@ -160,6 +165,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
 
   Future<void> _flushAssignOverlaySync({
     bool updateMarker = false,
+    bool finishPreview = false,
     String debugReason = 'flush',
   }) async {
     _assignOverlaySyncTimer?.cancel();
@@ -170,12 +176,16 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignOverlaySyncReason = null;
     await this._activateAssignOverlay(
       updateMarker: marker,
+      forceNative: finishPreview,
       debugReason: 'flush:$debugReason',
     );
     await this._flushVeilSync(
       fullQuality: true,
       reason: 'assign-overlay:$debugReason',
     );
+    if (finishPreview) {
+      await this._stopAssignFlutterPreview(reason: debugReason);
+    }
   }
 
   void _scheduleAssignCardSync() {
@@ -244,6 +254,9 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignCardSyncTimer?.cancel();
     _assignCardSyncTimer = null;
     _assignCardSyncPending = false;
+    _assignFlutterPreviewActive = false;
+    _assignPreviewCircleHidden = false;
+    _assignPreviewVeilHidden = false;
     setState(() {
       _isAssigning = false;
       _closingAssignVisual = true;
@@ -306,6 +319,9 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignCardSyncTimer?.cancel();
     _assignCardSyncTimer = null;
     _assignCardSyncPending = false;
+    _assignFlutterPreviewActive = false;
+    _assignPreviewCircleHidden = false;
+    _assignPreviewVeilHidden = false;
     _suspendCompassForAssign();
     _closingAssignVisual = false;
     _assignScreenCenter = existing != null
@@ -346,6 +362,117 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       DebugConsole.log('ASSIGN_START: keeping native alarm visual during edit');
     }
     setState(() {});
+  }
+
+  void _startAssignFlutterPreview({required String reason}) {
+    if (!_isAssigning) return;
+    final wasActive = _assignFlutterPreviewActive;
+    _assignFlutterPreviewActive = true;
+    if (!wasActive && mounted) setState(() {});
+    final style = _controller?.style;
+    if (style == null) return;
+    unawaited(this._hideNativeAssignVisualForPreview(style, reason));
+    if (!wasActive) {
+      DebugConsole.log(
+        'FLUTTER_PREVIEW_START: reason=$reason ${_assignDebugState()}',
+      );
+    }
+  }
+
+  Future<void> _hideNativeAssignVisualForPreview(
+    StyleController style,
+    String reason,
+  ) async {
+    final id = _assignNativeAlarmLayerId;
+    if (id != null && !_assignPreviewCircleHidden) {
+      final layerId = 'radius-circle-$id';
+      await this._setNativeLayerPaintProperty(
+        style,
+        layerId: layerId,
+        property: 'circle-opacity',
+        value: 0.0,
+      );
+      await this._setNativeLayerPaintProperty(
+        style,
+        layerId: layerId,
+        property: 'circle-stroke-opacity',
+        value: 0.0,
+      );
+      _assignPreviewCircleHidden = true;
+    }
+    final shouldHideVeil =
+        _assignActive && _assignZoneTrigger == ZoneTrigger.onLeave;
+    if (shouldHideVeil && !_assignPreviewVeilHidden) {
+      await this._setNativeLayerPaintProperty(
+        style,
+        layerId: 'veil-fill',
+        property: 'fill-opacity',
+        value: 0.0,
+      );
+      await this._setNativeLayerPaintProperty(
+        style,
+        layerId: 'veil-outline',
+        property: 'line-opacity',
+        value: 0.0,
+      );
+      _assignPreviewVeilHidden = true;
+    } else if (!shouldHideVeil && _assignPreviewVeilHidden) {
+      await this._restoreNativeVeilOpacity(style);
+    }
+  }
+
+  Future<void> _stopAssignFlutterPreview({required String reason}) async {
+    if (!_assignFlutterPreviewActive &&
+        !_assignPreviewCircleHidden &&
+        !_assignPreviewVeilHidden) {
+      return;
+    }
+    final style = _controller?.style;
+    if (style != null) {
+      await this._restoreNativeAssignPreviewOpacity(style);
+    }
+    _assignFlutterPreviewActive = false;
+    if (mounted && _isAssigning) setState(() {});
+    DebugConsole.log('FLUTTER_PREVIEW_STOP: reason=$reason ${_assignDebugState()}');
+  }
+
+  Future<void> _restoreNativeAssignPreviewOpacity(StyleController style) async {
+    final id = _assignNativeAlarmLayerId;
+    if (id != null && _assignPreviewCircleHidden) {
+      final layerId = 'radius-circle-$id';
+      await this._setNativeLayerPaintProperty(
+        style,
+        layerId: layerId,
+        property: 'circle-opacity',
+        value: 1.0,
+      );
+      await this._setNativeLayerPaintProperty(
+        style,
+        layerId: layerId,
+        property: 'circle-stroke-opacity',
+        value: 1.0,
+      );
+      _assignPreviewCircleHidden = false;
+    }
+    if (_assignPreviewVeilHidden) {
+      await this._restoreNativeVeilOpacity(style);
+    }
+  }
+
+  Future<void> _restoreNativeVeilOpacity(StyleController style) async {
+    await this._setNativeLayerPaintProperty(
+      style,
+      layerId: 'veil-fill',
+      property: 'fill-opacity',
+      value: 0.15,
+    );
+    await this._setNativeLayerPaintProperty(
+      style,
+      layerId: 'veil-outline',
+      property: 'line-opacity',
+      value: 1.0,
+    );
+    _assignPreviewVeilHidden = false;
   }
 
   Future<void> _cancelAssign({bool nativeAlreadySynced = false}) async {
@@ -396,6 +523,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         fullQuality: true,
         reason: 'cancel-in-place',
       );
+      await this._stopAssignFlutterPreview(reason: 'cancel-in-place');
       await this._clearFastCircleLayer(liveStyle);
       _beginClosingAssignVisual(keepCircle: false);
       _scheduleAssignVisualClear();
@@ -460,6 +588,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       );
     }
     if (style != null) await this._clearFastCircleLayer(style);
+    await this._stopAssignFlutterPreview(reason: 'cancel');
     _finishClosingAssignCircle();
 
     _scheduleAssignVisualClear();
@@ -534,6 +663,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           fullQuality: true,
           reason: 'save-in-place',
         );
+        await this._stopAssignFlutterPreview(reason: 'save-in-place');
         await this._clearFastCircleLayer(liveStyle);
         _beginClosingAssignVisual(keepCircle: false);
         _scheduleAssignVisualClear();
@@ -580,6 +710,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       if (shouldRebuildNative) {
         await Future.delayed(const Duration(milliseconds: 150));
       }
+      await this._stopAssignFlutterPreview(reason: 'save');
       _beginClosingAssignVisual(keepCircle: false);
       _finishClosingAssignCircle();
       _scheduleAssignVisualClear(

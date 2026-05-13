@@ -99,6 +99,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   bool _closingAssignCircle = false;
   bool _assignNativeHidden = false;
   bool _assignOverlayActivating = false;
+  bool _assignFlutterPreviewActive = false;
+  bool _assignPreviewCircleHidden = false;
+  bool _assignPreviewVeilHidden = false;
   Timer? _assignVisualClearTimer;
   final Map<String, Uint8List> _markerBitmapCache = {};
   final Map<String, Size> _markerSizeCache = {};
@@ -646,10 +649,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   } else {
                     _assignTimeMinutes = (dist * 0.3).clamp(5.0, 120.0).round();
                   }
+                  this._startAssignFlutterPreview(reason: 'longpress-move');
                   _dragLogCounter++;
                   final radiusPx = this._currentRadiusPx;
                   _radiusNotifier.value = radiusPx;
-                  if (_useNativeAssignCircle)
+                  if (_useNativeAssignCircle && !_assignFlutterPreviewActive)
                     this._scheduleAssignOverlaySync(
                       radiusOnly: true,
                       debugReason: 'longpress#$_dragLogCounter',
@@ -675,7 +679,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   _isDraggingRadius = false;
                   this._refreshAssignMarker();
                   unawaited(
-                    this._flushAssignOverlaySync(debugReason: 'longpress-end'),
+                    this._flushAssignOverlaySync(
+                      debugReason: 'longpress-end',
+                      finishPreview: true,
+                    ),
                   );
                   this._flushAssignCardSync();
                 },
@@ -1018,6 +1025,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                     _isDraggingRadius = true;
                     _dragLogCounter = 0;
                     _lastOverlayMoveAt = DateTime.now();
+                    this._startAssignFlutterPreview(reason: 'overlay-down');
                   }
                 },
                 onPointerMove: (e) {
@@ -1039,13 +1047,15 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                       ? 0
                       : now.difference(_lastOverlayMoveAt!).inMilliseconds;
                   _lastOverlayMoveAt = now;
-                  this._scheduleAssignOverlaySync(
-                    radiusOnly: true,
-                    debugReason: 'overlay#$_dragLogCounter',
-                  );
                   // Update overlay circle instantly (no widget rebuild)
                   final radiusPx = this._currentRadiusPx;
                   _radiusNotifier.value = radiusPx;
+                  if (!_assignFlutterPreviewActive) {
+                    this._scheduleAssignOverlaySync(
+                      radiusOnly: true,
+                      debugReason: 'overlay#$_dragLogCounter',
+                    );
+                  }
                   if (_dragLogCounter == 1 || _dragLogCounter % 10 == 0) {
                     this._refreshAssignMarker();
                   }
@@ -1071,15 +1081,20 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   _dragPointerId = null;
                   this._refreshAssignMarker();
                   unawaited(
-                    this._flushAssignOverlaySync(debugReason: 'overlay-up'),
+                    this._flushAssignOverlaySync(
+                      debugReason: 'overlay-up',
+                      finishPreview: true,
+                    ),
                   );
                   this._flushAssignCardSync();
                 },
                 child: CustomPaint(
                   painter:
-                      !_useNativeAssignCircle &&
+                      (_assignFlutterPreviewActive || !_useNativeAssignCircle) &&
                           _assignScreenCenter != null &&
-                          (this._showAssignOverlay || _closingAssignCircle)
+                          (_assignFlutterPreviewActive ||
+                              this._showAssignOverlay ||
+                              _closingAssignCircle)
                       ? _RadiusOverlayPainter(
                           center: _assignScreenCenter!,
                           radiusNotifier: _radiusNotifier,
@@ -1123,6 +1138,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
               onRadiusChanged: (v) {
                 _assignRadius = v;
                 _radiusNotifier.value = this._currentRadiusPx;
+                this._startAssignFlutterPreview(reason: 'card-radius');
                 _cardRadiusLogCounter++;
                 if (_shouldLogAssignFrame(_cardRadiusLogCounter)) {
                   DebugConsole.log(
@@ -1130,10 +1146,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                     'r=${_assignRadius.round()}m ${_assignDebugState()}',
                   );
                 }
-                this._scheduleAssignOverlaySync(
-                  radiusOnly: true,
-                  debugReason: 'card-radius#$_cardRadiusLogCounter',
-                );
+                if (!_assignFlutterPreviewActive) {
+                  this._scheduleAssignOverlaySync(
+                    radiusOnly: true,
+                    debugReason: 'card-radius#$_cardRadiusLogCounter',
+                  );
+                }
                 if (_cardRadiusLogCounter == 1 ||
                     _cardRadiusLogCounter % 10 == 0) {
                   this._refreshAssignMarker();
@@ -1162,6 +1180,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
               onTimeChanged: (v) {
                 _assignTimeMinutes = v;
                 _radiusNotifier.value = this._currentRadiusPx;
+                this._startAssignFlutterPreview(reason: 'card-time');
                 _cardTimeLogCounter++;
                 if (_shouldLogAssignFrame(_cardTimeLogCounter)) {
                   DebugConsole.log(
@@ -1169,10 +1188,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                     '${_assignTimeMinutes}min ${_assignDebugState()}',
                   );
                 }
-                this._scheduleAssignOverlaySync(
-                  radiusOnly: true,
-                  debugReason: 'card-time#$_cardTimeLogCounter',
-                );
+                if (!_assignFlutterPreviewActive) {
+                  this._scheduleAssignOverlaySync(
+                    radiusOnly: true,
+                    debugReason: 'card-time#$_cardTimeLogCounter',
+                  );
+                }
                 if (_cardTimeLogCounter == 1 ||
                     _cardTimeLogCounter % 10 == 0) {
                   this._refreshAssignMarker();

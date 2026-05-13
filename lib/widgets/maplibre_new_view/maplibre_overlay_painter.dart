@@ -31,6 +31,14 @@ class _RadiusOverlayPainter extends CustomPainter {
             ? const Color(0xB3FF9800)
             : const Color(0x99FF0000));
 
+    if (isLeave && active) {
+      final veilPath = Path()
+        ..fillType = PathFillType.evenOdd
+        ..addRect(Offset.zero & size)
+        ..addOval(Rect.fromCircle(center: center, radius: radiusPx));
+      canvas.drawPath(veilPath, Paint()..color = const Color(0x26FF0000));
+    }
+
     if (!isLeave) {
       canvas.drawCircle(center, radiusPx, Paint()..color = fillColor);
     }

@@ -218,6 +218,26 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     }
   }
 
+  Future<bool> _setNativeLayerPaintProperty(
+    StyleController style, {
+    required String layerId,
+    required String property,
+    required Object value,
+  }) async {
+    try {
+      await (style as dynamic).setLayerPaintProperty(
+        layerId: layerId,
+        property: property,
+        value: value,
+      );
+      return true;
+    } on NoSuchMethodError {
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<bool> _restoreCircleLayerRadiusExpression(
     StyleController style, {
     required String layerId,
