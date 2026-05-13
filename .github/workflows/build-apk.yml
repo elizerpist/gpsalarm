@@ -30,6 +30,11 @@ jobs:
       - name: Build APK
         run: flutter build apk --release
 
+      - name: Verify APK signature
+        run: |
+          BUILD_TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)"
+          "$BUILD_TOOLS/apksigner" verify --print-certs build/app/outputs/flutter-apk/app-release.apk
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:

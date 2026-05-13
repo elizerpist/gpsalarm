@@ -12,4 +12,4 @@ flutter test
 flutter analyze
 ```
 
-Android release signing uses `android/key.properties` when present. Copy `android/key.properties.example`, point it at a real release keystore, and keep the real file out of git. Keystore files and signing properties are intentionally ignored.
+Android release signing uses `android/key.properties` when present. Copy `android/key.properties.example`, point it at a real release keystore, and keep the real file out of git. If no release key is configured, release APKs fall back to the debug signing key so GitHub workflow artifacts remain installable for testing. Keystore files and signing properties are intentionally ignored.
