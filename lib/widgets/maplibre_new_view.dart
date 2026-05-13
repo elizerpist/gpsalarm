@@ -305,6 +305,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     _compassSub?.cancel();
     _radiusDebounce?.cancel();
     _assignVisualClearTimer?.cancel();
+    _assignOverlaySyncTimer?.cancel();
+    _assignCardSyncTimer?.cancel();
     _speedInterpolTimer?.cancel();
     _radiusNotifier.dispose();
     _locationService.dispose();
@@ -496,6 +498,14 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   int _assignSyncSeq = 0;
   int _assignSyncSkipCount = 0;
   int _veilUpdateSeq = 0;
+  bool _assignOverlayPending = false;
+  bool _assignOverlayPendingMarker = false;
+  String? _assignOverlayPendingReason;
+  Timer? _assignOverlaySyncTimer;
+  bool _assignOverlaySyncMarker = false;
+  String? _assignOverlaySyncReason;
+  Timer? _assignCardSyncTimer;
+  bool _assignCardSyncPending = false;
   DateTime? _lastOverlayMoveAt;
   String _lastRadiusDataHash = ''; // skip rebuild if alarm data unchanged
   bool _suppressRadiusSync = false;
@@ -626,12 +636,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   final radiusPx = this._currentRadiusPx;
                   _radiusNotifier.value = radiusPx;
                   if (_useNativeAssignCircle)
-                    unawaited(
-                      this._activateAssignOverlay(
-                        debugReason: 'longpress#$_dragLogCounter',
-                      ),
+                    this._scheduleAssignOverlaySync(
+                      debugReason: 'longpress#$_dragLogCounter',
                     );
-                  this._refreshAssignMarker();
+                  if (_dragLogCounter == 1 || _dragLogCounter % 10 == 0) {
+                    this._refreshAssignMarker();
+                  }
                   if (_shouldLogAssignFrame(_dragLogCounter)) {
                     DebugConsole.log(
                       'LONGPRESS_MOVE: frame=$_dragLogCounter dist=${dist.round()} '
@@ -639,7 +649,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                       '${_assignDebugState()}',
                     );
                   }
-                  setState(() {});
+                  this._scheduleAssignCardSync();
                 },
           onLongPressEnd: !_isAssigning
               ? null
@@ -648,6 +658,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                     'LONGPRESS_END: frames=$_dragLogCounter ${_assignDebugState()}',
                   );
                   _isDraggingRadius = false;
+                  this._refreshAssignMarker();
+                  unawaited(
+                    this._flushAssignOverlaySync(debugReason: 'longpress-end'),
+                  );
+                  this._flushAssignCardSync();
                 },
           child: MapLibreMap(
             key: ValueKey(styleUrl),
@@ -1009,15 +1024,15 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                       ? 0
                       : now.difference(_lastOverlayMoveAt!).inMilliseconds;
                   _lastOverlayMoveAt = now;
-                  unawaited(
-                    this._activateAssignOverlay(
-                      debugReason: 'overlay#$_dragLogCounter',
-                    ),
+                  this._scheduleAssignOverlaySync(
+                    debugReason: 'overlay#$_dragLogCounter',
                   );
                   // Update overlay circle instantly (no widget rebuild)
                   final radiusPx = this._currentRadiusPx;
                   _radiusNotifier.value = radiusPx;
-                  this._refreshAssignMarker();
+                  if (_dragLogCounter == 1 || _dragLogCounter % 10 == 0) {
+                    this._refreshAssignMarker();
+                  }
                   if (_shouldLogAssignFrame(_dragLogCounter)) {
                     DebugConsole.log(
                       'OVERLAY_MOVE: frame=$_dragLogCounter dt=${deltaMs}ms '
@@ -1025,8 +1040,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                       'px=${radiusPx.toStringAsFixed(1)} ${_assignDebugState()}',
                     );
                   }
-                  // Sync slider in AlarmCard (setState only rebuilds card, not overlay)
-                  setState(() {});
+                  // Sync AlarmCard periodically; the visual radius is already native.
+                  this._scheduleAssignCardSync();
                 },
                 onPointerUp: (e) {
                   if (!_isAssigning) return;
@@ -1038,6 +1053,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   if (e.pointer != _dragPointerId) return;
                   _isDraggingRadius = false;
                   _dragPointerId = null;
+                  this._refreshAssignMarker();
+                  unawaited(
+                    this._flushAssignOverlaySync(debugReason: 'overlay-up'),
+                  );
+                  this._flushAssignCardSync();
                 },
                 child: CustomPaint(
                   painter:
@@ -1085,20 +1105,20 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
               existingPoint: _assignExisting,
               radius: _assignRadius,
               onRadiusChanged: (v) {
-                setState(() => _assignRadius = v);
+                _assignRadius = v;
                 _radiusNotifier.value = this._currentRadiusPx;
                 DebugConsole.log(
                   'CARD_RADIUS: r=${_assignRadius.round()}m ${_assignDebugState()}',
                 );
-                unawaited(
-                  this._activateAssignOverlay(debugReason: 'card-radius'),
-                );
+                this._scheduleAssignOverlaySync(debugReason: 'card-radius');
                 this._refreshAssignMarker();
               },
               onZoneTriggerChanged: (v) {
                 setState(() => _assignZoneTrigger = v);
                 DebugConsole.log('CARD_ZONE: ${v.name} ${_assignDebugState()}');
-                unawaited(this._activateAssignOverlay(debugReason: 'card-zone'));
+                unawaited(
+                  this._flushAssignOverlaySync(debugReason: 'card-zone'),
+                );
               },
               onTriggerTypeChanged: (v) {
                 setState(() => _assignTriggerType = v);
@@ -1106,7 +1126,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   'CARD_TRIGGER: ${v.name} ${_assignDebugState()}',
                 );
                 unawaited(
-                  this._activateAssignOverlay(
+                  this._flushAssignOverlaySync(
                     updateMarker: true,
                     debugReason: 'card-trigger',
                   ),
@@ -1114,14 +1134,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                 this._refreshAssignMarker();
               },
               onTimeChanged: (v) {
-                setState(() => _assignTimeMinutes = v);
+                _assignTimeMinutes = v;
                 _radiusNotifier.value = this._currentRadiusPx;
                 DebugConsole.log(
                   'CARD_TIME: ${_assignTimeMinutes}min ${_assignDebugState()}',
                 );
-                unawaited(
-                  this._activateAssignOverlay(debugReason: 'card-time'),
-                );
+                this._scheduleAssignOverlaySync(debugReason: 'card-time');
                 this._refreshAssignMarker();
               },
               onActiveChanged: (v) {
@@ -1130,7 +1148,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   'CARD_ACTIVE: $_assignActive ${_assignDebugState()}',
                 );
                 unawaited(
-                  this._activateAssignOverlay(
+                  this._flushAssignOverlaySync(
                     updateMarker: true,
                     debugReason: 'card-active',
                   ),

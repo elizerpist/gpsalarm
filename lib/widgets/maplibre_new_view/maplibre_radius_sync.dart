@@ -7,6 +7,8 @@ extension _MaplibreRadiusSync on _MaplibreNewViewState {
     final style = _controller?.style;
     if (style == null) return;
 
+    if (_isDraggingRadius && _isAssigning) return;
+
     this._updateVeil(style, alarmProv);
 
     if (_isDraggingRadius) return;

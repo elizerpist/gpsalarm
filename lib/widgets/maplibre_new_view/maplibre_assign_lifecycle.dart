@@ -23,9 +23,12 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     }
     if (_assignOverlayActivating) {
       _assignSyncSkipCount++;
+      _assignOverlayPending = true;
+      _assignOverlayPendingMarker |= updateMarker;
+      _assignOverlayPendingReason = debugReason;
       if (_assignSyncSkipCount <= 5 || _assignSyncSkipCount % 15 == 0) {
         DebugConsole.log(
-          'ASSIGN_SYNC_SKIP: seq=$seq reason=$debugReason '
+          'ASSIGN_SYNC_QUEUE: seq=$seq reason=$debugReason '
           'skips=$_assignSyncSkipCount ${_assignDebugState()}',
         );
       }
@@ -74,7 +77,84 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         );
       }
       _assignOverlayActivating = false;
+      final runPending = _assignOverlayPending && mounted && _isAssigning;
+      final pendingMarker = _assignOverlayPendingMarker;
+      final pendingReason = _assignOverlayPendingReason ?? 'pending';
+      _assignOverlayPending = false;
+      _assignOverlayPendingMarker = false;
+      _assignOverlayPendingReason = null;
+      if (runPending) {
+        scheduleMicrotask(() {
+          if (!mounted || !_isAssigning) return;
+          unawaited(
+            this._activateAssignOverlay(
+              updateMarker: pendingMarker,
+              debugReason: 'queued:$pendingReason',
+            ),
+          );
+        });
+      }
     }
+  }
+
+  void _scheduleAssignOverlaySync({
+    bool updateMarker = false,
+    String debugReason = 'scheduled',
+  }) {
+    _assignOverlaySyncMarker |= updateMarker;
+    _assignOverlaySyncReason = debugReason;
+    if (_assignOverlaySyncTimer != null) return;
+    _assignOverlaySyncTimer = Timer(const Duration(milliseconds: 16), () {
+      _assignOverlaySyncTimer = null;
+      final marker = _assignOverlaySyncMarker;
+      final reason = _assignOverlaySyncReason ?? 'scheduled';
+      _assignOverlaySyncMarker = false;
+      _assignOverlaySyncReason = null;
+      unawaited(
+        this._activateAssignOverlay(
+          updateMarker: marker,
+          debugReason: 'scheduled:$reason',
+        ),
+      );
+    });
+  }
+
+  Future<void> _flushAssignOverlaySync({
+    bool updateMarker = false,
+    String debugReason = 'flush',
+  }) async {
+    _assignOverlaySyncTimer?.cancel();
+    _assignOverlaySyncTimer = null;
+    final marker = _assignOverlaySyncMarker || updateMarker;
+    _assignOverlaySyncMarker = false;
+    _assignOverlaySyncReason = null;
+    await this._activateAssignOverlay(
+      updateMarker: marker,
+      debugReason: 'flush:$debugReason',
+    );
+  }
+
+  void _scheduleAssignCardSync() {
+    if (_assignCardSyncTimer != null) {
+      _assignCardSyncPending = true;
+      return;
+    }
+    _assignCardSyncTimer = Timer(const Duration(milliseconds: 80), () {
+      _assignCardSyncTimer = null;
+      if (!mounted || !_isAssigning) return;
+      setState(() {});
+      if (_assignCardSyncPending) {
+        _assignCardSyncPending = false;
+        this._scheduleAssignCardSync();
+      }
+    });
+  }
+
+  void _flushAssignCardSync() {
+    _assignCardSyncTimer?.cancel();
+    _assignCardSyncTimer = null;
+    _assignCardSyncPending = false;
+    if (mounted && _isAssigning) setState(() {});
   }
 
   Future<void> _hideExistingNativeAlarm(AlarmPoint existing) async {
@@ -100,6 +180,13 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
 
   void _beginClosingAssignVisual({required bool keepCircle}) {
     _assignVisualClearTimer?.cancel();
+    _assignOverlaySyncTimer?.cancel();
+    _assignOverlaySyncTimer = null;
+    _assignOverlaySyncMarker = false;
+    _assignOverlaySyncReason = null;
+    _assignCardSyncTimer?.cancel();
+    _assignCardSyncTimer = null;
+    _assignCardSyncPending = false;
     setState(() {
       _isAssigning = false;
       _closingAssignVisual = true;
@@ -146,6 +233,16 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     AlarmPoint? existing,
   }) async {
     _assignVisualClearTimer?.cancel();
+    _assignOverlaySyncTimer?.cancel();
+    _assignOverlaySyncTimer = null;
+    _assignOverlaySyncMarker = false;
+    _assignOverlaySyncReason = null;
+    _assignOverlayPending = false;
+    _assignOverlayPendingMarker = false;
+    _assignOverlayPendingReason = null;
+    _assignCardSyncTimer?.cancel();
+    _assignCardSyncTimer = null;
+    _assignCardSyncPending = false;
     _suspendCompassForAssign();
     _closingAssignVisual = false;
     _assignScreenCenter = existing != null
