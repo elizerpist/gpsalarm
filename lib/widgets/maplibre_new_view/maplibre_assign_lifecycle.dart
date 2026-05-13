@@ -263,15 +263,17 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignCardSyncPending = false;
     if (!keepPreview) {
       _assignFlutterPreviewActive = false;
+      _assignPreviewCircleHidden = false;
+      _assignPreviewVeilHidden = false;
     }
-    _assignPreviewCircleHidden = false;
-    _assignPreviewVeilHidden = false;
     setState(() {
       _isAssigning = false;
       _closingAssignVisual = true;
       _closingAssignCircle = keepCircle;
       _assignExisting = null;
-      _assignNativeAlarmLayerId = null;
+      if (!keepPreview) {
+        _assignNativeAlarmLayerId = null;
+      }
       _assignNativeHidden = false;
       _isDraggingRadius = false;
       _dragPointerId = null;
@@ -288,24 +290,32 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
   ]) {
     _assignVisualClearTimer?.cancel();
     _assignVisualClearTimer = Timer(delay, () {
-      if (!mounted) return;
-      setState(() {
-        _closingAssignVisual = false;
-        _closingAssignCircle = false;
-        _assignFlutterPreviewActive = false;
-        _assignPreviewCircleHidden = false;
-        _assignPreviewVeilHidden = false;
-        _assignScreenCenter = null;
-        _assignMarkerPng = null;
-        _assignMarkerKey = null;
-        _assignNativeAlarmLayerId = null;
-        _assignNativeHidden = false;
-        _assignTriggerType = TriggerType.distance;
-        _assignZoneTrigger = ZoneTrigger.onEntry;
-        _assignTimeMinutes = 10;
-        _assignActive = true;
-      });
-      _restoreCompassAfterAssign();
+      unawaited(() async {
+        if (!mounted) return;
+        final style = _controller?.style;
+        if (style != null &&
+            (_assignPreviewCircleHidden || _assignPreviewVeilHidden)) {
+          await this._restoreNativeAssignPreviewOpacity(style);
+        }
+        if (!mounted) return;
+        setState(() {
+          _closingAssignVisual = false;
+          _closingAssignCircle = false;
+          _assignFlutterPreviewActive = false;
+          _assignPreviewCircleHidden = false;
+          _assignPreviewVeilHidden = false;
+          _assignScreenCenter = null;
+          _assignMarkerPng = null;
+          _assignMarkerKey = null;
+          _assignNativeAlarmLayerId = null;
+          _assignNativeHidden = false;
+          _assignTriggerType = TriggerType.distance;
+          _assignZoneTrigger = ZoneTrigger.onEntry;
+          _assignTimeMinutes = 10;
+          _assignActive = true;
+        });
+        _restoreCompassAfterAssign();
+      }());
     });
   }
 
@@ -393,10 +403,11 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
 
   Future<void> _hideNativeAssignVisualForPreview(
     StyleController style,
-    String reason,
-  ) async {
+    String reason, {
+    bool force = false,
+  }) async {
     final id = _assignNativeAlarmLayerId;
-    if (id != null && !_assignPreviewCircleHidden) {
+    if (id != null && (force || !_assignPreviewCircleHidden)) {
       final layerId = 'radius-circle-$id';
       await this._setNativeLayerPaintProperty(
         style,
@@ -414,7 +425,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     }
     final shouldHideVeil =
         _assignActive && _assignZoneTrigger == ZoneTrigger.onLeave;
-    if (shouldHideVeil && !_assignPreviewVeilHidden) {
+    if (shouldHideVeil && (force || !_assignPreviewVeilHidden)) {
       await this._setNativeLayerPaintProperty(
         style,
         layerId: 'veil-fill',
@@ -460,7 +471,9 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         !_assignPreviewVeilHidden) {
       return false;
     }
-    if (style != null) {
+    if (style != null && shouldHold) {
+      await this._hideNativeAssignVisualForPreview(style, reason, force: true);
+    } else if (style != null) {
       await this._restoreNativeAssignPreviewOpacity(style);
     }
     DebugConsole.log(
