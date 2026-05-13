@@ -10,6 +10,17 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
         paint: {'fill-color': '#FF0000', 'fill-opacity': 0.15},
       ),
     );
+    await style.addLayer(
+      LineStyleLayer(
+        id: 'veil-outline',
+        sourceId: 'veil-src',
+        layout: {'line-cap': 'round', 'line-join': 'round'},
+        paint: {
+          'line-color': 'rgba(255,0,0,0.62)',
+          'line-width': 2.0,
+        },
+      ),
+    );
     await style.addSource(
       GeoJsonSource(id: 'fast-pt-src', data: _emptyGeoJson),
     );
@@ -59,6 +70,7 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
 
     try {
       if (radiusOnly &&
+          _assignZoneTrigger != ZoneTrigger.onLeave &&
           _fastCircleLayerKey != null &&
           await this._setCircleLayerRadiusPaint(
             style,

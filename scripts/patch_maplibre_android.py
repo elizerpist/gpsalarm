@@ -21,7 +21,7 @@ def main() -> None:
         "final jniOptions = jni.GeoJsonOptions().withTolerance(0.0);",
     )
 
-    method = """\
+    old_method = """\
   Future<void> setCircleLayerRadius({
     required String layerId,
     required double radius,
@@ -47,8 +47,33 @@ def main() -> None:
 
 """
 
+    method = """\
+  Future<void> setCircleLayerRadius({
+    required String layerId,
+    required Object radius,
+  }) async =>
+      using((arena) {
+        final jLayer = _jniStyle.getLayer(layerId.toJString());
+        if (jLayer == null) return;
+        jLayer.releasedBy(arena);
+        final props = JArray(
+          jni.PropertyValue.nullableType(JObject.nullableType),
+          1,
+        )..releasedBy(arena);
+        props[0] = jni.PaintPropertyValue(
+          'circle-radius'.toJString(),
+          radius.toJObject(arena),
+          T: JObject.type,
+        );
+        jLayer.setProperties(props);
+      });
+
+"""
+
     marker = "  @override\n  Future<void> updateGeoJsonSource({"
-    if "Future<void> setCircleLayerRadius(" not in text:
+    if old_method in text:
+        text = text.replace(old_method, method)
+    elif "Future<void> setCircleLayerRadius(" not in text:
         if marker not in text:
             raise RuntimeError("Could not find updateGeoJsonSource insertion point")
         text = text.replace(marker, method + marker)

@@ -24,10 +24,15 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     }
     if (_assignOverlayActivating) {
       _assignSyncSkipCount++;
+      final pendingRadiusOnly = radiusOnly && !updateMarker;
+      if (!_assignOverlayPending) {
+        _assignOverlayPendingRadiusOnly = pendingRadiusOnly;
+      } else {
+        _assignOverlayPendingRadiusOnly =
+            _assignOverlayPendingRadiusOnly && pendingRadiusOnly;
+      }
       _assignOverlayPending = true;
       _assignOverlayPendingMarker |= updateMarker;
-      _assignOverlayPendingRadiusOnly =
-          _assignOverlayPendingRadiusOnly && radiusOnly && !updateMarker;
       _assignOverlayPendingReason = debugReason;
       if (_assignSyncSkipCount <= 5 || _assignSyncSkipCount % 15 == 0) {
         DebugConsole.log(
@@ -178,7 +183,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       _assignCardSyncPending = true;
       return;
     }
-    _assignCardSyncTimer = Timer(const Duration(milliseconds: 80), () {
+    _assignCardSyncTimer = Timer(const Duration(milliseconds: 200), () {
       _assignCardSyncTimer = null;
       if (!mounted || !_isAssigning) return;
       setState(() {});
