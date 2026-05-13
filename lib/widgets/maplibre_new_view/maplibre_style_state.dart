@@ -8,7 +8,14 @@ extension _MaplibreStyleState on _MaplibreNewViewState {
     _imagesRegistered = false;
     _radiusLayerReady = false;
     _lastRadiusDataHash = '';
+    _lastVeilGeoJson = '';
     _radiusDebounce?.cancel();
+    _veilSyncTimer?.cancel();
+    _veilSyncTimer = null;
+    _veilSyncRequested = false;
+    _veilSyncRequestedIgnoreAssign = false;
+    _veilSyncRequestedFullQuality = false;
+    _veilSyncRequestedReason = null;
     _radiusLayerVersion++;
     _styleGeneration++;
     _registeredMarkerImageKeys.clear();

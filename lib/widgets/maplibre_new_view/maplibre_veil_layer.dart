@@ -1,9 +1,98 @@
 part of '../maplibre_new_view.dart';
 
 extension _MaplibreVeilLayer on _MaplibreNewViewState {
-  void _updateVeil(StyleController style, AlarmProvider alarmProv, {bool ignoreAssign = false}) {
+  void _queueVeilSyncRequest({
+    required bool ignoreAssign,
+    required bool fullQuality,
+    required String reason,
+  }) {
+    _veilSyncRequested = true;
+    _veilSyncRequestedIgnoreAssign = ignoreAssign;
+    _veilSyncRequestedFullQuality =
+        _veilSyncRequestedFullQuality || fullQuality;
+    _veilSyncRequestedReason = reason;
+  }
+
+  void _scheduleVeilSync({
+    bool ignoreAssign = false,
+    bool fullQuality = false,
+    String reason = 'scheduled',
+  }) {
+    _queueVeilSyncRequest(
+      ignoreAssign: ignoreAssign,
+      fullQuality: fullQuality,
+      reason: reason,
+    );
+    if (_veilSyncDrainFuture != null || _veilSyncTimer != null) return;
+    final delay = _isAssigning && !fullQuality
+        ? const Duration(milliseconds: 100)
+        : const Duration(milliseconds: 16);
+    _veilSyncTimer = Timer(delay, () {
+      _veilSyncTimer = null;
+      unawaited(this._drainVeilSyncQueue());
+    });
+  }
+
+  Future<void> _flushVeilSync({
+    bool ignoreAssign = false,
+    bool fullQuality = true,
+    String reason = 'flush',
+  }) {
+    _veilSyncTimer?.cancel();
+    _veilSyncTimer = null;
+    _queueVeilSyncRequest(
+      ignoreAssign: ignoreAssign,
+      fullQuality: fullQuality,
+      reason: reason,
+    );
+    return this._drainVeilSyncQueue();
+  }
+
+  Future<void> _drainVeilSyncQueue() {
+    final existing = _veilSyncDrainFuture;
+    if (existing != null) return existing;
+    final future = () async {
+      while (mounted && _veilSyncRequested) {
+        final ignoreAssign = _veilSyncRequestedIgnoreAssign;
+        final fullQuality = _veilSyncRequestedFullQuality;
+        final reason = _veilSyncRequestedReason ?? 'queued';
+        _veilSyncRequested = false;
+        _veilSyncRequestedIgnoreAssign = false;
+        _veilSyncRequestedFullQuality = false;
+        _veilSyncRequestedReason = null;
+        final style = _controller?.style;
+        if (style == null) continue;
+        await this._updateVeil(
+          style,
+          context.read<AlarmProvider>(),
+          ignoreAssign: ignoreAssign,
+          fullQuality: fullQuality,
+          reason: reason,
+        );
+      }
+    }();
+    _veilSyncDrainFuture = future.whenComplete(() {
+      _veilSyncDrainFuture = null;
+      if (mounted && _veilSyncRequested && _veilSyncTimer == null) {
+        _veilSyncTimer = Timer(Duration.zero, () {
+          _veilSyncTimer = null;
+          unawaited(this._drainVeilSyncQueue());
+        });
+      }
+    });
+    return _veilSyncDrainFuture!;
+  }
+
+  Future<void> _updateVeil(
+    StyleController style,
+    AlarmProvider alarmProv, {
+    bool ignoreAssign = false,
+    bool fullQuality = true,
+    String reason = 'direct',
+  }) async {
     final sw = Stopwatch()..start();
     final seq = ++_veilUpdateSeq;
+    final segments = fullQuality ? 128 : 40;
     final useLiveAssignHole = !ignoreAssign &&
         _isAssigning &&
         _assignActive &&
@@ -28,7 +117,7 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     if (leaveAlarms.isEmpty && !hasFastLeave) {
       if (_lastVeilGeoJson != _emptyGeoJson) {
         try {
-          style.updateGeoJsonSource(id: 'veil-src', data: _emptyGeoJson);
+          await style.updateGeoJsonSource(id: 'veil-src', data: _emptyGeoJson);
           _lastVeilGeoJson = _emptyGeoJson;
         } catch (_) {}
       }
@@ -37,7 +126,8 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
           (_shouldLogAssignFrame(_assignSyncSeq) || sw.elapsedMilliseconds > 8)) {
         DebugConsole.log(
           'VEIL_SYNC: seq=$seq empty=true ms=${sw.elapsedMilliseconds} '
-          'ignore=$ignoreAssign live=$useLiveAssignHole leaves=0 ${_assignDebugState()}',
+          'ignore=$ignoreAssign live=$useLiveAssignHole leaves=0 '
+          'full=$fullQuality reason=$reason ${_assignDebugState()}',
         );
       }
       return;
@@ -49,13 +139,13 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
       if (p.triggerType == TriggerType.time && p.timeTrigger != null) {
         r = math.max(200.0, (_speedKmh / 3.6) * p.timeTrigger!.inSeconds.toDouble());
       }
-      holes.add(_geoCircle(p.longitude, p.latitude, r));
+      holes.add(_geoCircle(p.longitude, p.latitude, r, segments: segments));
     }
     if (hasFastLeave) {
       final r = _assignTriggerType == TriggerType.time
           ? math.max(200.0, (_speedKmh / 3.6) * _assignTimeMinutes * 60)
           : _assignRadius;
-      holes.add(_geoCircle(_assignLng, _assignLat, r));
+      holes.add(_geoCircle(_assignLng, _assignLat, r, segments: segments));
     }
 
     final coords = <List<List<double>>>[
@@ -82,7 +172,7 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
 
     try {
       if (_lastVeilGeoJson != veilGeoJson) {
-        style.updateGeoJsonSource(id: 'veil-src', data: veilGeoJson);
+        await style.updateGeoJsonSource(id: 'veil-src', data: veilGeoJson);
         _lastVeilGeoJson = veilGeoJson;
       }
     } catch (_) {}
@@ -92,7 +182,8 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
       DebugConsole.log(
         'VEIL_SYNC: seq=$seq empty=false ms=${sw.elapsedMilliseconds} '
         'ignore=$ignoreAssign live=$useLiveAssignHole leaves=${leaveAlarms.length} '
-        'fastLeave=$hasFastLeave holes=${holes.length} ${_assignDebugState()}',
+        'fastLeave=$hasFastLeave holes=${holes.length} seg=$segments '
+        'full=$fullQuality reason=$reason ${_assignDebugState()}',
       );
     }
   }

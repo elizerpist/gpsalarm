@@ -49,7 +49,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           alarmProv,
           updateMarker: updateMarker,
         );
-        this._updateVeil(style, alarmProv);
+        this._scheduleVeilSync(reason: debugReason);
         return;
       }
       var needsState = false;
@@ -65,7 +65,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         path = 'fast-native';
         await this._updateFastCircleLayer(style);
       }
-      if (style != null) this._updateVeil(style, alarmProv);
+      if (style != null) this._scheduleVeilSync(reason: debugReason);
       if (needsState && mounted) setState(() {});
     } finally {
       sw.stop();
@@ -132,6 +132,10 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       updateMarker: marker,
       debugReason: 'flush:$debugReason',
     );
+    await this._flushVeilSync(
+      fullQuality: true,
+      reason: 'assign-overlay:$debugReason',
+    );
   }
 
   void _scheduleAssignCardSync() {
@@ -184,6 +188,12 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignOverlaySyncTimer = null;
     _assignOverlaySyncMarker = false;
     _assignOverlaySyncReason = null;
+    _veilSyncTimer?.cancel();
+    _veilSyncTimer = null;
+    _veilSyncRequested = false;
+    _veilSyncRequestedIgnoreAssign = false;
+    _veilSyncRequestedFullQuality = false;
+    _veilSyncRequestedReason = null;
     _assignCardSyncTimer?.cancel();
     _assignCardSyncTimer = null;
     _assignCardSyncPending = false;
@@ -240,6 +250,12 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignOverlayPending = false;
     _assignOverlayPendingMarker = false;
     _assignOverlayPendingReason = null;
+    _veilSyncTimer?.cancel();
+    _veilSyncTimer = null;
+    _veilSyncRequested = false;
+    _veilSyncRequestedIgnoreAssign = false;
+    _veilSyncRequestedFullQuality = false;
+    _veilSyncRequestedReason = null;
     _assignCardSyncTimer?.cancel();
     _assignCardSyncTimer = null;
     _assignCardSyncPending = false;
@@ -278,7 +294,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     if (style != null && _showAssignOverlay) {
       if (_useNativeAssignCircle) await this._updateFastCircleLayer(style);
       DebugConsole.log('ASSIGN_START: updating veil immediately');
-      this._updateVeil(style, context.read<AlarmProvider>());
+      await this._flushVeilSync(fullQuality: true, reason: 'assign-start');
     } else if (existing != null) {
       DebugConsole.log('ASSIGN_START: keeping native alarm visual during edit');
     }
@@ -328,7 +344,11 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         );
       }
       _lastRadiusDataHash = this._radiusHash(circles);
-      this._updateVeil(liveStyle, alarmProv, ignoreAssign: true);
+      await this._flushVeilSync(
+        ignoreAssign: true,
+        fullQuality: true,
+        reason: 'cancel-in-place',
+      );
       await this._clearFastCircleLayer(liveStyle);
       _beginClosingAssignVisual(keepCircle: false);
       _scheduleAssignVisualClear();
@@ -385,8 +405,13 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       }
       _lastRadiusDataHash = this._radiusHash(circles);
     }
-    if (style != null && nativeWasHidden)
-      this._updateVeil(style, alarmProv, ignoreAssign: true);
+    if (style != null && nativeWasHidden) {
+      await this._flushVeilSync(
+        ignoreAssign: true,
+        fullQuality: true,
+        reason: 'cancel-rebuild',
+      );
+    }
     if (style != null) await this._clearFastCircleLayer(style);
     _finishClosingAssignCircle();
 
@@ -457,7 +482,11 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           );
         }
         _lastRadiusDataHash = this._radiusHash(circles);
-        this._updateVeil(liveStyle, alarmProv, ignoreAssign: true);
+        await this._flushVeilSync(
+          ignoreAssign: true,
+          fullQuality: true,
+          reason: 'save-in-place',
+        );
         await this._clearFastCircleLayer(liveStyle);
         _beginClosingAssignVisual(keepCircle: false);
         _scheduleAssignVisualClear();
@@ -494,7 +523,11 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           );
           _lastRadiusDataHash = this._radiusHash(circles);
         }
-        this._updateVeil(liveStyle, alarmProv, ignoreAssign: true);
+        await this._flushVeilSync(
+          ignoreAssign: true,
+          fullQuality: true,
+          reason: 'save-rebuild',
+        );
       }
       // Wait for MapLibre to render native marker before hiding overlay pin
       if (shouldRebuildNative) {

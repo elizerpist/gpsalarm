@@ -48,8 +48,12 @@ double _vectorMetersPerPx(double lat, double zoom) {
 }
 
 /// Polygon ring for veil holes only. Radius circles must stay CircleStyleLayer.
-List<List<double>> _geoCircle(double lng, double lat, double radiusMeters) {
-  const segments = 128;
+List<List<double>> _geoCircle(
+  double lng,
+  double lat,
+  double radiusMeters, {
+  int segments = 128,
+}) {
   final coords = <List<double>>[];
   final angDist = radiusMeters / 6371000.0;
   final latR = lat * math.pi / 180;

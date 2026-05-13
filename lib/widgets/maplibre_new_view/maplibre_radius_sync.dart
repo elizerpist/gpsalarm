@@ -9,7 +9,7 @@ extension _MaplibreRadiusSync on _MaplibreNewViewState {
 
     if (_isDraggingRadius && _isAssigning) return;
 
-    this._updateVeil(style, alarmProv);
+    this._scheduleVeilSync(fullQuality: true, reason: 'radius-sync');
 
     if (_isDraggingRadius) return;
 

@@ -307,6 +307,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     _assignVisualClearTimer?.cancel();
     _assignOverlaySyncTimer?.cancel();
     _assignCardSyncTimer?.cancel();
+    _veilSyncTimer?.cancel();
     _speedInterpolTimer?.cancel();
     _radiusNotifier.dispose();
     _locationService.dispose();
@@ -499,6 +500,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   int _assignSyncSkipCount = 0;
   int _veilUpdateSeq = 0;
   String _lastVeilGeoJson = '';
+  Timer? _veilSyncTimer;
+  Future<void>? _veilSyncDrainFuture;
+  bool _veilSyncRequested = false;
+  bool _veilSyncRequestedIgnoreAssign = false;
+  bool _veilSyncRequestedFullQuality = false;
+  String? _veilSyncRequestedReason;
   bool _assignOverlayPending = false;
   bool _assignOverlayPendingMarker = false;
   String? _assignOverlayPendingReason;
