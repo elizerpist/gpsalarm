@@ -41,6 +41,8 @@ part 'maplibre_new_view/maplibre_style_urls.dart';
 part 'maplibre_new_view/maplibre_tap_handling.dart';
 part 'maplibre_new_view/maplibre_veil_layer.dart';
 
+enum _AssignVisualOwner { nativeLive, flutterPreview, transitionPending }
+
 class MaplibreNewView extends StatefulWidget {
   final GlobalKey<ScaffoldState> scaffoldKey;
   const MaplibreNewView({super.key, required this.scaffoldKey});
@@ -102,8 +104,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   bool _assignPreviewCircleHidden = false;
   bool _assignPreviewVeilHidden = false;
   bool _assignPreviewLabelHidden = false;
+  _AssignVisualOwner _assignVisualOwner = _AssignVisualOwner.nativeLive;
   bool _closingAssignMarker = false;
   Timer? _assignVisualClearTimer;
+  Completer<String>? _nativeRenderAckCompleter;
+  Timer? _nativeRenderAckTimeout;
   final Map<String, Uint8List> _markerBitmapCache = {};
   final Map<String, Size> _markerSizeCache = {};
   final Map<String, String> _registeredMarkerImageKeys = {};
@@ -311,6 +316,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     _compassSub?.cancel();
     _radiusDebounce?.cancel();
     _assignVisualClearTimer?.cancel();
+    _nativeRenderAckTimeout?.cancel();
+    final pendingAck = _nativeRenderAckCompleter;
+    if (pendingAck != null && !pendingAck.isCompleted) {
+      pendingAck.complete('dispose');
+    }
     _assignOverlaySyncTimer?.cancel();
     _assignCardSyncTimer?.cancel();
     _veilSyncTimer?.cancel();
@@ -324,6 +334,80 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     _controller = controller;
     DebugConsole.log('VECTOR: MapController created');
     DebugConsole.log('VECTOR: controller type = ${controller.runtimeType}');
+  }
+
+  void _onMapEvent(MapEvent event) {
+    if (event is MapEventIdle) {
+      _completeNativeRenderAck('idle');
+    }
+
+    if (!mounted) return;
+    if (event is MapEventClick) {
+      _onTap(event.point);
+      return;
+    }
+    if (event is! MapEventMoveCamera && event is! MapEventCameraIdle) {
+      return;
+    }
+
+    final newZoom = _controller?.camera?.zoom ?? _currentZoom;
+    if ((newZoom - _currentZoom).abs() > 0.05) {
+      setState(() => _currentZoom = newZoom);
+    }
+    // Only sync to MapProvider AFTER images registered (style fully loaded).
+    // Before that, camera events carry the style's default zoom, not the user's.
+    if (!_imagesRegistered) return;
+    final mp = context.read<MapProvider>();
+    mp.updateZoomSilent(newZoom);
+    final cam = _controller?.camera;
+    if (cam?.center == null) return;
+    mp.updateCenterSilent(
+      LatLng(cam!.center.lat.toDouble(), cam.center.lng.toDouble()),
+    );
+    if (_userPos == null) return;
+    final dist = AlarmService.distanceMeters(
+      cam.center.lat.toDouble(),
+      cam.center.lng.toDouble(),
+      _userPos!.lat.toDouble(),
+      _userPos!.lng.toDouble(),
+    );
+    final atUser = dist < 100;
+    if (atUser != _cameraAtUser) setState(() => _cameraAtUser = atUser);
+  }
+
+  void _completeNativeRenderAck(String source) {
+    final completer = _nativeRenderAckCompleter;
+    if (completer == null || completer.isCompleted) return;
+    _nativeRenderAckTimeout?.cancel();
+    _nativeRenderAckTimeout = null;
+    completer.complete(source);
+  }
+
+  Future<void> _waitForNativeRenderAck({
+    required String reason,
+    Duration timeout = const Duration(milliseconds: 240),
+  }) async {
+    final previous = _nativeRenderAckCompleter;
+    if (previous != null && !previous.isCompleted) {
+      previous.complete('superseded');
+    }
+    _nativeRenderAckTimeout?.cancel();
+    final completer = Completer<String>();
+    _nativeRenderAckCompleter = completer;
+    _nativeRenderAckTimeout = Timer(timeout, () {
+      _completeNativeRenderAck('timeout:${timeout.inMilliseconds}ms');
+    });
+    final source = await completer.future;
+    if (identical(_nativeRenderAckCompleter, completer)) {
+      _nativeRenderAckCompleter = null;
+      _nativeRenderAckTimeout?.cancel();
+      _nativeRenderAckTimeout = null;
+    }
+    if (_isAssigning || _assignFlutterPreviewActive) {
+      DebugConsole.log(
+        'NATIVE_RENDER_ACK: reason=$reason source=$source ${_assignDebugState()}',
+      );
+    }
   }
 
   void _safeMoveCamera({
@@ -534,7 +618,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
 
   String _assignDebugState() {
     final zoom = _controller?.camera?.zoom ?? _currentZoom;
-    return 'existing=${_assignExisting?.id} nativeHidden=$_assignNativeHidden '
+    return 'existing=${_assignExisting?.id} owner=${_assignVisualOwner.name} '
+        'nativeHidden=$_assignNativeHidden '
         'overlay=$_showAssignOverlay nativeExisting=$_useNativeExistingAssignLayer '
         'trigger=${_assignTriggerType.name} zone=${_assignZoneTrigger.name} '
         'active=$_assignActive r=${_assignRadius.round()}m '
@@ -711,44 +796,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                 zoom: mp.zoom,
               );
             },
-            onEvent: (event) {
-              if (event is MapEventClick) {
-                this._onTap(event.point);
-              } else if (event is MapEventMoveCamera ||
-                  event is MapEventCameraIdle) {
-                final newZoom = _controller?.camera?.zoom ?? _currentZoom;
-                if ((newZoom - _currentZoom).abs() > 0.05) {
-                  setState(() => _currentZoom = newZoom);
-                }
-                // Only sync to MapProvider AFTER images registered (style fully loaded).
-                // Before that, camera events carry the style's default zoom, not the user's.
-                if (_imagesRegistered) {
-                  final mp = context.read<MapProvider>();
-                  mp.updateZoomSilent(newZoom);
-                  final cam = _controller?.camera;
-                  if (cam?.center != null) {
-                    mp.updateCenterSilent(
-                      LatLng(
-                        cam!.center.lat.toDouble(),
-                        cam.center.lng.toDouble(),
-                      ),
-                    );
-                    // Track if camera is near user position (for my-location/3D button swap)
-                    if (_userPos != null) {
-                      final dist = AlarmService.distanceMeters(
-                        cam.center.lat.toDouble(),
-                        cam.center.lng.toDouble(),
-                        _userPos!.lat.toDouble(),
-                        _userPos!.lng.toDouble(),
-                      );
-                      final atUser = dist < 100;
-                      if (atUser != _cameraAtUser)
-                        setState(() => _cameraAtUser = atUser);
-                    }
-                  }
-                }
-              }
-            },
+            onEvent: _onMapEvent,
             layers: [
               // Pin+chip markers are rendered as bitmap icons in _rebuildRadiusLayers
               // (SymbolStyleLayer with composite icon-image, not MarkerLayer)
@@ -1108,6 +1156,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                 unawaited(
                   this._flushAssignOverlaySync(debugReason: 'card-zone'),
                 );
+                this._refreshNativePreviewHiddenState('card-zone');
               },
               onTriggerTypeChanged: (v) {
                 setState(() => _assignTriggerType = v);
@@ -1120,6 +1169,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                     debugReason: 'card-trigger',
                   ),
                 );
+                this._refreshNativePreviewHiddenState('card-trigger');
                 this._refreshAssignMarker();
               },
               onTimeChanged: (v) {
@@ -1154,6 +1204,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                     debugReason: 'card-active',
                   ),
                 );
+                this._refreshNativePreviewHiddenState('card-active');
                 this._refreshAssignMarker();
               },
               onSave: (alarm) => this._saveAssign(alarm),

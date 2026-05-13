@@ -52,9 +52,11 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     return this._drainVeilSyncQueue();
   }
 
-  Future<void> _syncAssignVeilWithOverlay({
-    required String debugReason,
-  }) {
+  Future<void> _syncAssignVeilWithOverlay({required String debugReason}) {
+    if (_assignVisualOwner != _AssignVisualOwner.nativeLive ||
+        _assignFlutterPreviewActive) {
+      return Future<void>.value();
+    }
     if (!_isAssigning ||
         !_assignActive ||
         _assignZoneTrigger != ZoneTrigger.onLeave ||
@@ -112,8 +114,11 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     final sw = Stopwatch()..start();
     final seq = ++_veilUpdateSeq;
     final segments = 128;
-    final useLiveAssignHole = !ignoreAssign &&
+    final useLiveAssignHole =
+        !ignoreAssign &&
         _isAssigning &&
+        _assignVisualOwner == _AssignVisualOwner.nativeLive &&
+        !_assignFlutterPreviewActive &&
         _assignActive &&
         _assignZoneTrigger == ZoneTrigger.onLeave &&
         (_showAssignOverlay || _useNativeExistingAssignLayer);
@@ -122,7 +127,12 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
           (p) =>
               p.isActive &&
               p.zoneTrigger == ZoneTrigger.onLeave &&
-              !(!ignoreAssign && _isAssigning && _assignNativeHidden && _assignExisting?.id == p.id),
+              !(!ignoreAssign &&
+                  _isAssigning &&
+                  (_assignNativeHidden ||
+                      _assignVisualOwner != _AssignVisualOwner.nativeLive ||
+                      _assignFlutterPreviewActive) &&
+                  _assignExisting?.id == p.id),
         )
         .where(
           (p) =>
@@ -142,7 +152,8 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
       }
       sw.stop();
       if (_isAssigning &&
-          (_shouldLogAssignFrame(_assignSyncSeq) || sw.elapsedMilliseconds > 8)) {
+          (_shouldLogAssignFrame(_assignSyncSeq) ||
+              sw.elapsedMilliseconds > 8)) {
         DebugConsole.log(
           'VEIL_SYNC: seq=$seq empty=true ms=${sw.elapsedMilliseconds} '
           'ignore=$ignoreAssign live=$useLiveAssignHole leaves=0 '
@@ -156,7 +167,10 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     for (final p in leaveAlarms) {
       double r = p.radiusMeters;
       if (p.triggerType == TriggerType.time && p.timeTrigger != null) {
-        r = math.max(200.0, (_speedKmh / 3.6) * p.timeTrigger!.inSeconds.toDouble());
+        r = math.max(
+          200.0,
+          (_speedKmh / 3.6) * p.timeTrigger!.inSeconds.toDouble(),
+        );
       }
       holes.add(_geoCircle(p.longitude, p.latitude, r, segments: segments));
     }

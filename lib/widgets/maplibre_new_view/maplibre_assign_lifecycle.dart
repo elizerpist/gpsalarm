@@ -57,15 +57,23 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         path = 'flutter-preview';
         return;
       }
-      if (_useNativeExistingAssignLayer && style != null) {
+      final liveStyle = style;
+      final canUpdateExistingNative =
+          liveStyle != null &&
+          _useNativeAssignCircle &&
+          existing != null &&
+          !_assignNativeHidden;
+      if (canUpdateExistingNative) {
         path = 'existing-native';
         await this._updateExistingNativeAssignLayer(
-          style,
+          liveStyle,
           alarmProv,
           updateMarker: updateMarker,
           radiusOnly: radiusOnly && !updateMarker,
         );
-        await this._syncAssignVeilWithOverlay(debugReason: debugReason);
+        if (_assignVisualOwner == _AssignVisualOwner.nativeLive) {
+          await this._syncAssignVeilWithOverlay(debugReason: debugReason);
+        }
         return;
       }
       var needsState = false;
@@ -181,10 +189,23 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       forceNative: finishPreview,
       debugReason: 'flush:$debugReason',
     );
-    await this._flushVeilSync(
-      fullQuality: true,
-      reason: 'assign-overlay:$debugReason',
-    );
+    if (_assignVisualOwner == _AssignVisualOwner.nativeLive &&
+        !_assignFlutterPreviewActive) {
+      await this._flushVeilSync(
+        fullQuality: true,
+        reason: 'assign-overlay:$debugReason',
+      );
+    }
+    if (finishPreview && _assignFlutterPreviewActive) {
+      final style = _controller?.style;
+      if (style != null) {
+        await this._hideNativeAssignVisualForPreview(
+          style,
+          'finish-preview:$debugReason',
+          force: true,
+        );
+      }
+    }
     if (finishPreview && _assignFlutterPreviewActive) {
       DebugConsole.log(
         'FLUTTER_PREVIEW_NATIVE_SYNC: reason=$debugReason ${_assignDebugState()}',
@@ -267,6 +288,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       _assignPreviewCircleHidden = false;
       _assignPreviewVeilHidden = false;
       _assignPreviewLabelHidden = false;
+      _assignVisualOwner = _AssignVisualOwner.nativeLive;
     }
     setState(() {
       _isAssigning = false;
@@ -319,6 +341,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           _assignZoneTrigger = ZoneTrigger.onEntry;
           _assignTimeMinutes = 10;
           _assignActive = true;
+          _assignVisualOwner = _AssignVisualOwner.nativeLive;
         });
         if (shouldRestoreNativePreview && style != null) {
           await this._restoreNativeAssignPreviewOpacity(style);
@@ -362,6 +385,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignPreviewCircleHidden = false;
     _assignPreviewVeilHidden = false;
     _assignPreviewLabelHidden = false;
+    _assignVisualOwner = _AssignVisualOwner.nativeLive;
     _closingAssignMarker = false;
     _suspendCompassForAssign();
     _assignScreenCenter = existing != null
@@ -408,15 +432,29 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     if (!_isAssigning) return;
     final wasActive = _assignFlutterPreviewActive;
     _assignFlutterPreviewActive = true;
-    if (!wasActive && mounted) setState(() {});
+    if (wasActive) {
+      _assignVisualOwner = _AssignVisualOwner.flutterPreview;
+      return;
+    }
+    _assignVisualOwner = _AssignVisualOwner.transitionPending;
     final style = _controller?.style;
-    if (style == null) return;
-    unawaited(this._hideNativeAssignVisualForPreview(style, reason));
-    if (!wasActive) {
+    if (style == null) {
+      _assignVisualOwner = _AssignVisualOwner.flutterPreview;
+      if (mounted) setState(() {});
       DebugConsole.log(
         'FLUTTER_PREVIEW_START: reason=$reason ${_assignDebugState()}',
       );
+      return;
     }
+    unawaited(() async {
+      await this._hideNativeAssignVisualForPreview(style, reason);
+      if (!mounted || !_isAssigning || !_assignFlutterPreviewActive) return;
+      _assignVisualOwner = _AssignVisualOwner.flutterPreview;
+      setState(() {});
+      DebugConsole.log(
+        'FLUTTER_PREVIEW_START: reason=$reason ${_assignDebugState()}',
+      );
+    }());
   }
 
   Future<void> _hideNativeAssignVisualForPreview(
@@ -441,10 +479,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       );
       _assignPreviewCircleHidden = true;
     }
-    final shouldHideLabel = _assignExisting == null || _assignNativeHidden;
-    if (id != null &&
-        shouldHideLabel &&
-        (force || !_assignPreviewLabelHidden)) {
+    if (id != null && (force || !_assignPreviewLabelHidden)) {
       final hidden = await this._setNativeLayerPaintProperty(
         style,
         layerId: 'radius-label-$id',
@@ -474,6 +509,15 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     }
   }
 
+  void _refreshNativePreviewHiddenState(String reason) {
+    if (!_assignFlutterPreviewActive) return;
+    final style = _controller?.style;
+    if (style == null) return;
+    unawaited(
+      this._hideNativeAssignVisualForPreview(style, reason, force: true),
+    );
+  }
+
   Future<void> _stopAssignFlutterPreview({required String reason}) async {
     if (!_assignFlutterPreviewActive &&
         !_assignPreviewCircleHidden &&
@@ -486,32 +530,51 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       await this._restoreNativeAssignPreviewOpacity(style);
     }
     _assignFlutterPreviewActive = false;
+    _assignVisualOwner = _AssignVisualOwner.nativeLive;
     if (mounted && _isAssigning) setState(() {});
     DebugConsole.log(
       'FLUTTER_PREVIEW_STOP: reason=$reason ${_assignDebugState()}',
     );
   }
 
-  Future<bool> _holdAssignFlutterPreviewForNativeHandoff({
+  Future<bool> _prepareFlutterPreviewNativeHandoff({
     required StyleController? style,
     required String reason,
   }) async {
-    final shouldHold = _assignFlutterPreviewActive;
     if (!_assignFlutterPreviewActive &&
         !_assignPreviewCircleHidden &&
         !_assignPreviewVeilHidden &&
         !_assignPreviewLabelHidden) {
       return false;
     }
-    if (style != null && shouldHold) {
+    _assignVisualOwner = _AssignVisualOwner.transitionPending;
+    if (style != null) {
       await this._hideNativeAssignVisualForPreview(style, reason, force: true);
-    } else if (style != null) {
-      await this._restoreNativeAssignPreviewOpacity(style);
     }
     DebugConsole.log(
-      'FLUTTER_PREVIEW_HANDOFF: reason=$reason hold=$shouldHold ${_assignDebugState()}',
+      'FLUTTER_PREVIEW_HANDOFF: reason=$reason stage=prepare ${_assignDebugState()}',
     );
-    return shouldHold;
+    return true;
+  }
+
+  Future<void> _completeFlutterPreviewNativeHandoff({
+    required StyleController? style,
+    required bool keepPreview,
+    required String reason,
+    Future<void>? nativeAck,
+  }) async {
+    if (!keepPreview || style == null) {
+      _assignVisualOwner = _AssignVisualOwner.nativeLive;
+      return;
+    }
+    await (nativeAck ?? this._waitForNativeRenderAck(reason: reason));
+    await this._restoreNativeAssignPreviewOpacity(style);
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    _assignVisualOwner = _AssignVisualOwner.nativeLive;
+    DebugConsole.log(
+      'FLUTTER_PREVIEW_HANDOFF: reason=$reason stage=native-visible ${_assignDebugState()}',
+    );
   }
 
   Future<void> _restoreNativeAssignPreviewOpacity(StyleController style) async {
@@ -727,7 +790,14 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       final canUpdateInPlace =
           wasExisting && !nativeWasHidden && style != null && _radiusLayerReady;
       if (canUpdateInPlace) {
-        final liveStyle = style!;
+        final liveStyle = style;
+        final keepPreview = await this._prepareFlutterPreviewNativeHandoff(
+          style: liveStyle,
+          reason: 'save-in-place',
+        );
+        final nativeAck = keepPreview
+            ? this._waitForNativeRenderAck(reason: 'save-in-place-native-flush')
+            : null;
         final circles = this._buildRadiusCircles(
           alarmProv,
           excludeEditing: false,
@@ -744,38 +814,49 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
             updateMarker: true,
           );
         }
+        if (keepPreview) {
+          await this._hideNativeAssignVisualForPreview(
+            liveStyle,
+            'save-in-place-native-flush',
+            force: true,
+          );
+        }
         _lastRadiusDataHash = this._radiusHash(circles);
         await this._flushVeilSync(
           ignoreAssign: true,
           fullQuality: true,
           reason: 'save-in-place',
         );
-        final keepPreview = await this
-            ._holdAssignFlutterPreviewForNativeHandoff(
-              style: liveStyle,
-              reason: 'save-in-place',
-            );
+        await this._completeFlutterPreviewNativeHandoff(
+          style: liveStyle,
+          keepPreview: keepPreview,
+          reason: 'save-in-place-native-flush',
+          nativeAck: nativeAck,
+        );
         await this._clearFastCircleLayer(liveStyle);
         _beginClosingAssignVisual(
           keepCircle: false,
-          keepPreview: keepPreview,
-          keepMarker: keepPreview && !wasExisting,
+          keepPreview: false,
+          keepMarker: false,
         );
-        _scheduleAssignVisualClear(
-          keepPreview
-              ? const Duration(milliseconds: 120)
-              : const Duration(milliseconds: 80),
-        );
+        _scheduleAssignVisualClear(Duration.zero);
         return;
       }
       final shouldRebuildNative =
           style != null &&
           _radiusLayerReady &&
           (!wasExisting || nativeWasHidden || visualChanged);
+      final keepPreview = await this._prepareFlutterPreviewNativeHandoff(
+        style: style,
+        reason: 'save',
+      );
+      final nativeAck = keepPreview
+          ? this._waitForNativeRenderAck(reason: 'save-native-flush')
+          : null;
       if (shouldRebuildNative) _lastRadiusDataHash = '';
       if (shouldRebuildNative) await this._ensureAssignMarkerBitmap();
       if (shouldRebuildNative) {
-        final liveStyle = style!;
+        final liveStyle = style;
         final circles = this._buildRadiusCircles(
           alarmProv,
           excludeEditing: false,
@@ -804,7 +885,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           fullQuality: true,
           reason: 'save-rebuild',
         );
-        if (_assignFlutterPreviewActive) {
+        if (keepPreview) {
           await this._hideNativeAssignVisualForPreview(
             liveStyle,
             'save-rebuild-native-ready',
@@ -812,25 +893,19 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           );
         }
       }
-      // Wait for MapLibre to render native marker before hiding overlay pin
-      if (shouldRebuildNative) {
-        await Future.delayed(const Duration(milliseconds: 150));
-      }
-      final keepPreview = await this._holdAssignFlutterPreviewForNativeHandoff(
+      await this._completeFlutterPreviewNativeHandoff(
         style: style,
-        reason: 'save',
+        keepPreview: keepPreview,
+        reason: 'save-native-flush',
+        nativeAck: nativeAck,
       );
       _beginClosingAssignVisual(
         keepCircle: false,
-        keepPreview: keepPreview,
-        keepMarker: keepPreview && !wasExisting,
+        keepPreview: false,
+        keepMarker: false,
       );
       _finishClosingAssignCircle();
-      _scheduleAssignVisualClear(
-        keepPreview
-            ? const Duration(milliseconds: 120)
-            : const Duration(milliseconds: 80),
-      );
+      _scheduleAssignVisualClear(Duration.zero);
     } finally {
       _suppressRadiusSync = false;
     }

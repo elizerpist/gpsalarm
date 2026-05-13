@@ -8,7 +8,9 @@ extension _MaplibreAssignMarker on _MaplibreNewViewState {
       _isAssigning &&
       _useNativeAssignCircle &&
       _assignExisting != null &&
-      !_assignNativeHidden;
+      !_assignNativeHidden &&
+      _assignVisualOwner == _AssignVisualOwner.nativeLive &&
+      !_assignFlutterPreviewActive;
 
   String _assignMarkerLabel() {
     if (_assignTriggerType == TriggerType.time)
