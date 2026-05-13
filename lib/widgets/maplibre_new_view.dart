@@ -99,6 +99,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   bool _closingAssignCircle = false;
   bool _assignNativeHidden = false;
   bool _assignOverlayActivating = false;
+  bool _assignFlutterPreviewActive = false;
   Timer? _assignVisualClearTimer;
   final Map<String, Uint8List> _markerBitmapCache = {};
   final Map<String, Size> _markerSizeCache = {};
@@ -642,6 +643,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   } else {
                     _assignTimeMinutes = (dist * 0.3).clamp(5.0, 120.0).round();
                   }
+                  this._startAssignFlutterPreview(reason: 'longpress-move');
                   _dragLogCounter++;
                   final radiusPx = this._currentRadiusPx;
                   _radiusNotifier.value = radiusPx;
@@ -1013,6 +1015,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                     _isDraggingRadius = true;
                     _dragLogCounter = 0;
                     _lastOverlayMoveAt = DateTime.now();
+                    this._startAssignFlutterPreview(reason: 'overlay-down');
                   }
                 },
                 onPointerMove: (e) {
@@ -1028,6 +1031,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   } else {
                     _assignTimeMinutes = (dist * 0.3).clamp(5.0, 120.0).round();
                   }
+                  this._startAssignFlutterPreview(reason: 'overlay-move');
                   _dragLogCounter++;
                   final now = DateTime.now();
                   final deltaMs = _lastOverlayMoveAt == null
@@ -1071,9 +1075,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                 },
                 child: CustomPaint(
                   painter:
-                      !_useNativeAssignCircle &&
+                      ((_assignFlutterPreviewActive && _isAssigning) ||
+                              !_useNativeAssignCircle) &&
                           _assignScreenCenter != null &&
-                          (this._showAssignOverlay || _closingAssignCircle)
+                          (_assignFlutterPreviewActive ||
+                              this._showAssignOverlay ||
+                              _closingAssignCircle)
                       ? _RadiusOverlayPainter(
                           center: _assignScreenCenter!,
                           radiusNotifier: _radiusNotifier,
@@ -1117,6 +1124,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
               onRadiusChanged: (v) {
                 _assignRadius = v;
                 _radiusNotifier.value = this._currentRadiusPx;
+                this._startAssignFlutterPreview(reason: 'card-radius');
                 _cardRadiusLogCounter++;
                 if (_shouldLogAssignFrame(_cardRadiusLogCounter)) {
                   DebugConsole.log(
@@ -1155,6 +1163,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
               onTimeChanged: (v) {
                 _assignTimeMinutes = v;
                 _radiusNotifier.value = this._currentRadiusPx;
+                this._startAssignFlutterPreview(reason: 'card-time');
                 _cardTimeLogCounter++;
                 if (_shouldLogAssignFrame(_cardTimeLogCounter)) {
                   DebugConsole.log(

@@ -42,6 +42,11 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       final existing = _assignExisting;
       final style = _controller?.style;
       final alarmProv = context.read<AlarmProvider>();
+      if (_assignFlutterPreviewActive && style != null) {
+        path = 'flutter-preview';
+        await this._syncAssignVeilWithOverlay(debugReason: debugReason);
+        return;
+      }
       if (_useNativeExistingAssignLayer && style != null) {
         path = 'existing-native';
         await this._updateExistingNativeAssignLayer(
@@ -207,6 +212,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignCardSyncTimer?.cancel();
     _assignCardSyncTimer = null;
     _assignCardSyncPending = false;
+    _assignFlutterPreviewActive = false;
     setState(() {
       _isAssigning = false;
       _closingAssignVisual = true;
@@ -269,6 +275,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignCardSyncTimer?.cancel();
     _assignCardSyncTimer = null;
     _assignCardSyncPending = false;
+    _assignFlutterPreviewActive = false;
     _suspendCompassForAssign();
     _closingAssignVisual = false;
     _assignScreenCenter = existing != null
@@ -309,6 +316,39 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       DebugConsole.log('ASSIGN_START: keeping native alarm visual during edit');
     }
     setState(() {});
+  }
+
+  void _startAssignFlutterPreview({required String reason}) {
+    if (_assignFlutterPreviewActive || !_isAssigning) return;
+    _assignFlutterPreviewActive = true;
+    if (mounted) setState(() {});
+    final style = _controller?.style;
+    final id = _assignNativeAlarmLayerId;
+    if (style != null && id != null) {
+      unawaited(this._hideNativeAssignCircleForPreview(style, id, reason));
+    }
+    DebugConsole.log(
+      'FLUTTER_PREVIEW_START: reason=$reason nativeLayer=$id ${_assignDebugState()}',
+    );
+  }
+
+  Future<void> _hideNativeAssignCircleForPreview(
+    StyleController style,
+    String id,
+    String reason,
+  ) async {
+    final sw = Stopwatch()..start();
+    _radiusCircleLayerKeys.remove(id);
+    try {
+      await style.removeLayer('radius-circle-$id');
+    } catch (_) {}
+    sw.stop();
+    if (sw.elapsedMilliseconds > 8) {
+      DebugConsole.log(
+        'FLUTTER_PREVIEW_HIDE_NATIVE: id=$id reason=$reason '
+        'ms=${sw.elapsedMilliseconds}',
+      );
+    }
   }
 
   Future<void> _cancelAssign({bool nativeAlreadySynced = false}) async {
