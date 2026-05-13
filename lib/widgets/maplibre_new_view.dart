@@ -779,21 +779,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                 ),
               ),
               const SizedBox(height: 8),
+              // Toggle raster/vector - single tap only
               GestureDetector(
                 onTap: () {
-                  // Single tap: cycle vector skin
-                  if (_isAssigning) this._cancelAssign();
-                  final settings = context.read<SettingsProvider>();
-                  final keys = _styleUrls.keys.toList();
-                  final currentKey = settings.settings.vectorStyleUrl;
-                  final idx = keys.indexOf(currentKey);
-                  final nextKey = keys[(idx + 1) % keys.length];
-                  settings.updateSettings(
-                    settings.settings.copyWith(vectorStyleUrl: nextKey),
-                  );
-                },
-                onLongPress: () {
-                  // Long tap: toggle raster/vector (with haptic)
                   final haptic = context
                       .read<SettingsProvider>()
                       .settings
@@ -832,68 +820,47 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   ),
                 ),
               ),
-              // 3D button — ejects from toggle button with spring animation
-              AnimatedBuilder(
-                animation: _3dButtonSlide,
-                builder: (context, child) {
-                  // Slide from 0 (overlapping toggle) to 1 (final position)
-                  final t = _3dButtonSlide.value;
-                  return Transform.translate(
-                    offset: Offset(
-                      0,
-                      (1 - t) * -52,
-                    ), // -52 = slide up from toggle position
-                    child: Opacity(opacity: t.clamp(0.0, 1.0), child: child),
+              const SizedBox(height: 8),
+              // Skin cycle - single tap
+              GestureDetector(
+                onTap: () {
+                  final haptic = context
+                      .read<SettingsProvider>()
+                      .settings
+                      .hapticFeedback;
+                  if (haptic) Vibration.vibrate(duration: 30);
+                  if (_isAssigning) this._cancelAssign();
+                  final settings = context.read<SettingsProvider>();
+                  final keys = _styleUrls.keys.toList();
+                  final currentKey = settings.settings.vectorStyleUrl;
+                  final idx = keys.indexOf(currentKey);
+                  final nextKey = keys[(idx + 1) % keys.length];
+                  settings.updateSettings(
+                    settings.settings.copyWith(vectorStyleUrl: nextKey),
                   );
                 },
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _set3DMode(enabled: !_is3D, compassFollow: true);
-                      });
-                    },
-                    onLongPress: () {
-                      final haptic = context
-                          .read<SettingsProvider>()
-                          .settings
-                          .hapticFeedback;
-                      if (haptic) Vibration.vibrate(duration: 30);
-                      setState(_toggle3DFixedMode);
-                    },
-                    child: Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: _is3D
-                            ? Theme.of(context).colorScheme.primary
-                            : (Theme.of(context).brightness == Brightness.dark
-                                  ? Colors.grey[900]!.withOpacity(0.92)
-                                  : Colors.white.withOpacity(0.92)),
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.15),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? Colors.grey[900]!.withOpacity(0.92)
+                        : Colors.white.withOpacity(0.92),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.15),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
                       ),
-                      child: Icon(
-                        _is3D && !_gpsFollow
-                            ? Icons.screen_rotation_alt
-                            : (_is3D
-                                  ? Icons.view_in_ar
-                                  : Icons.threed_rotation),
-                        color: _is3D
-                            ? Colors.white
-                            : (Theme.of(context).brightness == Brightness.dark
-                                  ? Colors.white
-                                  : Colors.grey[800]),
-                        size: 22,
-                      ),
-                    ),
+                    ],
+                  ),
+                  child: Icon(
+                    Icons.palette,
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? Colors.white
+                        : Colors.grey[800],
+                    size: 22,
                   ),
                 ),
               ),
@@ -912,7 +879,16 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
               searchActive: searchActive,
               myLocationIcon: Icons.my_location,
               onMyLocation: () => unawaited(_jumpToUserPosition()),
-              onMyLocationLongPress: () {
+              // 3D button - right side, above zoom
+              on3DTap: () => setState(
+                () => _set3DMode(enabled: !_is3D, compassFollow: true),
+              ),
+              icon3D: _is3D ? Icons.view_in_ar : Icons.threed_rotation,
+              icon3DColor: _is3D ? Colors.white : null,
+              bg3DColor: _is3D ? Theme.of(context).colorScheme.primary : null,
+              // Freeze button - shown when 3D is active
+              showFreeze: _is3D,
+              onFreezeTap: () {
                 final haptic = context
                     .read<SettingsProvider>()
                     .settings
@@ -920,6 +896,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                 if (haptic) Vibration.vibrate(duration: 30);
                 setState(_toggle3DFixedMode);
               },
+              iconFreeze: _gpsFollow ? Icons.lock_open : Icons.lock,
+              iconFreezeColor: !_gpsFollow ? Colors.white : null,
+              bgFreezeColor: !_gpsFollow
+                  ? Theme.of(context).colorScheme.primary
+                  : null,
             ),
           ),
         if (!_isAssigning)
