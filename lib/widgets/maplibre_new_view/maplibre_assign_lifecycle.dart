@@ -503,14 +503,14 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     if (style != null && nativeWasHidden)
       this._updateVeil(style, alarmProv, ignoreAssign: true);
     if (style != null) await this._clearFastCircleLayer(style);
-    final keepOverlayForCancel = shouldRebuildNative && !previewWasReady;
+    final keepMarkerForCancel = shouldRebuildNative && !previewWasReady;
     _beginClosingAssignVisual(
-      keepCircle: keepOverlayForCancel,
-      forceKeepVisual: keepOverlayForCancel,
+      keepCircle: false,
+      forceKeepVisual: keepMarkerForCancel,
     );
 
     _scheduleAssignVisualClear(
-      keepOverlayForCancel
+      keepMarkerForCancel
           ? const Duration(milliseconds: 300)
           : const Duration(milliseconds: 80),
     );
@@ -641,15 +641,15 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         DebugConsole.log('SAVE_FLOW: updateVeil ignoreAssign=true');
         this._updateVeil(liveStyle, alarmProv, ignoreAssign: true);
       }
-      final keepOverlayForHandoff = shouldRebuildNative && !previewWasReady;
+      final keepMarkerForHandoff = shouldRebuildNative && !previewWasReady;
       DebugConsole.log(
-        'SAVE_FLOW: beginClosingAssignVisual keepCircle=$keepOverlayForHandoff forceKeep=$keepOverlayForHandoff previewWasReady=$previewWasReady',
+        'SAVE_FLOW: beginClosingAssignVisual keepCircle=false forceKeep=$keepMarkerForHandoff previewWasReady=$previewWasReady',
       );
       _beginClosingAssignVisual(
-        keepCircle: keepOverlayForHandoff,
-        forceKeepVisual: keepOverlayForHandoff,
+        keepCircle: false,
+        forceKeepVisual: keepMarkerForHandoff,
       );
-      final clearDelay = keepOverlayForHandoff
+      final clearDelay = keepMarkerForHandoff
           ? const Duration(milliseconds: 300)
           : const Duration(milliseconds: 80);
       DebugConsole.log(
