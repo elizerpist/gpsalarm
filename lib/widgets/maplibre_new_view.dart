@@ -493,10 +493,26 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   int _radiusLayerVersion = 0;
   Timer? _radiusDebounce;
   int _dragLogCounter = 0;
+  int _assignSyncSeq = 0;
+  int _assignSyncSkipCount = 0;
+  int _veilUpdateSeq = 0;
+  DateTime? _lastOverlayMoveAt;
   String _lastRadiusDataHash = ''; // skip rebuild if alarm data unchanged
   bool _suppressRadiusSync = false;
   final Map<String, bool> _alarmInsideState = {};
   bool get _useNativeAssignCircle => true;
+
+  bool _shouldLogAssignFrame(int frame) => frame <= 3 || frame % 15 == 0;
+
+  String _assignDebugState() {
+    final zoom = _controller?.camera?.zoom ?? _currentZoom;
+    return 'existing=${_assignExisting?.id} nativeHidden=$_assignNativeHidden '
+        'overlay=$_showAssignOverlay nativeExisting=$_useNativeExistingAssignLayer '
+        'trigger=${_assignTriggerType.name} zone=${_assignZoneTrigger.name} '
+        'active=$_assignActive r=${_assignRadius.round()}m '
+        'px=${_radiusNotifier.value.toStringAsFixed(1)} '
+        'zoom=${zoom.toStringAsFixed(2)}';
+  }
 
   Position? _cachedUserPosition() {
     final cached = _userPos;
@@ -571,6 +587,15 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   final geo = _controller?.toLngLatSync(
                     details.localPosition * dpr,
                   );
+                  DebugConsole.log(
+                    'LONGPRESS_START: pos=${details.localPosition} dpr=${dpr.toStringAsFixed(2)} '
+                    'geo=${geo?.lat.toStringAsFixed(6)},${geo?.lng.toStringAsFixed(6)} '
+                    'zoom=${_currentZoom.toStringAsFixed(2)} '
+                    'mpp=${_vectorMetersPerPx(geo?.lat.toDouble() ?? 0.0, _currentZoom).toStringAsFixed(2)} '
+                    'useNative=$_useNativeAssignCircle',
+                  );
+                  _dragLogCounter = 0;
+                  _lastOverlayMoveAt = DateTime.now();
                   if (geo != null) {
                     unawaited(
                       this._startAssign(geo.lat.toDouble(), geo.lng.toDouble()),
@@ -597,15 +622,31 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   } else {
                     _assignTimeMinutes = (dist * 0.3).clamp(5.0, 120.0).round();
                   }
-                  _radiusNotifier.value = this._currentRadiusPx;
+                  _dragLogCounter++;
+                  final radiusPx = this._currentRadiusPx;
+                  _radiusNotifier.value = radiusPx;
                   if (_useNativeAssignCircle)
-                    unawaited(this._activateAssignOverlay());
+                    unawaited(
+                      this._activateAssignOverlay(
+                        debugReason: 'longpress#$_dragLogCounter',
+                      ),
+                    );
                   this._refreshAssignMarker();
+                  if (_shouldLogAssignFrame(_dragLogCounter)) {
+                    DebugConsole.log(
+                      'LONGPRESS_MOVE: frame=$_dragLogCounter dist=${dist.round()} '
+                      'r=${_assignRadius.round()}m px=${radiusPx.toStringAsFixed(1)} '
+                      '${_assignDebugState()}',
+                    );
+                  }
                   setState(() {});
                 },
           onLongPressEnd: !_isAssigning
               ? null
               : (details) {
+                  DebugConsole.log(
+                    'LONGPRESS_END: frames=$_dragLogCounter ${_assignDebugState()}',
+                  );
                   _isDraggingRadius = false;
                 },
           child: MapLibreMap(
@@ -938,12 +979,15 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                       (e.localPosition - _assignScreenCenter!).distance;
                   final radiusPx = _radiusNotifier.value;
                   DebugConsole.log(
-                    'OVERLAY_DOWN: pos=${e.localPosition} center=$_assignScreenCenter dist=${dist.round()} radiusPx=${radiusPx.round()} inside=${dist <= radiusPx * 1.5}',
+                    'OVERLAY_DOWN: pos=${e.localPosition} center=$_assignScreenCenter '
+                    'dist=${dist.round()} radiusPx=${radiusPx.round()} '
+                    'inside=${dist <= radiusPx * 1.5} ${_assignDebugState()}',
                   );
                   if (dist <= radiusPx * 1.5) {
                     _dragPointerId = e.pointer;
                     _isDraggingRadius = true;
                     _dragLogCounter = 0;
+                    _lastOverlayMoveAt = DateTime.now();
                   }
                 },
                 onPointerMove: (e) {
@@ -959,17 +1003,37 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   } else {
                     _assignTimeMinutes = (dist * 0.3).clamp(5.0, 120.0).round();
                   }
-                  unawaited(this._activateAssignOverlay());
+                  _dragLogCounter++;
+                  final now = DateTime.now();
+                  final deltaMs = _lastOverlayMoveAt == null
+                      ? 0
+                      : now.difference(_lastOverlayMoveAt!).inMilliseconds;
+                  _lastOverlayMoveAt = now;
+                  unawaited(
+                    this._activateAssignOverlay(
+                      debugReason: 'overlay#$_dragLogCounter',
+                    ),
+                  );
                   // Update overlay circle instantly (no widget rebuild)
-                  _radiusNotifier.value = this._currentRadiusPx;
+                  final radiusPx = this._currentRadiusPx;
+                  _radiusNotifier.value = radiusPx;
                   this._refreshAssignMarker();
+                  if (_shouldLogAssignFrame(_dragLogCounter)) {
+                    DebugConsole.log(
+                      'OVERLAY_MOVE: frame=$_dragLogCounter dt=${deltaMs}ms '
+                      'dist=${dist.round()} r=${_assignRadius.round()}m '
+                      'px=${radiusPx.toStringAsFixed(1)} ${_assignDebugState()}',
+                    );
+                  }
                   // Sync slider in AlarmCard (setState only rebuilds card, not overlay)
                   setState(() {});
                 },
                 onPointerUp: (e) {
                   if (!_isAssigning) return;
                   DebugConsole.log(
-                    'OVERLAY_UP: pointer=${e.pointer} dragPointer=$_dragPointerId isDragging=$_isDraggingRadius',
+                    'OVERLAY_UP: pointer=${e.pointer} dragPointer=$_dragPointerId '
+                    'isDragging=$_isDraggingRadius frames=$_dragLogCounter '
+                    '${_assignDebugState()}',
                   );
                   if (e.pointer != _dragPointerId) return;
                   _isDraggingRadius = false;
@@ -1022,28 +1086,55 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
               radius: _assignRadius,
               onRadiusChanged: (v) {
                 setState(() => _assignRadius = v);
-                unawaited(this._activateAssignOverlay());
                 _radiusNotifier.value = this._currentRadiusPx;
+                DebugConsole.log(
+                  'CARD_RADIUS: r=${_assignRadius.round()}m ${_assignDebugState()}',
+                );
+                unawaited(
+                  this._activateAssignOverlay(debugReason: 'card-radius'),
+                );
                 this._refreshAssignMarker();
               },
               onZoneTriggerChanged: (v) {
                 setState(() => _assignZoneTrigger = v);
-                unawaited(this._activateAssignOverlay());
+                DebugConsole.log('CARD_ZONE: ${v.name} ${_assignDebugState()}');
+                unawaited(this._activateAssignOverlay(debugReason: 'card-zone'));
               },
               onTriggerTypeChanged: (v) {
                 setState(() => _assignTriggerType = v);
-                unawaited(this._activateAssignOverlay(updateMarker: true));
+                DebugConsole.log(
+                  'CARD_TRIGGER: ${v.name} ${_assignDebugState()}',
+                );
+                unawaited(
+                  this._activateAssignOverlay(
+                    updateMarker: true,
+                    debugReason: 'card-trigger',
+                  ),
+                );
                 this._refreshAssignMarker();
               },
               onTimeChanged: (v) {
                 setState(() => _assignTimeMinutes = v);
-                unawaited(this._activateAssignOverlay());
                 _radiusNotifier.value = this._currentRadiusPx;
+                DebugConsole.log(
+                  'CARD_TIME: ${_assignTimeMinutes}min ${_assignDebugState()}',
+                );
+                unawaited(
+                  this._activateAssignOverlay(debugReason: 'card-time'),
+                );
                 this._refreshAssignMarker();
               },
               onActiveChanged: (v) {
                 setState(() => _assignActive = v);
-                unawaited(this._activateAssignOverlay(updateMarker: true));
+                DebugConsole.log(
+                  'CARD_ACTIVE: $_assignActive ${_assignDebugState()}',
+                );
+                unawaited(
+                  this._activateAssignOverlay(
+                    updateMarker: true,
+                    debugReason: 'card-active',
+                  ),
+                );
                 this._refreshAssignMarker();
               },
               onSave: (alarm) => this._saveAssign(alarm),

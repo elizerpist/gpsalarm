@@ -161,15 +161,39 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     _RadiusCircleData circle, {
     bool updateMarker = false,
   }) async {
+    final sw = Stopwatch()..start();
+    var markerMs = 0;
+    var sourceMs = 0;
+    var layerMs = 0;
     if (updateMarker || !_radiusPointImageIds.containsKey(circle.id)) {
+      final markerSw = Stopwatch()..start();
       await this._syncRadiusMarkerImage(style, circle);
+      markerSw.stop();
+      markerMs = markerSw.elapsedMilliseconds;
     }
+    final sourceSw = Stopwatch()..start();
     await style.updateGeoJsonSource(
       id: 'radius-pt-${circle.id}',
       data: _radiusPointSourceGeoJson(circle),
     );
+    sourceSw.stop();
+    sourceMs = sourceSw.elapsedMilliseconds;
     if (_radiusVisualIds.contains(circle.id)) {
+      final layerSw = Stopwatch()..start();
       await this._ensureRadiusCircleLayer(style, circle);
+      layerSw.stop();
+      layerMs = layerSw.elapsedMilliseconds;
+    }
+    sw.stop();
+    if ((_isAssigning && _shouldLogAssignFrame(_assignSyncSeq)) ||
+        sw.elapsedMilliseconds > 12 ||
+        updateMarker) {
+      DebugConsole.log(
+        'RADIUS_SRC_SYNC: id=${circle.id} r=${circle.radiusMeters.round()}m '
+        'leave=${circle.isLeave} active=${circle.active} marker=$updateMarker '
+        'ms=${sw.elapsedMilliseconds} markerMs=$markerMs sourceMs=$sourceMs '
+        'layerMs=$layerMs visual=${_radiusVisualIds.contains(circle.id)}',
+      );
     }
   }
 
@@ -178,13 +202,33 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     AlarmProvider alarmProv, {
     bool updateMarker = false,
   }) async {
+    final sw = Stopwatch()..start();
     final circle = this._currentAssignCircle(alarmProv);
-    if (circle == null) return;
+    if (circle == null) {
+      DebugConsole.log(
+        'EXISTING_ASSIGN_SYNC: missing circle updateMarker=$updateMarker ${_assignDebugState()}',
+      );
+      return;
+    }
+    final logThis = _shouldLogAssignFrame(_assignSyncSeq) || updateMarker;
+    if (logThis) {
+      DebugConsole.log(
+        'EXISTING_ASSIGN_SYNC_START: id=${circle.id} r=${circle.radiusMeters.round()}m '
+        'leave=${circle.isLeave} marker=$updateMarker ${_assignDebugState()}',
+      );
+    }
     await this._updateRadiusCircleSources(
       style,
       circle,
       updateMarker: updateMarker,
     );
+    sw.stop();
+    if (logThis || sw.elapsedMilliseconds > 12) {
+      DebugConsole.log(
+        'EXISTING_ASSIGN_SYNC_DONE: id=${circle.id} ms=${sw.elapsedMilliseconds} '
+        '${_assignDebugState()}',
+      );
+    }
   }
 
   Future<void> _removeRadiusVisual(

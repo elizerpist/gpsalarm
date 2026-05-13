@@ -23,6 +23,7 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
   }
 
   Future<void> _updateFastCircleLayer(StyleController style) async {
+    final sw = Stopwatch()..start();
     final isTime = _assignTriggerType == TriggerType.time;
     double radius = _assignRadius;
     if (isTime) {
@@ -42,6 +43,14 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
           isLeave: _assignZoneTrigger == ZoneTrigger.onLeave,
         ));
       } catch (_) {}
+      sw.stop();
+      if (_shouldLogAssignFrame(_assignSyncSeq) || sw.elapsedMilliseconds > 12) {
+        DebugConsole.log(
+          'FAST_CIRCLE_SYNC: mode=draft id=$draftId r=${radius.round()}m '
+          'leave=${_assignZoneTrigger == ZoneTrigger.onLeave} '
+          'ms=${sw.elapsedMilliseconds} ${_assignDebugState()}',
+        );
+      }
       return;
     }
 
@@ -68,9 +77,18 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
         isLeave: _assignZoneTrigger == ZoneTrigger.onLeave,
       ));
     } catch (_) {}
+    sw.stop();
+    if (_shouldLogAssignFrame(_assignSyncSeq) || sw.elapsedMilliseconds > 12) {
+      DebugConsole.log(
+        'FAST_CIRCLE_SYNC: mode=fast r=${radius.round()}m '
+        'leave=${_assignZoneTrigger == ZoneTrigger.onLeave} '
+        'ms=${sw.elapsedMilliseconds} ${_assignDebugState()}',
+      );
+    }
   }
 
   Future<void> _clearFastCircleLayer(StyleController style) async {
+    final sw = Stopwatch()..start();
     try {
       await style.removeLayer('fast-circle');
     } catch (_) {}
@@ -78,5 +96,9 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
     try {
       await style.updateGeoJsonSource(id: 'fast-pt-src', data: _emptyGeoJson);
     } catch (_) {}
+    sw.stop();
+    if (sw.elapsedMilliseconds > 8) {
+      DebugConsole.log('FAST_CIRCLE_CLEAR: ms=${sw.elapsedMilliseconds}');
+    }
   }
 }

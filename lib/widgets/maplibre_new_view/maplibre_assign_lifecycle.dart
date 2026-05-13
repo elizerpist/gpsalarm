@@ -12,16 +12,35 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         previous.timeTrigger != next.timeTrigger;
   }
 
-  Future<void> _activateAssignOverlay({bool updateMarker = false}) async {
-    if (!_isAssigning) return;
-    if (_assignOverlayActivating) return;
+  Future<void> _activateAssignOverlay({
+    bool updateMarker = false,
+    String debugReason = 'unspecified',
+  }) async {
+    final seq = ++_assignSyncSeq;
+    if (!_isAssigning) {
+      DebugConsole.log('ASSIGN_SYNC_DROP: seq=$seq reason=$debugReason notAssigning');
+      return;
+    }
+    if (_assignOverlayActivating) {
+      _assignSyncSkipCount++;
+      if (_assignSyncSkipCount <= 5 || _assignSyncSkipCount % 15 == 0) {
+        DebugConsole.log(
+          'ASSIGN_SYNC_SKIP: seq=$seq reason=$debugReason '
+          'skips=$_assignSyncSkipCount ${_assignDebugState()}',
+        );
+      }
+      return;
+    }
     _assignOverlayActivating = true;
+    final sw = Stopwatch()..start();
+    var path = 'overlay';
     try {
       _radiusNotifier.value = this._currentRadiusPx;
       final existing = _assignExisting;
       final style = _controller?.style;
       final alarmProv = context.read<AlarmProvider>();
       if (_useNativeExistingAssignLayer && style != null) {
+        path = 'existing-native';
         await this._updateExistingNativeAssignLayer(
           style,
           alarmProv,
@@ -32,6 +51,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       }
       var needsState = false;
       if (!_assignNativeHidden) {
+        path = 'hide-native-overlay';
         _assignNativeHidden = true;
         needsState = true;
         if (existing != null) {
@@ -39,11 +59,20 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         }
       }
       if (_useNativeAssignCircle && style != null) {
+        path = 'fast-native';
         await this._updateFastCircleLayer(style);
       }
       if (style != null) this._updateVeil(style, alarmProv);
       if (needsState && mounted) setState(() {});
     } finally {
+      sw.stop();
+      if (_shouldLogAssignFrame(seq) || sw.elapsedMilliseconds > 12) {
+        DebugConsole.log(
+          'ASSIGN_SYNC_DONE: seq=$seq reason=$debugReason path=$path '
+          'ms=${sw.elapsedMilliseconds} marker=$updateMarker '
+          '${_assignDebugState()}',
+        );
+      }
       _assignOverlayActivating = false;
     }
   }
@@ -142,7 +171,11 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _radiusNotifier.value = this._currentRadiusPx;
     this._refreshAssignMarker();
     DebugConsole.log(
-      'ASSIGN_START: lat=$lat lng=$lng existing=${existing?.id} screenCenter=$_assignScreenCenter radiusPx=${this._currentRadiusPx.toStringAsFixed(1)} radiusM=$_assignRadius',
+      'ASSIGN_START: lat=$lat lng=$lng existing=${existing?.id} '
+      'screenCenter=$_assignScreenCenter nativeLayer=$_assignNativeAlarmLayerId '
+      'radiusPx=${this._currentRadiusPx.toStringAsFixed(1)} radiusM=$_assignRadius '
+      'trigger=${_assignTriggerType.name} zone=${_assignZoneTrigger.name} '
+      'useNative=$_useNativeAssignCircle nativeHidden=$_assignNativeHidden',
     );
     final style = _controller?.style;
     if (style != null && _showAssignOverlay) {

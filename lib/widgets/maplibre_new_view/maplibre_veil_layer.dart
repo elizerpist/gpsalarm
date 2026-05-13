@@ -2,6 +2,8 @@ part of '../maplibre_new_view.dart';
 
 extension _MaplibreVeilLayer on _MaplibreNewViewState {
   void _updateVeil(StyleController style, AlarmProvider alarmProv, {bool ignoreAssign = false}) {
+    final sw = Stopwatch()..start();
+    final seq = ++_veilUpdateSeq;
     final useLiveAssignHole = !ignoreAssign &&
         _isAssigning &&
         _assignActive &&
@@ -25,6 +27,14 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
 
     if (leaveAlarms.isEmpty && !hasFastLeave) {
       try { style.updateGeoJsonSource(id: 'veil-src', data: _emptyGeoJson); } catch (_) {}
+      sw.stop();
+      if (_isAssigning &&
+          (_shouldLogAssignFrame(_assignSyncSeq) || sw.elapsedMilliseconds > 8)) {
+        DebugConsole.log(
+          'VEIL_SYNC: seq=$seq empty=true ms=${sw.elapsedMilliseconds} '
+          'ignore=$ignoreAssign live=$useLiveAssignHole leaves=0 ${_assignDebugState()}',
+        );
+      }
       return;
     }
 
@@ -69,5 +79,14 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
         }),
       );
     } catch (_) {}
+    sw.stop();
+    if ((_isAssigning && _shouldLogAssignFrame(_assignSyncSeq)) ||
+        sw.elapsedMilliseconds > 8) {
+      DebugConsole.log(
+        'VEIL_SYNC: seq=$seq empty=false ms=${sw.elapsedMilliseconds} '
+        'ignore=$ignoreAssign live=$useLiveAssignHole leaves=${leaveAlarms.length} '
+        'fastLeave=$hasFastLeave holes=${holes.length} ${_assignDebugState()}',
+      );
+    }
   }
 }
