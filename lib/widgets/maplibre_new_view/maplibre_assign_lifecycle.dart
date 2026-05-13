@@ -12,6 +12,95 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         previous.timeTrigger != next.timeTrigger;
   }
 
+  _RadiusCircleData? _currentAssignNativeVisualCircle(AlarmProvider alarmProv) {
+    if (_assignExisting != null) {
+      return this._currentAssignCircle(alarmProv);
+    }
+    final id = _assignNativeAlarmLayerId;
+    if (id == null) return null;
+    final isTime = _assignTriggerType == TriggerType.time;
+    final radius = isTime
+        ? math.max(200.0, (_speedKmh / 3.6) * _assignTimeMinutes * 60)
+        : _assignRadius;
+    return (
+      id: id,
+      lng: _assignLng,
+      lat: _assignLat,
+      radiusMeters: radius,
+      active: _assignActive,
+      isTime: isTime,
+      isLeave: _assignZoneTrigger == ZoneTrigger.onLeave,
+    );
+  }
+
+  Future<void> _applyAssignRadiusPaint({required String debugReason}) async {
+    if (!_isAssigning ||
+        !_useNativeAssignCircle ||
+        _assignFlutterPreviewActive) {
+      return;
+    }
+    final style = _controller?.style;
+    if (style == null) return;
+    final circle = this._currentAssignNativeVisualCircle(
+      context.read<AlarmProvider>(),
+    );
+    if (circle == null) return;
+    if (!_radiusVisualIds.contains(circle.id) &&
+        !_radiusCircleLayerKeys.containsKey(circle.id)) {
+      return;
+    }
+    await this._setCircleLayerRadiusPaint(
+      style,
+      layerId: 'radius-circle-${circle.id}',
+      visualId: circle.id,
+      radiusPx: this._radiusPxForCircle(circle),
+      debugReason: 'immediate:$debugReason',
+    );
+  }
+
+  void _syncAssignRadiusPaintImmediate({required String debugReason}) {
+    _assignRadiusPaintSyncReason = debugReason;
+    if (_assignRadiusPaintSyncActive) {
+      _assignRadiusPaintSyncPending = true;
+      return;
+    }
+    _assignRadiusPaintSyncActive = true;
+    final drain = () async {
+      try {
+        while (mounted && _isAssigning) {
+          final reason = _assignRadiusPaintSyncReason ?? debugReason;
+          _assignRadiusPaintSyncReason = null;
+          _assignRadiusPaintSyncPending = false;
+          await this._applyAssignRadiusPaint(debugReason: reason);
+          if (!_assignRadiusPaintSyncPending) break;
+        }
+      } finally {
+        _assignRadiusPaintSyncActive = false;
+        if (mounted && _isAssigning && _assignRadiusPaintSyncPending) {
+          _assignRadiusPaintSyncPending = false;
+          final reason = _assignRadiusPaintSyncReason ?? debugReason;
+          _assignRadiusPaintSyncReason = null;
+          this._syncAssignRadiusPaintImmediate(debugReason: reason);
+        }
+      }
+    }();
+    _assignRadiusPaintSyncDrain = drain;
+    unawaited(
+      drain.whenComplete(() {
+        if (identical(_assignRadiusPaintSyncDrain, drain)) {
+          _assignRadiusPaintSyncDrain = null;
+        }
+      }),
+    );
+  }
+
+  Future<void> _flushAssignRadiusPaintSync() async {
+    _assignRadiusPaintSyncPending = false;
+    _assignRadiusPaintSyncReason = null;
+    final drain = _assignRadiusPaintSyncDrain;
+    if (drain != null) await drain;
+  }
+
   Future<void> _activateAssignOverlay({
     bool updateMarker = false,
     bool radiusOnly = false,
@@ -211,7 +300,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     if (_assignVisualOwner == _AssignVisualOwner.nativeLive &&
         !_assignFlutterPreviewActive) {
       await this._flushVeilSync(
-        fullQuality: true,
+        fullQuality: false,
         reason: 'assign-overlay:$debugReason',
       );
     }
@@ -271,6 +360,8 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     if (style == null) return;
     final id = 'alarm-$index';
     _radiusCircleLayerKeys.remove(id);
+    _radiusPaintOverrideIds.remove(id);
+    _radiusPaintOverrideTokens.remove(id);
     try {
       await style.removeLayer('radius-circle-$id');
     } catch (_) {}
@@ -291,6 +382,8 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignOverlayPendingMarker = false;
     _assignOverlayPendingRadiusOnly = false;
     _assignOverlayPendingReason = null;
+    _assignRadiusPaintSyncPending = false;
+    _assignRadiusPaintSyncReason = null;
     _veilSyncTimer?.cancel();
     _veilSyncTimer = null;
     _veilSyncRequested = false;
@@ -391,6 +484,8 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignOverlayPending = false;
     _assignOverlayPendingMarker = false;
     _assignOverlayPendingReason = null;
+    _assignRadiusPaintSyncPending = false;
+    _assignRadiusPaintSyncReason = null;
     _veilSyncTimer?.cancel();
     _veilSyncTimer = null;
     _veilSyncRequested = false;
@@ -624,6 +719,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     DebugConsole.log(
       'CANCEL_ASSIGN: isAssigning=$_isAssigning existing=${_assignExisting?.id}',
     );
+    await this._flushAssignRadiusPaintSync();
     final previousSuppress = _suppressRadiusSync;
     _suppressRadiusSync = true;
     _radiusDebounce?.cancel();
@@ -765,6 +861,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     DebugConsole.log(
       'SAVE_ASSIGN: existing=${_assignExisting?.id} lat=${effectiveAlarm.latitude} lng=${effectiveAlarm.longitude} r=${effectiveAlarm.radiusMeters.round()}m',
     );
+    await this._flushAssignRadiusPaintSync();
     _suppressRadiusSync = true;
     final alarmProv = context.read<AlarmProvider>();
     try {
@@ -835,7 +932,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         if (circle != null) {
           this._scheduleCircleLayerRadiusExpressionRestore(
             liveStyle,
-            circle.id,
+            circle,
           );
         }
         await this._clearFastCircleLayer(liveStyle);
@@ -912,7 +1009,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       if (promotedCircle != null && style != null) {
         this._scheduleCircleLayerRadiusExpressionRestore(
           style,
-          promotedCircle.id,
+          promotedCircle,
         );
       }
       _beginClosingAssignVisual(

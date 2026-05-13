@@ -115,6 +115,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   final Map<String, String> _radiusCircleLayerKeys = {};
   final Set<String> _radiusVisualIds = {};
   final Set<String> _radiusPaintOverrideIds = {};
+  final Map<String, int> _radiusPaintOverrideTokens = {};
+  int _radiusPaintOverrideTokenSeq = 0;
   bool? _nativeCircleRadiusPaintAvailable;
   String? _fastCircleLayerKey;
   // Overlay radius notifier — drives CustomPainter repaint without setState
@@ -595,6 +597,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   bool _assignOverlaySyncMarker = false;
   bool _assignOverlaySyncRadiusOnly = false;
   String? _assignOverlaySyncReason;
+  bool _assignRadiusPaintSyncActive = false;
+  bool _assignRadiusPaintSyncPending = false;
+  String? _assignRadiusPaintSyncReason;
+  Future<void>? _assignRadiusPaintSyncDrain;
   Timer? _assignCardSyncTimer;
   bool _assignCardSyncPending = false;
   DateTime? _lastOverlayMoveAt;
@@ -727,11 +733,15 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   _dragLogCounter++;
                   final radiusPx = this._currentRadiusPx;
                   _radiusNotifier.value = radiusPx;
-                  if (_useNativeAssignCircle && !_assignFlutterPreviewActive)
+                  if (_useNativeAssignCircle && !_assignFlutterPreviewActive) {
+                    this._syncAssignRadiusPaintImmediate(
+                      debugReason: 'longpress#$_dragLogCounter',
+                    );
                     this._scheduleAssignOverlaySync(
                       radiusOnly: true,
                       debugReason: 'longpress#$_dragLogCounter',
                     );
+                  }
                   if (_dragLogCounter == 1 || _dragLogCounter % 10 == 0) {
                     this._refreshAssignMarker();
                   }
@@ -1030,6 +1040,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   final radiusPx = this._currentRadiusPx;
                   _radiusNotifier.value = radiusPx;
                   if (!_assignFlutterPreviewActive) {
+                    this._syncAssignRadiusPaintImmediate(
+                      debugReason: 'overlay#$_dragLogCounter',
+                    );
                     this._scheduleAssignOverlaySync(
                       radiusOnly: true,
                       debugReason: 'overlay#$_dragLogCounter',
@@ -1126,6 +1139,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   );
                 }
                 if (!_assignFlutterPreviewActive) {
+                  this._syncAssignRadiusPaintImmediate(
+                    debugReason: 'card-radius#$_cardRadiusLogCounter',
+                  );
                   this._scheduleAssignOverlaySync(
                     radiusOnly: true,
                     debugReason: 'card-radius#$_cardRadiusLogCounter',
@@ -1169,6 +1185,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   );
                 }
                 if (!_assignFlutterPreviewActive) {
+                  this._syncAssignRadiusPaintImmediate(
+                    debugReason: 'card-time#$_cardTimeLogCounter',
+                  );
                   this._scheduleAssignOverlaySync(
                     radiusOnly: true,
                     debugReason: 'card-time#$_cardTimeLogCounter',

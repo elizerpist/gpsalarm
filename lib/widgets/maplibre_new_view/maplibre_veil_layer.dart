@@ -24,12 +24,15 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
       reason: reason,
     );
     if (_veilSyncDrainFuture != null || _veilSyncTimer != null) return;
-    final delay = _isAssigning && !fullQuality
-        ? const Duration(milliseconds: 32)
-        : const Duration(milliseconds: 16);
+    _armVeilSyncTimer();
+  }
+
+  void _armVeilSyncTimer() {
+    if (_veilSyncDrainFuture != null || _veilSyncTimer != null) return;
+    final delay = const Duration(milliseconds: 16);
     _veilSyncTimer = Timer(delay, () {
       _veilSyncTimer = null;
-      unawaited(this._drainVeilSyncQueue());
+      unawaited(_drainVeilSyncQueue());
     });
   }
 
@@ -47,9 +50,13 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     );
     final activeDrain = _veilSyncDrainFuture;
     if (activeDrain != null) {
-      return activeDrain.then((_) => this._drainVeilSyncQueue());
+      return activeDrain.then((_) {
+        _veilSyncTimer?.cancel();
+        _veilSyncTimer = null;
+        return _drainVeilSyncQueue(drainAll: true);
+      });
     }
-    return this._drainVeilSyncQueue();
+    return _drainVeilSyncQueue(drainAll: true);
   }
 
   Future<void> _syncAssignVeilWithOverlay({required String debugReason}) {
@@ -69,7 +76,7 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     );
   }
 
-  Future<void> _drainVeilSyncQueue() {
+  Future<void> _drainVeilSyncQueue({bool drainAll = false}) {
     final existing = _veilSyncDrainFuture;
     if (existing != null) return existing;
     final future = () async {
@@ -90,14 +97,19 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
           fullQuality: fullQuality,
           reason: reason,
         );
+        if (!drainAll) break;
       }
     }();
     _veilSyncDrainFuture = future.whenComplete(() {
       _veilSyncDrainFuture = null;
       if (mounted && _veilSyncRequested && _veilSyncTimer == null) {
+        if (!drainAll) {
+          _armVeilSyncTimer();
+          return;
+        }
         _veilSyncTimer = Timer(Duration.zero, () {
           _veilSyncTimer = null;
-          unawaited(this._drainVeilSyncQueue());
+          unawaited(_drainVeilSyncQueue(drainAll: true));
         });
       }
     });
@@ -129,9 +141,6 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
               p.zoneTrigger == ZoneTrigger.onLeave &&
               !(!ignoreAssign &&
                   _isAssigning &&
-                  (_assignNativeHidden ||
-                      _assignVisualOwner != _AssignVisualOwner.nativeLive ||
-                      _assignFlutterPreviewActive) &&
                   _assignExisting?.id == p.id),
         )
         .where(

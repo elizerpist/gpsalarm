@@ -131,6 +131,7 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
     } catch (_) {}
     _fastCircleLayerKey = null;
     _radiusPaintOverrideIds.remove('fast');
+    _radiusPaintOverrideTokens.remove('fast');
     try {
       await style.updateGeoJsonSource(id: 'fast-pt-src', data: _emptyGeoJson);
     } catch (_) {}

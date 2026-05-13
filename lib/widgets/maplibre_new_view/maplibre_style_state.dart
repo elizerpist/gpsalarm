@@ -16,12 +16,16 @@ extension _MaplibreStyleState on _MaplibreNewViewState {
     _veilSyncRequestedIgnoreAssign = false;
     _veilSyncRequestedFullQuality = false;
     _veilSyncRequestedReason = null;
+    _assignRadiusPaintSyncPending = false;
+    _assignRadiusPaintSyncReason = null;
     _radiusLayerVersion++;
     _styleGeneration++;
     _registeredMarkerImageKeys.clear();
     _radiusPointImageIds.clear();
     _radiusCircleLayerKeys.clear();
     _radiusVisualIds.clear();
+    _radiusPaintOverrideIds.clear();
+    _radiusPaintOverrideTokens.clear();
     _fastCircleLayerKey = null;
     _controller = null;
   }
