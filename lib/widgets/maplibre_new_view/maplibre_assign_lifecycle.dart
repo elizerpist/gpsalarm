@@ -191,6 +191,10 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     final style = _controller?.style;
     if (style == null) return;
     final id = 'alarm-$index';
+    if (!_useNativeAssignCircle) {
+      await this._removeRadiusVisual(style, id, clearSources: false);
+      return;
+    }
     _radiusCircleLayerKeys.remove(id);
     try {
       await style.removeLayer('radius-circle-$id');
@@ -270,15 +274,22 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignNativeAlarmLayerId = existing == null
         ? 'alarm-${alarmProv.alarmPoints.length}'
         : this._alarmLayerId(alarmProv, existing.id);
-    _assignNativeHidden = existing == null;
+    _assignNativeHidden = existing == null || !_useNativeAssignCircle;
     _isAssigning = true;
     _radiusNotifier.value = this._currentRadiusPx;
-    this._refreshAssignMarker();
+    if (existing != null && _assignNativeHidden && !_useNativeAssignCircle) {
+      await this._ensureAssignMarkerBitmap();
+    } else {
+      this._refreshAssignMarker();
+    }
     DebugConsole.log(
       'ASSIGN_START: lat=$lat lng=$lng existing=${existing?.id} screenCenter=$_assignScreenCenter radiusPx=${this._currentRadiusPx.toStringAsFixed(1)} radiusM=$_assignRadius',
     );
     final style = _controller?.style;
     if (style != null && _showAssignOverlay) {
+      if (existing != null && _assignNativeHidden) {
+        await this._hideExistingNativeAlarm(existing);
+      }
       // Native mode keeps the final alarm-N draft circle alive even during
       // long-press drag; overlay-only fallback waits until drag ends.
       if (_useNativeAssignCircle) {
@@ -496,13 +507,11 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           excludeEditing: false,
         );
         _radiusLayerVersion++;
-        final singleCircle = !wasExisting
-            ? this._circleForAlarmId(
-                alarmProv,
-                effectiveAlarm.id,
-                circles: circles,
-              )
-            : null;
+        final singleCircle = this._circleForAlarmId(
+          alarmProv,
+          effectiveAlarm.id,
+          circles: circles,
+        );
         DebugConsole.log(
           'SAVE_FLOW: singleCircle=${singleCircle?.id} circles=${circles.length}',
         );
@@ -511,7 +520,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           await this._promoteDraftRadiusCircleLayer(liveStyle, singleCircle);
           _lastRadiusDataHash = this._radiusHash(circles);
         } else if (singleCircle != null) {
-          DebugConsole.log('SAVE_FLOW: upsert single new circle');
+          DebugConsole.log('SAVE_FLOW: upsert single circle');
           await this._upsertRadiusVisual(liveStyle, singleCircle);
           _lastRadiusDataHash = this._radiusHash(circles);
         } else {

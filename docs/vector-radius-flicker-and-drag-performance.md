@@ -142,7 +142,9 @@ Use two CircleStyleLayer modes, both still non-polygon:
 
 This is valid because map gestures are blocked during assign/edit. The camera zoom is effectively fixed while the user drags the radius, so a screen-pixel radius is stable for the duration of the gesture. On save or cancel, the layer is converted back to saved mode.
 
-The current implementation keeps a single source-driven circle layer for both states. During drag the feature has a `radiusPx` property. In saved mode the same feature carries precomputed `radiusPxZ0` and `radiusPxZ22` zoom-stop values. The layer expression chooses `radiusPx` when present and otherwise interpolates between the saved stops. This preserves the no-polygon rule, keeps drag as a cheap source update, and avoids a save-time layer remove/add when the draft circle is promoted.
+The source-driven native live-radius experiment was rejected on Android. The drag loop did update the GeoJSON source every frame, but MapLibre did not reliably re-evaluate `circle-radius` from the updated `radiusPx` feature property. The result was a stuck native border while the veil hole moved, and exit-trigger editing showed a double circle.
+
+The current implementation therefore uses the Flutter overlay only for live assign/edit interaction, driven by a `ValueNotifier` so pointer movement repaints without rebuilding the whole widget tree. Saved alarms still use native `CircleStyleLayer` with literal precomputed zoom stops. On save/cancel, the native saved visual is updated before the overlay is cleared, preserving the no-polygon rule without relying on source-driven radius updates.
 
 The drag loop should also avoid rebuilding the full widget tree for every pointer event. The circle visual should update immediately, while lower-priority UI such as the slider text and marker chip can be coalesced to a frame callback or throttled update.
 

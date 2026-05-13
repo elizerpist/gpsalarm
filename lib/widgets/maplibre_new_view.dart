@@ -505,9 +505,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   String _lastRadiusDataHash = ''; // skip rebuild if alarm data unchanged
   bool _suppressRadiusSync = false;
   final Map<String, bool> _alarmInsideState = {};
-  // Assign uses the final native alarm-N circle layer, then promotes it on save.
-  // Drag updates only the source radiusPx; no layer rebuild and no Flutter circle handoff.
-  bool get _useNativeAssignCircle => true;
+  // Live assign/edit uses the Flutter overlay. Android MapLibre does not
+  // reliably re-evaluate circle-radius from updated GeoJSON properties, which
+  // leaves the native border stuck while the veil moves.
+  bool get _useNativeAssignCircle => false;
 
   Position? _cachedUserPosition() {
     final cached = _userPos;
@@ -620,7 +621,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
               ? null
               : (details) {
                   _isDraggingRadius = false;
-                  _handoffToNative = !_useNativeAssignCircle;
+                  _handoffToNative = false;
                   // Flush final radius after drag ends.
                   if (_useNativeAssignCircle)
                     this._scheduleAssignNativeOverlayUpdate();
@@ -996,7 +997,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   );
                   if (e.pointer != _dragPointerId) return;
                   _isDraggingRadius = false;
-                  _handoffToNative = !_useNativeAssignCircle;
+                  _handoffToNative = false;
                   DebugConsole.log(
                     'VECTOR_DRAG_END: r=${_assignRadius.round()}m px=${this._currentRadiusPx.round()} frames=$_dragLogCounter handoff=$_handoffToNative',
                   );
