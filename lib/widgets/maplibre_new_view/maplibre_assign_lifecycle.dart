@@ -38,6 +38,33 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     } catch (_) {}
   }
 
+  Future<void> _drainAssignNativeUpdate() async {
+    if (!_useNativeAssignCircle) return;
+    while (true) {
+      _assignNativeUpdateTimer?.cancel();
+      _assignNativeUpdateTimer = null;
+      final running = _assignNativeUpdateFuture;
+      if (running != null) {
+        try {
+          await running;
+        } catch (_) {}
+        continue;
+      }
+      if (!_assignNativeUpdatePending) return;
+      final future = _flushAssignNativeOverlayUpdate();
+      _assignNativeUpdateFuture = future;
+      try {
+        await future;
+      } catch (_) {
+        // Ignore stale native sync failures while closing or saving.
+      } finally {
+        if (_assignNativeUpdateFuture == future) {
+          _assignNativeUpdateFuture = null;
+        }
+      }
+    }
+  }
+
   Future<void> _flushAssignNativeOverlayUpdate() async {
     if (!_isAssigning || !_useNativeAssignCircle) {
       _assignNativeUpdatePending = false;
@@ -112,8 +139,9 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
 
   Future<void> _activateAssignOverlay({bool updateMarker = false}) async {
     if (!_isAssigning) return;
-    // Skip native circle creation during drag — Flutter overlay handles it
-    if (_isDraggingRadius) return;
+    // Overlay-only fallback skips native work while dragging. Native assign mode
+    // keeps the final alarm-N layer alive and updates only its source radiusPx.
+    if (_isDraggingRadius && !_useNativeAssignCircle) return;
     if (_assignOverlayActivating) return;
     _assignOverlayActivating = true;
     try {
@@ -251,9 +279,15 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     );
     final style = _controller?.style;
     if (style != null && _showAssignOverlay) {
-      // Skip native circle during drag — overlay painter handles it
-      if (_useNativeAssignCircle && !_isDraggingRadius)
-        await this._updateFastCircleLayer(style);
+      // Native mode keeps the final alarm-N draft circle alive even during
+      // long-press drag; overlay-only fallback waits until drag ends.
+      if (_useNativeAssignCircle) {
+        if (_isDraggingRadius) {
+          this._scheduleAssignNativeOverlayUpdate();
+        } else {
+          await this._updateFastCircleLayer(style);
+        }
+      }
       DebugConsole.log(
         'ASSIGN_START: updating veil immediately isDragging=$_isDraggingRadius',
       );
@@ -401,8 +435,8 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       'SAVE_ASSIGN: existing=${_assignExisting?.id} lat=${effectiveAlarm.latitude} lng=${effectiveAlarm.longitude} r=${effectiveAlarm.radiusMeters.round()}m',
     );
     final alarmProv = context.read<AlarmProvider>();
+    await _drainAssignNativeUpdate();
     _cancelAssignDragUpdateTimers();
-    await _waitForAssignNativeUpdate();
     _suppressRadiusSync = true;
     try {
       final wasExisting = _assignExisting != null;
@@ -494,7 +528,9 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       }
       DebugConsole.log('SAVE_FLOW: beginClosingAssignVisual keepCircle=false');
       _beginClosingAssignVisual(keepCircle: false);
-      final clearDelay = const Duration(milliseconds: 80);
+      final clearDelay = !wasExisting && _useNativeAssignCircle
+          ? const Duration(milliseconds: 300)
+          : const Duration(milliseconds: 80);
       DebugConsole.log(
         'SAVE_FLOW: scheduleAssignVisualClear ${clearDelay.inMilliseconds}ms',
       );

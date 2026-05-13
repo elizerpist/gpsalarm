@@ -505,9 +505,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   String _lastRadiusDataHash = ''; // skip rebuild if alarm data unchanged
   bool _suppressRadiusSync = false;
   final Map<String, bool> _alarmInsideState = {};
-  // Overlay-only during assign: no native circle, no handoff, no flicker.
-  // Native circle created only on save. Camera is locked during assign anyway.
-  bool get _useNativeAssignCircle => false;
+  // Assign uses the final native alarm-N circle layer, then promotes it on save.
+  // Drag updates only the source radiusPx; no layer rebuild and no Flutter circle handoff.
+  bool get _useNativeAssignCircle => true;
 
   Position? _cachedUserPosition() {
     final cached = _userPos;
@@ -608,16 +608,20 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   } else {
                     _assignTimeMinutes = (dist * 0.3).clamp(5.0, 120.0).round();
                   }
-                  // Overlay circle via ValueNotifier (smooth, no native calls during drag)
+                  // Keep the live radius in the native draft layer. The update
+                  // is coalesced, so long-press drag does not rebuild layers.
                   _radiusNotifier.value = this._currentRadiusPx;
+                  if (_useNativeAssignCircle) {
+                    this._scheduleAssignNativeOverlayUpdate();
+                  }
                   this._scheduleAssignCardSync();
                 },
           onLongPressEnd: !_isAssigning
               ? null
               : (details) {
                   _isDraggingRadius = false;
-                  _handoffToNative = true; // keep overlay 1 extra frame
-                  // Sync native layer after drag ends
+                  _handoffToNative = !_useNativeAssignCircle;
+                  // Flush final radius after drag ends.
                   if (_useNativeAssignCircle)
                     this._scheduleAssignNativeOverlayUpdate();
                   this._flushAssignCardSync();
@@ -950,12 +954,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                     _dragPointerId = e.pointer;
                     _isDraggingRadius = true;
                     _dragLogCounter = 0;
-                    // Clear native fast-circle when drag starts — overlay takes over
-                    final style = _controller?.style;
-                    if (style != null && _useNativeAssignCircle) {
-                      unawaited(this._clearFastCircleLayer(style));
-                    }
-                    DebugConsole.log('DRAG_START: cleared native fast-circle, overlay takes over');
+                    DebugConsole.log(
+                      _useNativeAssignCircle
+                          ? 'DRAG_START: native live-circle source updates'
+                          : 'DRAG_START: overlay takes over',
+                    );
                   }
                 },
                 onPointerMove: (e) {
@@ -971,12 +974,18 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   } else {
                     _assignTimeMinutes = (dist * 0.3).clamp(5.0, 120.0).round();
                   }
-                  // Update overlay circle instantly via ValueNotifier (no widget rebuild, no native calls)
-                  // Native layer update deferred to onPointerUp to avoid 8-12ms per-frame jank
+                  // Keep hit testing/card values current. In native mode the visual
+                  // update is coalesced to one GeoJSON source update per frame.
                   _radiusNotifier.value = this._currentRadiusPx;
+                  if (_useNativeAssignCircle) {
+                    this._scheduleAssignNativeOverlayUpdate();
+                  }
                   _dragLogCounter++;
-                  if (_dragLogCounter % 15 == 1) { // ~250ms at 60fps
-                    DebugConsole.log('VECTOR_DRAG: r=${_assignRadius.round()}m px=${this._currentRadiusPx.round()} dist=${(e.localPosition - _assignScreenCenter!).distance.round()} frame=$_dragLogCounter');
+                  if (_dragLogCounter % 15 == 1) {
+                    // ~250ms at 60fps
+                    DebugConsole.log(
+                      'VECTOR_DRAG: r=${_assignRadius.round()}m px=${this._currentRadiusPx.round()} dist=${(e.localPosition - _assignScreenCenter!).distance.round()} frame=$_dragLogCounter native=$_useNativeAssignCircle',
+                    );
                   }
                   this._scheduleAssignCardSync();
                 },
@@ -987,16 +996,18 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   );
                   if (e.pointer != _dragPointerId) return;
                   _isDraggingRadius = false;
-                  _handoffToNative = true; // keep overlay 1 extra frame
-                  DebugConsole.log('VECTOR_DRAG_END: r=${_assignRadius.round()}m px=${this._currentRadiusPx.round()} frames=$_dragLogCounter handoff=true');
-                  // Sync native layer, then kill overlay after 1 frame
+                  _handoffToNative = !_useNativeAssignCircle;
+                  DebugConsole.log(
+                    'VECTOR_DRAG_END: r=${_assignRadius.round()}m px=${this._currentRadiusPx.round()} frames=$_dragLogCounter handoff=$_handoffToNative',
+                  );
+                  // Flush the final radius; native mode keeps the same draft layer alive.
                   this._scheduleAssignNativeOverlayUpdate();
                   _dragPointerId = null;
                   this._flushAssignCardSync();
                 },
                 child: CustomPaint(
                   painter:
-                      (_isDraggingRadius || !_useNativeAssignCircle) &&
+                      !_useNativeAssignCircle &&
                           _assignScreenCenter != null &&
                           (this._showAssignOverlay || _closingAssignCircle)
                       ? _RadiusOverlayPainter(

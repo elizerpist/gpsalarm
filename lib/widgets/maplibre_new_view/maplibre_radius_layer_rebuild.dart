@@ -107,12 +107,15 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     double? radiusPx,
   }) {
     final imageId = _radiusPointImageIds[circle.id];
+    final stops = _radiusCircleZoomStops(circle);
     return _pointGeoJson(
       circle.lng,
       circle.lat,
       properties: {
         if (imageId != null) 'image': imageId,
         if (radiusPx != null) 'radiusPx': radiusPx,
+        'radiusPxZ0': stops.$1,
+        'radiusPxZ22': stops.$2,
         ..._circleProps(
           isTime: circle.isTime,
           isLeave: circle.isLeave,
@@ -126,22 +129,44 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     _RadiusCircleData circle, {
     bool liveScreenRadius = false,
   }) {
-    if (liveScreenRadius) return 'live-screen-radius';
-    return '${circle.lat.toStringAsFixed(6)}:${circle.radiusMeters.toStringAsFixed(1)}';
+    // Radius is now fully source-driven: live drag uses `radiusPx`, saved
+    // state uses precomputed zoom stops from the same GeoJSON feature.
+    return 'source-driven-radius-v2';
   }
 
-  Object _radiusCircleExpression(_RadiusCircleData circle) {
+  (double, double) _radiusCircleZoomStops(_RadiusCircleData circle) {
     final cosLat = math.cos(circle.lat * math.pi / 180).abs();
     final safeCosLat = math.max(0.000001, cosLat);
     final basePx = 2 * circle.radiusMeters / (156543.03392 * safeCosLat);
+    return (basePx, basePx * 4194304.0);
+  }
+
+  Object get _radiusCircleExpression {
     return [
-      'interpolate',
-      ['exponential', 2.0],
-      ['zoom'],
-      0.0,
-      basePx,
-      22.0,
-      basePx * 4194304.0,
+      'case',
+      [
+        'has',
+        'radiusPx',
+      ],
+      [
+        'get',
+        'radiusPx',
+      ],
+      [
+        'interpolate',
+        ['exponential', 2.0],
+        ['zoom'],
+        0.0,
+        [
+          'get',
+          'radiusPxZ0',
+        ],
+        22.0,
+        [
+          'get',
+          'radiusPxZ22',
+        ],
+      ],
     ];
   }
 
@@ -155,9 +180,7 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
       id: id,
       sourceId: sourceId,
       paint: {
-        'circle-radius': liveScreenRadius
-            ? ['get', 'radiusPx']
-            : _radiusCircleExpression(circle),
+        'circle-radius': _radiusCircleExpression,
         'circle-color': _radiusFillColorExpression,
         'circle-stroke-color': _radiusStrokeColorExpression,
         'circle-stroke-width': 2.0,
@@ -344,7 +367,7 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     _RadiusCircleData circle, {
     bool updateMarker = false,
   }) async {
-    if (updateMarker || !_radiusPointImageIds.containsKey(circle.id)) {
+    if (updateMarker) {
       await this._syncRadiusMarkerImage(style, circle);
     }
     await style.updateGeoJsonSource(
