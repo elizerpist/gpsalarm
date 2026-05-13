@@ -89,14 +89,18 @@ class _MapScreenState extends State<MapScreen> {
         final totalMs = t.totalSpan.inMilliseconds;
         if (totalMs > 16) _slowFrames++;
         if (totalMs > 50) {
-          DebugConsole.log('SLOW FRAME: build=${t.buildDuration.inMilliseconds}ms raster=${t.rasterDuration.inMilliseconds}ms total=${totalMs}ms');
+          DebugConsole.log(
+            'SLOW FRAME: build=${t.buildDuration.inMilliseconds}ms raster=${t.rasterDuration.inMilliseconds}ms total=${totalMs}ms',
+          );
         }
       }
       final now = DateTime.now();
       if (now.difference(_lastFrameReport).inSeconds >= 5) {
         final secs = now.difference(_lastFrameReport).inMilliseconds / 1000;
         final fps = _frameCount / secs;
-        DebugConsole.log('FPS: ${fps.toStringAsFixed(1)} | total=$_frameCount slow=$_slowFrames');
+        DebugConsole.log(
+          'FPS: ${fps.toStringAsFixed(1)} | total=$_frameCount slow=$_slowFrames',
+        );
         _frameCount = 0;
         _slowFrames = 0;
         _lastFrameReport = now;
@@ -110,13 +114,17 @@ class _MapScreenState extends State<MapScreen> {
     _speedInterpolTimer?.cancel();
     _speedInterpolTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
       if (!mounted) return;
-      final gpsInterval = _currentGpsTime.difference(_prevGpsTime).inMilliseconds;
+      final gpsInterval = _currentGpsTime
+          .difference(_prevGpsTime)
+          .inMilliseconds;
       double estimated;
       if (gpsInterval <= 0) {
         estimated = _currentGpsSpeed;
       } else {
         final accelPerMs = (_currentGpsSpeed - _prevGpsSpeed) / gpsInterval;
-        final elapsed = DateTime.now().difference(_currentGpsTime).inMilliseconds;
+        final elapsed = DateTime.now()
+            .difference(_currentGpsTime)
+            .inMilliseconds;
         estimated = (_currentGpsSpeed + accelPerMs * elapsed).clamp(0.0, 300.0);
         if (elapsed > gpsInterval * 2) estimated = _currentGpsSpeed;
       }
@@ -137,9 +145,16 @@ class _MapScreenState extends State<MapScreen> {
         // Update MapProvider center for cross-map sync
         context.read<MapProvider>().updateCenterSilent(_userPosition.value!);
         // Only move raster map controller if raster is active
-        final isRaster = context.read<SettingsProvider>().settings.mapProvider != MapTileProvider.vector;
+        final isRaster =
+            context.read<SettingsProvider>().settings.mapProvider !=
+            MapTileProvider.vector;
         if (isRaster) {
-          try { _mapController.move(_userPosition.value!, _mapController.camera.zoom); } catch (_) {}
+          try {
+            _mapController.move(
+              _userPosition.value!,
+              _mapController.camera.zoom,
+            );
+          } catch (_) {}
         }
       }
       final settings = context.read<SettingsProvider>().settings;
@@ -147,7 +162,9 @@ class _MapScreenState extends State<MapScreen> {
       final interval = isContinuous
           ? const Duration(seconds: 3)
           : settings.customPollingInterval;
-      DebugConsole.log('Starting GPS tracking (${isContinuous ? "continuous/3s" : "custom/${interval.inSeconds}s"})');
+      DebugConsole.log(
+        'Starting GPS tracking (${isContinuous ? "continuous/3s" : "custom/${interval.inSeconds}s"})',
+      );
       // Speed interpolation only in continuous mode (saves battery in custom mode)
       if (isContinuous) {
         _startSpeedInterpolation();
@@ -161,10 +178,16 @@ class _MapScreenState extends State<MapScreen> {
           final newPos = LatLng(position.latitude, position.longitude);
           if (_userPosition.value == null ||
               AlarmService.distanceMeters(
-                      _userPosition.value!.latitude, _userPosition.value!.longitude,
-                      newPos.latitude, newPos.longitude) > 5) {
+                    _userPosition.value!.latitude,
+                    _userPosition.value!.longitude,
+                    newPos.latitude,
+                    newPos.longitude,
+                  ) >
+                  5) {
             _userPosition.value = newPos;
-            DebugConsole.log('GPS: ${newPos.latitude.toStringAsFixed(4)}, ${newPos.longitude.toStringAsFixed(4)}');
+            DebugConsole.log(
+              'GPS: ${newPos.latitude.toStringAsFixed(4)}, ${newPos.longitude.toStringAsFixed(4)}',
+            );
           }
           _checkAlarms(position.latitude, position.longitude);
           final newSpeed = _locationService.averageSpeedKmh;
@@ -187,8 +210,9 @@ class _MapScreenState extends State<MapScreen> {
 
   void _checkAlarms(double userLat, double userLng) {
     final alarmProv = context.read<AlarmProvider>();
-    final activePoints =
-        alarmProv.alarmPoints.where((p) => p.isActive).toList();
+    final activePoints = alarmProv.alarmPoints
+        .where((p) => p.isActive)
+        .toList();
 
     for (final point in activePoints) {
       bool shouldTrigger = false;
@@ -213,9 +237,16 @@ class _MapScreenState extends State<MapScreen> {
         // Time-based: trigger when user is inside the dynamic radius circle.
         // The circle radius = max(200m, speed * time).
         final speedMs = _locationService.averageSpeedKmh / 3.6;
-        final timeRadius = max(200.0, speedMs * point.timeTrigger!.inSeconds.toDouble());
+        final timeRadius = max(
+          200.0,
+          speedMs * point.timeTrigger!.inSeconds.toDouble(),
+        );
         final dist = AlarmService.distanceMeters(
-            userLat, userLng, point.latitude, point.longitude);
+          userLat,
+          userLng,
+          point.latitude,
+          point.longitude,
+        );
         final insideTimeCircle = dist <= timeRadius;
         if (point.zoneTrigger == ZoneTrigger.onEntry) {
           shouldTrigger = insideTimeCircle;
@@ -235,7 +266,9 @@ class _MapScreenState extends State<MapScreen> {
   void _showAlarmTriggered(AlarmPoint point) {
     if (!mounted) return;
     final title = point.name ?? tr('no_name');
-    final zoneText = point.zoneTrigger == ZoneTrigger.onEntry ? 'Belépés' : 'Kilépés';
+    final zoneText = point.zoneTrigger == ZoneTrigger.onEntry
+        ? 'Belépés'
+        : 'Kilépés';
     final body = point.triggerType == TriggerType.distance
         ? '$zoneText — ${point.radiusMeters.round()}m'
         : '$zoneText — ${point.timeTrigger?.inMinutes ?? 0} min';
@@ -278,12 +311,15 @@ class _MapScreenState extends State<MapScreen> {
   @override
   Widget build(BuildContext context) {
     final mapProvider = context.select<SettingsProvider, MapTileProvider>(
-        (p) => p.settings.mapProvider);
+      (p) => p.settings.mapProvider,
+    );
 
     // Sync rasterZoom from MapProvider on every build (covers vector→raster switch)
     final mpZoom = context.read<MapProvider>().zoom;
     final mpCenter = context.read<MapProvider>().center;
-    DebugConsole.log('MAP_BUILD: provider=${mapProvider.name} mpZoom=${mpZoom.toStringAsFixed(2)} mpCenter=${mpCenter.latitude.toStringAsFixed(4)},${mpCenter.longitude.toStringAsFixed(4)} rasterZoom=${_rasterZoom.toStringAsFixed(2)}');
+    DebugConsole.log(
+      'MAP_BUILD: provider=${mapProvider.name} mpZoom=${mpZoom.toStringAsFixed(2)} mpCenter=${mpCenter.latitude.toStringAsFixed(4)},${mpCenter.longitude.toStringAsFixed(4)} rasterZoom=${_rasterZoom.toStringAsFixed(2)}',
+    );
     if ((_rasterZoom - mpZoom).abs() > 0.1) _rasterZoom = mpZoom;
 
     // Vector (maplibre) — native only
@@ -297,7 +333,8 @@ class _MapScreenState extends State<MapScreen> {
     }
 
     final tileUrl = context.select<SettingsProvider, String>(
-        (p) => _getTileUrl(p.settings));
+      (p) => _getTileUrl(p.settings),
+    );
     DebugConsole.log('build() tile=$tileUrl');
 
     return Scaffold(
@@ -339,187 +376,243 @@ class _MapScreenState extends State<MapScreen> {
                   // Sync zoom/center to MapProvider for raster↔vector switch continuity
                   final mp = context.read<MapProvider>();
                   if (z != null) mp.updateZoomSilent(z);
-                  if (position.center != null) mp.updateCenterSilent(position.center!);
+                  if (position.center != null)
+                    mp.updateCenterSilent(position.center!);
                 },
               ),
-            children: [
-              TileLayer(
-                urlTemplate: tileUrl,
-                retinaMode: _retinaMode,
-                userAgentPackageName: 'com.gpsalarm.app',
-                tileProvider: kIsWeb ? null : _cachedTileProvider,
-                fallbackUrl: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                errorTileCallback: (tile, error, stackTrace) {
-                  DebugConsole.log('Tile error z=${tile.coordinates.z} x=${tile.coordinates.x} y=${tile.coordinates.y}: $error');
-                },
-              ),
-              // Radius circles — distance-based (solid)
-              Consumer<AlarmProvider>(
-                builder: (_, alarmProv, __) => ValueListenableBuilder<double>(
-                  valueListenable: _speedKmh,
-                  builder: (_, speed, __) => CircleLayer(
-                    circles: [
+              children: [
+                TileLayer(
+                  urlTemplate: tileUrl,
+                  retinaMode: _retinaMode,
+                  userAgentPackageName: 'com.gpsalarm.app',
+                  tileProvider: kIsWeb ? null : _cachedTileProvider,
+                  fallbackUrl: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  errorTileCallback: (tile, error, stackTrace) {
+                    DebugConsole.log(
+                      'Tile error z=${tile.coordinates.z} x=${tile.coordinates.x} y=${tile.coordinates.y}: $error',
+                    );
+                  },
+                ),
+                // Radius circles — distance-based (solid)
+                Consumer<AlarmProvider>(
+                  builder: (_, alarmProv, __) => ValueListenableBuilder<double>(
+                    valueListenable: _speedKmh,
+                    builder: (_, speed, __) => CircleLayer(
+                      circles: [
+                        ...alarmProv.alarmPoints
+                            .where(
+                              (p) =>
+                                  p.zoneTrigger != ZoneTrigger.onLeave &&
+                                  p.triggerType == TriggerType.distance &&
+                                  p.id != _assignExisting?.id,
+                            )
+                            .map((p) => buildRadiusCircle(p, speedKmh: speed)),
+                        if (_isAssigning &&
+                            _assignCenter != null &&
+                            _assignZoneTrigger != ZoneTrigger.onLeave &&
+                            _assignTriggerType == TriggerType.distance)
+                          CircleMarker(
+                            point: _assignCenter!,
+                            radius: _assignRadius,
+                            useRadiusInMeter: true,
+                            color: Colors.red.withOpacity(0.15),
+                            borderColor: Colors.red.withOpacity(0.7),
+                            borderStrokeWidth: 3,
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                // Radius circles — time-based (orange dashed)
+                Consumer<AlarmProvider>(
+                  builder: (_, alarmProv, __) => ValueListenableBuilder<double>(
+                    valueListenable: _speedKmh,
+                    builder: (_, speed, __) {
+                      final timePolygons = <Polygon>[
+                        ...alarmProv.alarmPoints
+                            .where(
+                              (p) =>
+                                  p.zoneTrigger != ZoneTrigger.onLeave &&
+                                  p.triggerType == TriggerType.time &&
+                                  p.id != _assignExisting?.id,
+                            )
+                            .map(
+                              (p) => buildTimeTriggerCircle(
+                                LatLng(p.latitude, p.longitude),
+                                effectiveRadius(p, speed),
+                                isActive: p.isActive,
+                              ),
+                            ),
+                        if (_isAssigning &&
+                            _assignCenter != null &&
+                            _assignZoneTrigger != ZoneTrigger.onLeave &&
+                            _assignTriggerType == TriggerType.time)
+                          buildTimeTriggerCircle(
+                            _assignCenter!,
+                            max(200.0, (speed / 3.6) * _assignTimeMinutes * 60),
+                          ),
+                      ];
+                      return timePolygons.isEmpty
+                          ? const SizedBox.shrink()
+                          : PolygonLayer(polygons: timePolygons);
+                    },
+                  ),
+                ),
+                // Inverted radius — single veil with holes for ALL onLeave circles
+                Consumer<AlarmProvider>(
+                  builder: (_, alarmProv, __) {
+                    final leaveAlarms = alarmProv.alarmPoints
+                        .where(
+                          (p) =>
+                              p.zoneTrigger == ZoneTrigger.onLeave &&
+                              p.id != _assignExisting?.id,
+                        )
+                        .toList();
+                    final hasAssignLeave =
+                        _isAssigning &&
+                        _assignCenter != null &&
+                        _assignZoneTrigger == ZoneTrigger.onLeave;
+                    if (leaveAlarms.isEmpty && !hasAssignLeave)
+                      return const SizedBox.shrink();
+
+                    final holes = <List<LatLng>>[
+                      for (final p in leaveAlarms)
+                        buildCirclePoints(
+                          LatLng(p.latitude, p.longitude),
+                          p.radiusMeters,
+                        ),
+                      if (hasAssignLeave)
+                        buildCirclePoints(_assignCenter!, _assignRadius),
+                    ];
+
+                    return PolygonLayer(
+                      polygons: [
+                        Polygon(
+                          points: const [
+                            LatLng(-85, -180),
+                            LatLng(-85, 180),
+                            LatLng(85, 180),
+                            LatLng(85, -180),
+                          ],
+                          holePointsList: holes,
+                          color: Colors.red.withOpacity(0.15),
+                          isFilled: true,
+                        ),
+                      ],
+                    );
+                  },
+                ),
+                // Exit trigger circle borders — separate from veil to avoid double border
+                Consumer<AlarmProvider>(
+                  builder: (_, alarmProv, __) {
+                    final leaveCircles = <CircleMarker>[
                       ...alarmProv.alarmPoints
-                          .where((p) => p.zoneTrigger != ZoneTrigger.onLeave && p.triggerType == TriggerType.distance
-                              && p.id != _assignExisting?.id)
-                          .map((p) => buildRadiusCircle(p, speedKmh: speed)),
-                      if (_isAssigning && _assignCenter != null
-                          && _assignZoneTrigger != ZoneTrigger.onLeave
-                          && _assignTriggerType == TriggerType.distance)
+                          .where(
+                            (p) =>
+                                p.zoneTrigger == ZoneTrigger.onLeave &&
+                                p.id != _assignExisting?.id,
+                          )
+                          .map(
+                            (p) => CircleMarker(
+                              point: LatLng(p.latitude, p.longitude),
+                              radius: p.radiusMeters,
+                              useRadiusInMeter: true,
+                              color: Colors.transparent,
+                              borderColor:
+                                  (p.isActive ? Colors.red : Colors.grey)
+                                      .withOpacity(0.6),
+                              borderStrokeWidth: 2,
+                            ),
+                          ),
+                      if (_isAssigning &&
+                          _assignCenter != null &&
+                          _assignZoneTrigger == ZoneTrigger.onLeave)
                         CircleMarker(
                           point: _assignCenter!,
                           radius: _assignRadius,
                           useRadiusInMeter: true,
-                          color: Colors.red.withOpacity(0.15),
-                          borderColor: Colors.red.withOpacity(0.7),
-                          borderStrokeWidth: 3,
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-              // Radius circles — time-based (orange dashed)
-              Consumer<AlarmProvider>(
-                builder: (_, alarmProv, __) => ValueListenableBuilder<double>(
-                  valueListenable: _speedKmh,
-                  builder: (_, speed, __) {
-                    final timePolygons = <Polygon>[
-                      ...alarmProv.alarmPoints
-                          .where((p) => p.zoneTrigger != ZoneTrigger.onLeave && p.triggerType == TriggerType.time
-                              && p.id != _assignExisting?.id)
-                          .map((p) => buildTimeTriggerCircle(
-                            LatLng(p.latitude, p.longitude),
-                            effectiveRadius(p, speed),
-                            isActive: p.isActive,
-                          )),
-                      if (_isAssigning && _assignCenter != null
-                          && _assignZoneTrigger != ZoneTrigger.onLeave
-                          && _assignTriggerType == TriggerType.time)
-                        buildTimeTriggerCircle(
-                          _assignCenter!,
-                          max(200.0, (speed / 3.6) * _assignTimeMinutes * 60),
+                          color: Colors.transparent,
+                          borderColor: Colors.red.withOpacity(0.6),
+                          borderStrokeWidth: 2,
                         ),
                     ];
-                    return timePolygons.isEmpty
+                    return leaveCircles.isEmpty
                         ? const SizedBox.shrink()
-                        : PolygonLayer(polygons: timePolygons);
+                        : CircleLayer(circles: leaveCircles);
                   },
                 ),
-              ),
-              // Inverted radius — single veil with holes for ALL onLeave circles
-              Consumer<AlarmProvider>(
-                builder: (_, alarmProv, __) {
-                  final leaveAlarms = alarmProv.alarmPoints
-                      .where((p) => p.zoneTrigger == ZoneTrigger.onLeave
-                          && p.id != _assignExisting?.id)
-                      .toList();
-                  final hasAssignLeave = _isAssigning && _assignCenter != null && _assignZoneTrigger == ZoneTrigger.onLeave;
-                  if (leaveAlarms.isEmpty && !hasAssignLeave) return const SizedBox.shrink();
-
-                  final holes = <List<LatLng>>[
-                    for (final p in leaveAlarms)
-                      buildCirclePoints(LatLng(p.latitude, p.longitude), p.radiusMeters),
-                    if (hasAssignLeave)
-                      buildCirclePoints(_assignCenter!, _assignRadius),
-                  ];
-
-                  return PolygonLayer(polygons: [
-                    Polygon(
-                      points: const [LatLng(-85, -180), LatLng(-85, 180), LatLng(85, 180), LatLng(85, -180)],
-                      holePointsList: holes,
-                      color: Colors.red.withOpacity(0.15),
-                      isFilled: true,
-                    ),
-                  ]);
-                },
-              ),
-              // Exit trigger circle borders — separate from veil to avoid double border
-              Consumer<AlarmProvider>(
-                builder: (_, alarmProv, __) {
-                  final leaveCircles = <CircleMarker>[
-                    ...alarmProv.alarmPoints
-                        .where((p) => p.zoneTrigger == ZoneTrigger.onLeave
-                            && p.id != _assignExisting?.id)
-                        .map((p) => CircleMarker(
-                          point: LatLng(p.latitude, p.longitude),
-                          radius: p.radiusMeters,
-                          useRadiusInMeter: true,
-                          color: Colors.transparent,
-                          borderColor: (p.isActive ? Colors.red : Colors.grey).withOpacity(0.6),
-                          borderStrokeWidth: 2,
-                        )),
-                    if (_isAssigning && _assignCenter != null && _assignZoneTrigger == ZoneTrigger.onLeave)
-                      CircleMarker(
-                        point: _assignCenter!,
-                        radius: _assignRadius,
-                        useRadiusInMeter: true,
-                        color: Colors.transparent,
-                        borderColor: Colors.red.withOpacity(0.6),
-                        borderStrokeWidth: 2,
-                      ),
-                  ];
-                  return leaveCircles.isEmpty ? const SizedBox.shrink() : CircleLayer(circles: leaveCircles);
-                },
-              ),
-              // Pin markers
-              Consumer<AlarmProvider>(
-                builder: (_, alarmProv, __) =>
-                    ValueListenableBuilder<LatLng?>(
-                  valueListenable: _userPosition,
-                  builder: (_, userPos, __) => MarkerLayer(
-                    markers: [
-                      ...alarmProv.alarmPoints
-                          .where((p) => p.id != _assignExisting?.id)
-                          .map((p) => buildPinMarker(
-                            point: p,
-                            onTap: () => _startAssign(p.latitude, p.longitude, existing: p),
-                          )),
-                      if (userPos != null)
-                        buildUserLocationMarker(userPos),
-                      // Assign pin — orange for time, red for distance, with live chip
-                      if (_isAssigning && _assignCenter != null)
-                        Marker(
-                          point: _assignCenter!,
-                          width: 80,
-                          height: 60,
-                          alignment: const Alignment(0, 0.067),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.location_on,
-                                  color: _assignTriggerType == TriggerType.time
-                                      ? Colors.orange : Colors.red,
-                                  size: 32),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                                decoration: BoxDecoration(
-                                  color: (_assignTriggerType == TriggerType.time
-                                      ? Colors.orange : Colors.red).withOpacity(0.8),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  _assignTriggerType == TriggerType.distance
-                                      ? (_assignRadius >= 1000
-                                          ? '${(_assignRadius / 1000).toStringAsFixed(1)}km'
-                                          : '${_assignRadius.round()}m')
-                                      : '${_assignTimeMinutes}min',
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                // Pin markers
+                Consumer<AlarmProvider>(
+                  builder: (_, alarmProv, __) => ValueListenableBuilder<LatLng?>(
+                    valueListenable: _userPosition,
+                    builder: (_, userPos, __) => MarkerLayer(
+                      markers: [
+                        ...alarmProv.alarmPoints
+                            .where((p) => p.id != _assignExisting?.id)
+                            .map(
+                              (p) => buildPinMarker(
+                                point: p,
+                                onTap: () => _startAssign(
+                                  p.latitude,
+                                  p.longitude,
+                                  existing: p,
                                 ),
                               ),
-                            ],
+                            ),
+                        if (userPos != null) buildUserLocationMarker(userPos),
+                        // Assign pin — orange for time, red for distance, with live chip
+                        if (_isAssigning && _assignCenter != null)
+                          Marker(
+                            point: _assignCenter!,
+                            width: 80,
+                            height: 60,
+                            alignment: const Alignment(0, 0.067),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.location_on,
+                                  color: _assignTriggerType == TriggerType.time
+                                      ? Colors.orange
+                                      : Colors.red,
+                                  size: 32,
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                    vertical: 1,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color:
+                                        (_assignTriggerType == TriggerType.time
+                                                ? Colors.orange
+                                                : Colors.red)
+                                            .withOpacity(0.8),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    _assignTriggerType == TriggerType.distance
+                                        ? (_assignRadius >= 1000
+                                              ? '${(_assignRadius / 1000).toStringAsFixed(1)}km'
+                                              : '${_assignRadius.round()}m')
+                                        : '${_assignTimeMinutes}min',
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
           ), // close Listener
           // (swipe handled by Listener above)
           // Offline indicator
@@ -550,7 +643,11 @@ class _MapScreenState extends State<MapScreen> {
                   color: Colors.black.withOpacity(0.5),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(Icons.terminal, color: Color(0xFF2ECDC4), size: 18),
+                child: const Icon(
+                  Icons.terminal,
+                  color: Color(0xFF2ECDC4),
+                  size: 18,
+                ),
               ),
             ),
           ),
@@ -566,62 +663,28 @@ class _MapScreenState extends State<MapScreen> {
                     _scaffoldKey.currentState?.openDrawer();
                   },
                   child: Container(
-                    width: 44, height: 44,
+                    width: 44,
+                    height: 44,
                     decoration: BoxDecoration(
                       color: Theme.of(context).brightness == Brightness.dark
                           ? Colors.grey[900]!.withOpacity(0.92)
                           : Colors.white.withOpacity(0.92),
                       borderRadius: BorderRadius.circular(12),
-                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 2))],
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.15),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
                     ),
-                    child: Icon(Icons.menu, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.grey[800], size: 24),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                // Toggle raster/vector — single tap
-                GestureDetector(
-                  onTap: () {
-                    final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
-                    if (haptic) Vibration.vibrate(duration: 30);
-                    if (_isAssigning) _cancelAssign();
-                    final settings = context.read<SettingsProvider>();
-                    settings.updateSettings(settings.settings.copyWith(mapProvider: MapTileProvider.vector));
-                  },
-                  child: Container(
-                    width: 44, height: 44,
-                    decoration: BoxDecoration(
+                    child: Icon(
+                      Icons.menu,
                       color: Theme.of(context).brightness == Brightness.dark
-                          ? Colors.grey[900]!.withOpacity(0.92)
-                          : Colors.white.withOpacity(0.92),
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 2))],
+                          ? Colors.white
+                          : Colors.grey[800],
+                      size: 24,
                     ),
-                    child: Icon(Icons.layers, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.grey[800], size: 22),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                // Skin cycle — single tap (with haptic)
-                GestureDetector(
-                  onTap: () {
-                    final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
-                    if (haptic) Vibration.vibrate(duration: 30);
-                    if (_isAssigning) _cancelAssign();
-                    final settings = context.read<SettingsProvider>();
-                    final styles = MapTileStyle.values;
-                    final idx = styles.indexOf(settings.settings.mapTileStyle);
-                    final next = styles[(idx + 1) % styles.length];
-                    settings.updateSettings(settings.settings.copyWith(mapTileStyle: next));
-                  },
-                  child: Container(
-                    width: 44, height: 44,
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).brightness == Brightness.dark
-                          ? Colors.grey[900]!.withOpacity(0.92)
-                          : Colors.white.withOpacity(0.92),
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 2))],
-                    ),
-                    child: Icon(Icons.palette, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.grey[800], size: 22),
                   ),
                 ),
               ],
@@ -641,10 +704,38 @@ class _MapScreenState extends State<MapScreen> {
                   final cam = _mapController.camera;
                   _mapController.move(cam.center, (cam.zoom - 1).clamp(3, 18));
                 },
-                onSearchTap: () =>
-                    context.read<MapProvider>().toggleSearch(),
+                onSearchTap: () => context.read<MapProvider>().toggleSearch(),
                 onMyLocation: _goToMyLocation,
                 searchActive: searchActive,
+                onMapToggleTap: () {
+                  final haptic = context
+                      .read<SettingsProvider>()
+                      .settings
+                      .hapticFeedback;
+                  if (haptic) Vibration.vibrate(duration: 30);
+                  if (_isAssigning) _cancelAssign();
+                  final settings = context.read<SettingsProvider>();
+                  settings.updateSettings(
+                    settings.settings.copyWith(
+                      mapProvider: MapTileProvider.vector,
+                    ),
+                  );
+                },
+                onSkinTap: () {
+                  final haptic = context
+                      .read<SettingsProvider>()
+                      .settings
+                      .hapticFeedback;
+                  if (haptic) Vibration.vibrate(duration: 30);
+                  if (_isAssigning) _cancelAssign();
+                  final settings = context.read<SettingsProvider>();
+                  final styles = MapTileStyle.values;
+                  final idx = styles.indexOf(settings.settings.mapTileStyle);
+                  final next = styles[(idx + 1) % styles.length];
+                  settings.updateSettings(
+                    settings.settings.copyWith(mapTileStyle: next),
+                  );
+                },
               ),
             ),
           // Search pill - only when active
@@ -667,22 +758,30 @@ class _MapScreenState extends State<MapScreen> {
           // Alarm card — unified assign/edit
           if (_isAssigning && _assignCenter != null)
             Positioned(
-              bottom: 0, left: 0, right: 0,
+              bottom: 0,
+              left: 0,
+              right: 0,
               child: AlarmCard(
                 latitude: _assignCenter!.latitude,
                 longitude: _assignCenter!.longitude,
                 existingPoint: _assignExisting,
                 radius: _assignRadius,
                 onRadiusChanged: (v) => setState(() => _assignRadius = v),
-                onZoneTriggerChanged: (v) => setState(() => _assignZoneTrigger = v),
-                onTriggerTypeChanged: (v) => setState(() => _assignTriggerType = v),
+                onZoneTriggerChanged: (v) =>
+                    setState(() => _assignZoneTrigger = v),
+                onTriggerTypeChanged: (v) =>
+                    setState(() => _assignTriggerType = v),
                 onTimeChanged: (v) => setState(() => _assignTimeMinutes = v),
                 onSave: _saveAssign,
                 onCancel: _cancelAssign,
-                onDelete: _assignExisting != null ? () {
-                  context.read<AlarmProvider>().removeAlarmPoint(_assignExisting!.id);
-                  _cancelAssign();
-                } : null,
+                onDelete: _assignExisting != null
+                    ? () {
+                        context.read<AlarmProvider>().removeAlarmPoint(
+                          _assignExisting!.id,
+                        );
+                        _cancelAssign();
+                      }
+                    : null,
               ),
             ),
         ],
@@ -731,7 +830,10 @@ class _MapScreenState extends State<MapScreen> {
     _longPressTimer = Timer(const Duration(milliseconds: 500), () {
       if (_pointerDownPos == null) return;
       _longPressTriggered = true;
-      final screenPoint = Point<double>(event.localPosition.dx, event.localPosition.dy);
+      final screenPoint = Point<double>(
+        event.localPosition.dx,
+        event.localPosition.dy,
+      );
       final latLng = _mapController.camera.pointToLatLng(screenPoint);
       final haptic = context.read<SettingsProvider>().settings.hapticFeedback;
       if (haptic) Vibration.vibrate(duration: 30);
@@ -755,7 +857,9 @@ class _MapScreenState extends State<MapScreen> {
         }
         _rasterDragLogCounter++;
         if (_rasterDragLogCounter % 15 == 1) {
-          DebugConsole.log('RASTER_DRAG: r=${_assignRadius.round()}m dist=${dist.round()} frame=$_rasterDragLogCounter');
+          DebugConsole.log(
+            'RASTER_DRAG: r=${_assignRadius.round()}m dist=${dist.round()} frame=$_rasterDragLogCounter',
+          );
         }
       }
       return;
@@ -782,7 +886,9 @@ class _MapScreenState extends State<MapScreen> {
     _activePointers = (_activePointers - 1).clamp(0, 99);
     _cancelLongPressTimer();
     if (_isDraggingRadius) {
-      DebugConsole.log('RASTER_DRAG_END: r=${_assignRadius.round()}m frames=$_rasterDragLogCounter');
+      DebugConsole.log(
+        'RASTER_DRAG_END: r=${_assignRadius.round()}m frames=$_rasterDragLogCounter',
+      );
       _isDraggingRadius = false;
       _rasterDragLogCounter = 0;
       return;
@@ -801,7 +907,10 @@ class _MapScreenState extends State<MapScreen> {
 
   double _pixelsToMeters(double pixels) {
     final zoom = _mapController.camera.zoom;
-    final metersPerPixel = 156543.03392 * cos(_mapController.camera.center.latitude * pi / 180) / pow(2, zoom);
+    final metersPerPixel =
+        156543.03392 *
+        cos(_mapController.camera.center.latitude * pi / 180) /
+        pow(2, zoom);
     return pixels * metersPerPixel;
   }
 
@@ -816,12 +925,20 @@ class _MapScreenState extends State<MapScreen> {
     if (_isAssigning) return;
     final alarmProv = context.read<AlarmProvider>();
     // Zoom-dependent tap threshold (pin is ~40px tall)
-    final metersPerPx = 156543.03392 * cos(point.latitude * pi / 180) / pow(2, _mapController.camera.zoom);
+    final metersPerPx =
+        156543.03392 *
+        cos(point.latitude * pi / 180) /
+        pow(2, _mapController.camera.zoom);
     final thresholdMeters = max(50.0, 40 * metersPerPx);
     AlarmPoint? existing;
     double closestDist = double.infinity;
     for (final p in alarmProv.alarmPoints) {
-      final dist = AlarmService.distanceMeters(point.latitude, point.longitude, p.latitude, p.longitude);
+      final dist = AlarmService.distanceMeters(
+        point.latitude,
+        point.longitude,
+        p.latitude,
+        p.longitude,
+      );
       if (dist < thresholdMeters && dist < closestDist) {
         existing = p;
         closestDist = dist;

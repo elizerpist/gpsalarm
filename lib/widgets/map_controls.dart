@@ -7,6 +7,10 @@ class MapControls extends StatelessWidget {
   final VoidCallback onSearchTap;
   final VoidCallback onMyLocation;
   final bool searchActive;
+  final VoidCallback? onMapToggleTap;
+  final IconData? iconMapToggle;
+  final VoidCallback? onSkinTap;
+  final IconData? iconSkin;
   final IconData? myLocationIcon;
   final Color? myLocationIconColor;
   final Color? myLocationBgColor;
@@ -32,6 +36,10 @@ class MapControls extends StatelessWidget {
     required this.onSearchTap,
     required this.onMyLocation,
     required this.searchActive,
+    this.onMapToggleTap,
+    this.iconMapToggle,
+    this.onSkinTap,
+    this.iconSkin,
     this.myLocationIcon,
     this.myLocationIconColor,
     this.myLocationBgColor,
@@ -70,63 +78,79 @@ class MapControls extends StatelessWidget {
             child: Icon(Icons.menu, color: iconColor, size: 24),
           ),
         ),
-        // 3D + Zoom buttons - right side above FAB
+        // Map tools + zoom buttons - right side above FAB
         Positioned(
           bottom: 140 + keyboardHeight,
           right: 16,
           child: Column(
             children: [
               if (on3DTap != null) ...[
-                // Freeze button — ejects below 3D when active, slides back when inactive
-                AnimatedSize(
-                  duration: const Duration(milliseconds: 400),
-                  curve: Curves.elasticOut,
-                  alignment: Alignment.topCenter,
-                  child: showFreeze && onFreezeTap != null
-                      ? Padding(
+                SizedBox(
+                  height: 52,
+                  child: IgnorePointer(
+                    ignoring: !showFreeze || onFreezeTap == null,
+                    child: AnimatedSlide(
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOutCubic,
+                      offset: showFreeze ? Offset.zero : const Offset(0, 0.35),
+                      child: AnimatedOpacity(
+                        duration: const Duration(milliseconds: 140),
+                        opacity: showFreeze && onFreezeTap != null ? 1 : 0,
+                        child: Padding(
                           padding: const EdgeInsets.only(bottom: 8),
-                          child: GestureDetector(
-                            onTap: onFreezeTap,
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 300),
-                              width: 44, height: 44,
-                              decoration: BoxDecoration(
-                                color: bgFreezeColor ?? bgColor,
-                                borderRadius: BorderRadius.circular(12),
-                                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 2))],
-                              ),
-                              child: Center(
-                                child: Icon(iconFreeze ?? Icons.screen_rotation_alt, color: iconFreezeColor ?? iconColor, size: 22),
-                              ),
+                          child: _ControlButton(
+                            onTap: onFreezeTap ?? () {},
+                            bgColor: bgFreezeColor ?? bgColor,
+                            child: Icon(
+                              iconFreeze ?? Icons.screen_rotation_alt,
+                              color: iconFreezeColor ?? iconColor,
+                              size: 22,
                             ),
                           ),
-                        )
-                      : const SizedBox.shrink(),
-                ),
-                // 3D toggle button
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: GestureDetector(
-                    onTap: on3DTap,
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeInOut,
-                      width: 44, height: 44,
-                      decoration: BoxDecoration(
-                        color: bg3DColor ?? bgColor,
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 2))],
-                      ),
-                      child: Center(
-                        child: AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 200),
-                          child: Icon(icon3D ?? Icons.threed_rotation, key: ValueKey(icon3D), color: icon3DColor ?? iconColor, size: 22),
                         ),
                       ),
                     ),
                   ),
                 ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _ControlButton(
+                    onTap: on3DTap!,
+                    bgColor: bg3DColor ?? bgColor,
+                    child: Icon(
+                      icon3D ?? Icons.threed_rotation,
+                      color: icon3DColor ?? iconColor,
+                      size: 22,
+                    ),
+                  ),
+                ),
               ],
+              if (onSkinTap != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _ControlButton(
+                    onTap: onSkinTap!,
+                    bgColor: bgColor,
+                    child: Icon(
+                      iconSkin ?? Icons.palette,
+                      color: iconColor,
+                      size: 22,
+                    ),
+                  ),
+                ),
+              if (onMapToggleTap != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _ControlButton(
+                    onTap: onMapToggleTap!,
+                    bgColor: bgColor,
+                    child: Icon(
+                      iconMapToggle ?? Icons.layers,
+                      color: iconColor,
+                      size: 22,
+                    ),
+                  ),
+                ),
               _ControlButton(
                 onTap: onZoomIn,
                 bgColor: bgColor,
@@ -188,32 +212,33 @@ class MapControls extends StatelessWidget {
               child: Container(
                 width: 56,
                 height: 56,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: searchActive
-                      ? [Colors.red[400]!, Colors.red[800]!]
-                      : [const Color(0xFF3FA2FF), const Color(0xFF1F6FD1)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: (searchActive ? Colors.red : const Color(0xFF3FA2FF))
-                        .withOpacity(0.4),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: searchActive
+                        ? [Colors.red[400]!, Colors.red[800]!]
+                        : [const Color(0xFF3FA2FF), const Color(0xFF1F6FD1)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
-                ],
-              ),
-              child: Icon(
-                searchActive ? Icons.close : Icons.search,
-                color: Colors.white,
-                size: 24,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color:
+                          (searchActive ? Colors.red : const Color(0xFF3FA2FF))
+                              .withOpacity(0.4),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  searchActive ? Icons.close : Icons.search,
+                  color: Colors.white,
+                  size: 24,
+                ),
               ),
             ),
           ),
-        ),
       ],
     );
   }
