@@ -1,17 +1,15 @@
-# flutteetest
+# GPS Alarm
 
-A new Flutter project.
+GPS-based proximity alarm app built with Flutter.
 
-## Getting Started
+The app lets you place alarm points on a map and trigger alerts when you enter or leave a configured radius, or when a time-based ETA radius is reached. Android is the primary native target; raster maps are available everywhere, and native MapLibre vector mode is available on mobile.
 
-This project is a starting point for a Flutter application.
+## Development
 
-A few resources to get you started if this is your first Flutter project:
+```sh
+flutter pub get
+flutter test
+flutter analyze
+```
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Android release signing uses `android/key.properties` when present. Copy `android/key.properties.example`, point it at a real release keystore, and keep the real file out of git. Keystore files and signing properties are intentionally ignored.

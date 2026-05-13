@@ -7,8 +7,6 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
-import 'package:easy_localization/easy_localization.dart';
-import 'package:uuid/uuid.dart';
 import '../models/alarm_point.dart';
 import '../models/app_settings.dart';
 import '../providers/map_provider.dart';
@@ -18,12 +16,12 @@ import '../widgets/map_controls.dart';
 import '../widgets/search_pill.dart';
 import '../widgets/pin_marker.dart';
 import '../widgets/radius_circle.dart';
-import '../widgets/radius_popup.dart';
 import '../widgets/alarm_card.dart';
 import '../widgets/user_location_marker.dart';
 import '../services/location_service.dart';
 import '../services/alarm_service.dart';
-import '../services/notification_service.dart';
+import '../services/alarm_delivery_service.dart';
+import '../services/permission_service.dart';
 import 'settings_screen.dart';
 import '../services/debug_console.dart';
 import '../widgets/maplibre_new_view.dart';
@@ -61,6 +59,7 @@ class _MapScreenState extends State<MapScreen> {
   double _rasterZoom = 13;
   int _rasterDragLogCounter = 0;
   final ValueNotifier<double> _speedKmh = ValueNotifier(0);
+  final Map<String, bool> _alarmInsideState = {};
 
   // Speed interpolation between GPS ticks
   double _prevGpsSpeed = 0;
@@ -189,7 +188,7 @@ class _MapScreenState extends State<MapScreen> {
               'GPS: ${newPos.latitude.toStringAsFixed(4)}, ${newPos.longitude.toStringAsFixed(4)}',
             );
           }
-          _checkAlarms(position.latitude, position.longitude);
+          unawaited(_checkAlarms(position.latitude, position.longitude));
           final newSpeed = _locationService.averageSpeedKmh;
           if (isContinuous) {
             // Feed speed interpolation (timer handles setState)
@@ -208,94 +207,51 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  void _checkAlarms(double userLat, double userLng) {
+  Future<void> _checkAlarms(double userLat, double userLng) async {
     final alarmProv = context.read<AlarmProvider>();
-    final activePoints = alarmProv.alarmPoints
+    final settings = context.read<SettingsProvider>().settings;
+    final activeIds = alarmProv.alarmPoints
         .where((p) => p.isActive)
-        .toList();
+        .map((p) => p.id)
+        .toSet();
+    _alarmInsideState.removeWhere((id, _) => !activeIds.contains(id));
 
-    for (final point in activePoints) {
-      bool shouldTrigger = false;
-      final isInside = AlarmService.isWithinRadius(
-        userLat: userLat,
-        userLng: userLng,
-        pointLat: point.latitude,
-        pointLng: point.longitude,
-        radiusMeters: point.radiusMeters,
+    for (final point in alarmProv.alarmPoints.where((p) => p.isActive)) {
+      final effectiveRadius = point.triggerType == TriggerType.time &&
+              point.timeTrigger != null
+          ? max(
+              200.0,
+              (_locationService.averageSpeedKmh / 3.6) *
+                  point.timeTrigger!.inSeconds.toDouble(),
+            )
+          : point.radiusMeters;
+      final distance = AlarmService.distanceMeters(
+        userLat,
+        userLng,
+        point.latitude,
+        point.longitude,
       );
+      final isInside = distance <= effectiveRadius;
+      final wasInside = _alarmInsideState[point.id];
+      _alarmInsideState[point.id] = isInside;
+      if (wasInside == null) continue;
 
-      if (point.triggerType == TriggerType.distance) {
-        // On entry: trigger when entering the zone
-        // On leave: trigger when outside the zone (was inside before)
-        if (point.zoneTrigger == ZoneTrigger.onEntry) {
-          shouldTrigger = isInside;
-        } else {
-          shouldTrigger = !isInside;
-        }
-      } else if (point.triggerType == TriggerType.time &&
-          point.timeTrigger != null) {
-        // Time-based: trigger when user is inside the dynamic radius circle.
-        // The circle radius = max(200m, speed * time).
-        final speedMs = _locationService.averageSpeedKmh / 3.6;
-        final timeRadius = max(
-          200.0,
-          speedMs * point.timeTrigger!.inSeconds.toDouble(),
-        );
-        final dist = AlarmService.distanceMeters(
-          userLat,
-          userLng,
-          point.latitude,
-          point.longitude,
-        );
-        final insideTimeCircle = dist <= timeRadius;
-        if (point.zoneTrigger == ZoneTrigger.onEntry) {
-          shouldTrigger = insideTimeCircle;
-        } else {
-          shouldTrigger = !insideTimeCircle;
-        }
-      }
+      final shouldTrigger = point.zoneTrigger == ZoneTrigger.onEntry
+          ? !wasInside && isInside
+          : wasInside && !isInside;
 
       if (shouldTrigger) {
         DebugConsole.log('ALARM TRIGGERED: ${point.name ?? point.id}');
-        alarmProv.toggleActive(point.id);
-        _showAlarmTriggered(point);
+        await alarmProv.setActive(point.id, false);
+        if (!mounted) return;
+        await AlarmDeliveryService.trigger(
+          context: context,
+          point: point,
+          settings: settings,
+          distanceMeters: distance,
+        );
       }
     }
-  }
-
-  void _showAlarmTriggered(AlarmPoint point) {
-    if (!mounted) return;
-    final title = point.name ?? tr('no_name');
-    final zoneText = point.zoneTrigger == ZoneTrigger.onEntry
-        ? 'Belépés'
-        : 'Kilépés';
-    final body = point.triggerType == TriggerType.distance
-        ? '$zoneText — ${point.radiusMeters.round()}m'
-        : '$zoneText — ${point.timeTrigger?.inMinutes ?? 0} min';
-
-    // Send system notification
-    NotificationService.showAlarmNotification(
-      title: 'GPS Alarm: $title',
-      body: body,
-      id: point.id.hashCode,
-    );
-
-    // Show in-app dialog
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        icon: const Icon(Icons.alarm, color: Colors.red, size: 48),
-        title: Text(title),
-        content: Text(body),
-        actions: [
-          FilledButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(tr('dismiss')),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -707,7 +663,7 @@ class _MapScreenState extends State<MapScreen> {
                 onSearchTap: () => context.read<MapProvider>().toggleSearch(),
                 onMyLocation: _goToMyLocation,
                 searchActive: searchActive,
-                onMapToggleTap: () {
+                onMapToggleTap: () async {
                   final haptic = context
                       .read<SettingsProvider>()
                       .settings
@@ -715,13 +671,13 @@ class _MapScreenState extends State<MapScreen> {
                   if (haptic) Vibration.vibrate(duration: 30);
                   if (_isAssigning) _cancelAssign();
                   final settings = context.read<SettingsProvider>();
-                  settings.updateSettings(
+                  await settings.updateSettings(
                     settings.settings.copyWith(
                       mapProvider: MapTileProvider.vector,
                     ),
                   );
                 },
-                onSkinTap: () {
+                onSkinTap: () async {
                   final haptic = context
                       .read<SettingsProvider>()
                       .settings
@@ -732,7 +688,7 @@ class _MapScreenState extends State<MapScreen> {
                   final styles = MapTileStyle.values;
                   final idx = styles.indexOf(settings.settings.mapTileStyle);
                   final next = styles[(idx + 1) % styles.length];
-                  settings.updateSettings(
+                  await settings.updateSettings(
                     settings.settings.copyWith(mapTileStyle: next),
                   );
                 },
@@ -775,8 +731,8 @@ class _MapScreenState extends State<MapScreen> {
                 onSave: _saveAssign,
                 onCancel: _cancelAssign,
                 onDelete: _assignExisting != null
-                    ? () {
-                        context.read<AlarmProvider>().removeAlarmPoint(
+                    ? () async {
+                        await context.read<AlarmProvider>().removeAlarmPoint(
                           _assignExisting!.id,
                         );
                         _cancelAssign();
@@ -965,13 +921,17 @@ class _MapScreenState extends State<MapScreen> {
     });
   }
 
-  void _saveAssign(AlarmPoint alarm) {
+  Future<void> _saveAssign(AlarmPoint alarm) async {
     final alarmProv = context.read<AlarmProvider>();
     if (_assignExisting != null) {
-      alarmProv.updateAlarmPoint(alarm);
+      await alarmProv.updateAlarmPoint(alarm);
     } else if (alarmProv.canAddAlarm) {
-      alarmProv.addAlarmPoint(alarm);
+      if (alarm.isActive) {
+        await PermissionService.requestBackgroundLocation();
+      }
+      await alarmProv.addAlarmPoint(alarm);
     }
+    if (!mounted) return;
     _cancelAssign();
   }
 

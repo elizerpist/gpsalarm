@@ -1,0 +1,4 @@
+storePassword=change-me
+keyPassword=change-me
+keyAlias=gpsalarm
+storeFile=/absolute/path/to/gpsalarm-release.jks

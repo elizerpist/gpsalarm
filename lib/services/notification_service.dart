@@ -32,25 +32,32 @@ class NotificationService {
     required String title,
     required String body,
     int id = 0,
+    bool playSound = true,
+    bool enableVibration = true,
+    bool fullScreenIntent = false,
   }) async {
     if (kIsWeb || !_initialized) return;
 
-    const androidDetails = AndroidNotificationDetails(
-      'gps_alarm_channel',
-      'GPS Alarm',
-      channelDescription: 'GPS Alarm értesítések',
+    final usesSystemAlert = playSound || enableVibration;
+    final androidDetails = AndroidNotificationDetails(
+      usesSystemAlert ? 'gps_alarm_alerts' : 'gps_alarm_silent_alerts',
+      usesSystemAlert ? 'GPS Alarm alerts' : 'GPS Alarm silent alerts',
+      channelDescription: usesSystemAlert
+          ? 'GPS Alarm notification-only alerts'
+          : 'GPS Alarm visual alerts with app-controlled alarm output',
       importance: Importance.max,
       priority: Priority.high,
-      playSound: true,
-      enableVibration: true,
-      fullScreenIntent: true,
+      playSound: playSound,
+      enableVibration: enableVibration,
+      fullScreenIntent: fullScreenIntent,
+      category: AndroidNotificationCategory.alarm,
     );
 
     await _plugin.show(
       id,
       title,
       body,
-      const NotificationDetails(android: androidDetails),
+      NotificationDetails(android: androidDetails),
     );
     DebugConsole.log('Notification sent: $title - $body');
   }

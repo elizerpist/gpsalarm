@@ -780,9 +780,12 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         effectiveAlarm,
       );
       if (wasExisting) {
-        alarmProv.updateAlarmPoint(effectiveAlarm);
+        await alarmProv.updateAlarmPoint(effectiveAlarm);
       } else if (alarmProv.canAddAlarm) {
-        alarmProv.addAlarmPoint(effectiveAlarm);
+        if (effectiveAlarm.isActive) {
+          await PermissionService.requestBackgroundLocation();
+        }
+        await alarmProv.addAlarmPoint(effectiveAlarm);
       }
       _seedAlarmInsideState(effectiveAlarm);
       _radiusDebounce?.cancel();

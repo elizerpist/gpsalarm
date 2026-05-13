@@ -4,9 +4,9 @@ import '../models/alarm_point.dart';
 
 class AlarmListTile extends StatelessWidget {
   final AlarmPoint point;
-  final VoidCallback onToggle;
+  final Future<void> Function() onToggle;
   final VoidCallback onTap;
-  final VoidCallback onDelete;
+  final Future<void> Function() onDelete;
 
   const AlarmListTile({
     super.key,
@@ -64,7 +64,7 @@ class AlarmListTile extends StatelessWidget {
             children: [
               Switch(
                 value: isActive,
-                onChanged: (_) => onToggle(),
+                onChanged: (_) async => await onToggle(),
                 materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
               Text(
@@ -78,7 +78,7 @@ class AlarmListTile extends StatelessWidget {
             ],
           ),
           IconButton(
-            onPressed: onDelete,
+            onPressed: () async => await onDelete(),
             icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),

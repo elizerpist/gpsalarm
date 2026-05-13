@@ -1,11 +1,11 @@
 {
-    "name": "flutteetest",
-    "short_name": "flutteetest",
+    "name": "GPS Alarm",
+    "short_name": "GPS Alarm",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "GPS-based proximity alarm app.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

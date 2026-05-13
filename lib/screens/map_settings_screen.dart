@@ -30,14 +30,14 @@ class MapSettingsScreen extends StatelessWidget {
             title: Text(tr('current_gps')),
             value: MapStartView.currentGps,
             groupValue: settings.mapStartView,
-            onChanged: (v) => settingsProv
+            onChanged: (v) async => await settingsProv
                 .updateSettings(settings.copyWith(mapStartView: v)),
           ),
           RadioListTile<MapStartView>(
             title: Text(tr('last_position')),
             value: MapStartView.lastPosition,
             groupValue: settings.mapStartView,
-            onChanged: (v) => settingsProv
+            onChanged: (v) async => await settingsProv
                 .updateSettings(settings.copyWith(mapStartView: v)),
           ),
           const SizedBox(height: 16),
@@ -78,14 +78,14 @@ class MapSettingsScreen extends StatelessWidget {
             subtitle: 'Korlátlan, API kulcs nélkül, 6 stílus',
             icon: Icons.public,
             selected: settings.mapProvider == MapTileProvider.free,
-            onTap: () => settingsProv
+            onTap: () async => await settingsProv
                 .updateSettings(settings.copyWith(mapProvider: MapTileProvider.free)),
           ),
           if (settings.mapProvider == MapTileProvider.free) ...[
             const SizedBox(height: 8),
             _FreeTileStylePicker(
               current: settings.mapTileStyle,
-              onChanged: (style) => settingsProv
+              onChanged: (style) async => await settingsProv
                   .updateSettings(settings.copyWith(mapTileStyle: style)),
             ),
           ],
@@ -98,7 +98,7 @@ class MapSettingsScreen extends StatelessWidget {
             subtitle: 'Havi \$200 kredit ingyenes, API kulcs szükséges',
             icon: Icons.map,
             selected: settings.mapProvider == MapTileProvider.googleMaps,
-            onTap: () => settingsProv.updateSettings(
+            onTap: () async => await settingsProv.updateSettings(
                 settings.copyWith(mapProvider: MapTileProvider.googleMaps)),
           ),
           if (settings.mapProvider == MapTileProvider.googleMaps) ...[
@@ -106,7 +106,7 @@ class MapSettingsScreen extends StatelessWidget {
             _ApiKeyInput(
               label: 'Google Maps API Key',
               value: settings.googleMapsApiKey ?? '',
-              onSaved: (key) => settingsProv
+              onSaved: (key) async => await settingsProv
                   .updateSettings(settings.copyWith(googleMapsApiKey: key)),
             ),
           ],
@@ -119,7 +119,7 @@ class MapSettingsScreen extends StatelessWidget {
             subtitle: '100k betöltés/hó ingyenes, testreszabható stílusok',
             icon: Icons.layers,
             selected: settings.mapProvider == MapTileProvider.mapTiler,
-            onTap: () => settingsProv.updateSettings(
+            onTap: () async => await settingsProv.updateSettings(
                 settings.copyWith(mapProvider: MapTileProvider.mapTiler)),
           ),
           if (settings.mapProvider == MapTileProvider.mapTiler) ...[
@@ -127,13 +127,13 @@ class MapSettingsScreen extends StatelessWidget {
             _ApiKeyInput(
               label: 'MapTiler API Key',
               value: settings.mapTilerApiKey ?? '',
-              onSaved: (key) => settingsProv
+              onSaved: (key) async => await settingsProv
                   .updateSettings(settings.copyWith(mapTilerApiKey: key)),
             ),
             const SizedBox(height: 8),
             _MapTilerStylePicker(
               current: settings.mapTilerStyle,
-              onChanged: (style) => settingsProv
+              onChanged: (style) async => await settingsProv
                   .updateSettings(settings.copyWith(mapTilerStyle: style)),
             ),
           ],
@@ -147,14 +147,14 @@ class MapSettingsScreen extends StatelessWidget {
               subtitle: 'GPU renderelés, 60fps, offline, csak Android/iOS',
               icon: Icons.rocket_launch,
               selected: settings.mapProvider == MapTileProvider.vector,
-              onTap: () => settingsProv.updateSettings(
+              onTap: () async => await settingsProv.updateSettings(
                   settings.copyWith(mapProvider: MapTileProvider.vector)),
             ),
           if (!kIsWeb && settings.mapProvider == MapTileProvider.vector) ...[
             const SizedBox(height: 8),
             _VectorNativeStylePicker(
               current: settings.vectorStyleUrl,
-              onChanged: (url) => settingsProv
+              onChanged: (url) async => await settingsProv
                   .updateSettings(settings.copyWith(vectorStyleUrl: url)),
             ),
           ],
@@ -238,7 +238,7 @@ class _ProviderCard extends StatelessWidget {
 class _ApiKeyInput extends StatefulWidget {
   final String label;
   final String value;
-  final void Function(String) onSaved;
+  final Future<void> Function(String) onSaved;
 
   const _ApiKeyInput({
     required this.label,
@@ -314,8 +314,9 @@ class _ApiKeyInputState extends State<_ApiKeyInput> {
               ),
               const SizedBox(width: 8),
               FilledButton(
-                onPressed: () {
-                  widget.onSaved(_controller.text.trim());
+                onPressed: () async {
+                  await widget.onSaved(_controller.text.trim());
+                  if (!context.mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('API kulcs mentve'),

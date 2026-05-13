@@ -120,7 +120,7 @@ class SettingsDrawer extends StatelessWidget {
               icon: Icons.language,
               title: tr('language'),
               subtitle: settings.locale == 'hu' ? 'Magyar' : 'English',
-              onTap: () => _toggleLanguage(context, settingsProv),
+              onTap: () async => await _toggleLanguage(context, settingsProv),
             ),
             const Spacer(),
             const Divider(height: 1, indent: 20, endIndent: 20),
@@ -149,30 +149,30 @@ class SettingsDrawer extends StatelessWidget {
             label: tr('light'),
             mode: ThemeMode.light,
             current: settingsProv.settings.themeMode,
-            onTap: () {
-              settingsProv.updateSettings(
+            onTap: () async {
+              await settingsProv.updateSettings(
                   settingsProv.settings.copyWith(themeMode: ThemeMode.light));
-              Navigator.pop(context);
+              if (context.mounted) Navigator.pop(context);
             },
           ),
           _ThemeOption(
             label: tr('dark'),
             mode: ThemeMode.dark,
             current: settingsProv.settings.themeMode,
-            onTap: () {
-              settingsProv.updateSettings(
+            onTap: () async {
+              await settingsProv.updateSettings(
                   settingsProv.settings.copyWith(themeMode: ThemeMode.dark));
-              Navigator.pop(context);
+              if (context.mounted) Navigator.pop(context);
             },
           ),
           _ThemeOption(
             label: tr('system'),
             mode: ThemeMode.system,
             current: settingsProv.settings.themeMode,
-            onTap: () {
-              settingsProv.updateSettings(
+            onTap: () async {
+              await settingsProv.updateSettings(
                   settingsProv.settings.copyWith(themeMode: ThemeMode.system));
-              Navigator.pop(context);
+              if (context.mounted) Navigator.pop(context);
             },
           ),
         ],
@@ -180,13 +180,13 @@ class SettingsDrawer extends StatelessWidget {
     );
   }
 
-  void _toggleLanguage(
-      BuildContext context, SettingsProvider settingsProv) {
+  Future<void> _toggleLanguage(
+      BuildContext context, SettingsProvider settingsProv) async {
     final current = settingsProv.settings.locale;
     final newLocale = current == 'hu' ? 'en' : 'hu';
-    settingsProv
+    await settingsProv
         .updateSettings(settingsProv.settings.copyWith(locale: newLocale));
-    context.setLocale(Locale(newLocale));
+    if (context.mounted) context.setLocale(Locale(newLocale));
   }
 
   void _confirmResetAll(BuildContext context, AlarmProvider alarmProv) {
@@ -203,8 +203,9 @@ class SettingsDrawer extends StatelessWidget {
           ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () {
-              alarmProv.clearAll();
+            onPressed: () async {
+              await alarmProv.clearAll();
+              if (!context.mounted) return;
               Navigator.pop(context); // dialog
               Navigator.pop(context); // drawer
             },

@@ -10,18 +10,25 @@ class AlarmProvider extends ChangeNotifier {
   static const double duplicateThresholdMeters = 50.0;
   static const String _hiveBoxName = 'alarmPoints';
 
+  final bool enablePersistence;
   List<AlarmPoint> _alarmPoints = [];
   Box? _hiveBox;
+
+  AlarmProvider({this.enablePersistence = true});
 
   List<AlarmPoint> get alarmPoints => List.unmodifiable(_alarmPoints);
   int get activeCount => _alarmPoints.where((p) => p.isActive).length;
   bool get canAddAlarm => activeCount < maxActiveAlarms;
 
   Future<void> init() async {
+    if (!enablePersistence) {
+      notifyListeners();
+      return;
+    }
+
     _hiveBox = await Hive.openBox(_hiveBoxName);
 
-    // Try SQLite first
-    bool loadedFromDb = false;
+    var loadedFromDb = false;
     try {
       final rows = await DatabaseService.getAllAlarmPoints();
       if (rows.isNotEmpty) {
@@ -35,7 +42,6 @@ class AlarmProvider extends ChangeNotifier {
       DebugConsole.log('SQLite alarm load failed: $e');
     }
 
-    // Fallback: Hive
     if (!loadedFromDb) {
       try {
         _alarmPoints = _hiveBox!.values
@@ -43,7 +49,7 @@ class AlarmProvider extends ChangeNotifier {
             .toList();
         if (_alarmPoints.isNotEmpty) {
           DebugConsole.log('Alarms loaded from Hive (fallback): ${_alarmPoints.length} points');
-          _saveToDb();
+          await _saveToDb();
         } else {
           DebugConsole.log('Alarms: empty (first run)');
         }
@@ -56,49 +62,59 @@ class AlarmProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void addAlarmPoint(AlarmPoint point) {
+  Future<void> addAlarmPoint(AlarmPoint point) async {
     if (!canAddAlarm) return;
     _alarmPoints.add(point);
-    _saveAll();
+    await _saveAll();
     DebugConsole.log('Alarm added: ${point.name ?? point.id} (${point.radiusMeters.round()}m)');
     notifyListeners();
   }
 
-  void removeAlarmPoint(String id) {
+  Future<void> removeAlarmPoint(String id) async {
     _alarmPoints.removeWhere((p) => p.id == id);
-    _saveAll();
-    _deleteFromDb(id);
+    await _saveAll();
     DebugConsole.log('Alarm removed: $id');
     notifyListeners();
   }
 
-  void clearAll() {
+  Future<void> clearAll() async {
     final count = _alarmPoints.length;
     _alarmPoints.clear();
-    _saveAll();
+    await _saveAll();
     DebugConsole.log('All alarms cleared ($count points)');
     notifyListeners();
   }
 
-  void updateAlarmPoint(AlarmPoint updated) {
+  Future<void> updateAlarmPoint(AlarmPoint updated) async {
     final index = _alarmPoints.indexWhere((p) => p.id == updated.id);
     if (index != -1) {
       _alarmPoints[index] = updated;
-      _saveAll();
+      await _saveAll();
       DebugConsole.log('Alarm updated: ${updated.name ?? updated.id}');
       notifyListeners();
     }
   }
 
-  void toggleActive(String id) {
+  Future<void> toggleActive(String id) async {
     final index = _alarmPoints.indexWhere((p) => p.id == id);
     if (index != -1) {
       final point = _alarmPoints[index];
-      _alarmPoints[index] = point.copyWith(isActive: !point.isActive);
-      _saveAll();
-      DebugConsole.log('Alarm toggled: ${point.name ?? id} → ${!point.isActive ? "ACTIVE" : "INACTIVE"}');
+      final next = !point.isActive;
+      _alarmPoints[index] = point.copyWith(isActive: next);
+      await _saveAll();
+      DebugConsole.log('Alarm toggled: ${point.name ?? id} -> ${next ? "ACTIVE" : "INACTIVE"}');
       notifyListeners();
     }
+  }
+
+  Future<void> setActive(String id, bool isActive) async {
+    final index = _alarmPoints.indexWhere((p) => p.id == id);
+    if (index == -1 || _alarmPoints[index].isActive == isActive) return;
+    final point = _alarmPoints[index];
+    _alarmPoints[index] = point.copyWith(isActive: isActive);
+    await _saveAll();
+    DebugConsole.log('Alarm active state: ${point.name ?? id} -> ${isActive ? "ACTIVE" : "INACTIVE"}');
+    notifyListeners();
   }
 
   AlarmPoint? findNearby(double lat, double lng) {
@@ -109,50 +125,41 @@ class AlarmProvider extends ChangeNotifier {
     return null;
   }
 
-  // ─── Persistence ────────────────────────────────
-
-  void _saveAll() {
-    _saveToHive();
-    _saveToDb();
+  Future<void> _saveAll() async {
+    if (!enablePersistence) return;
+    await _saveToHive();
+    await _saveToDb();
   }
 
-  void _saveToHive() {
+  Future<void> _saveToHive() async {
     if (_hiveBox == null) return;
-    _hiveBox!.clear();
+    await _hiveBox!.clear();
     for (final point in _alarmPoints) {
-      _hiveBox!.put(point.id, point.toMap());
+      await _hiveBox!.put(point.id, point.toMap());
     }
   }
 
-  void _saveToDb() {
+  Future<void> _saveToDb() async {
+    if (!enablePersistence) return;
     try {
-      DatabaseService.replaceAllAlarmPoints(
-          _alarmPoints.map((p) => p.toMap()).toList());
+      await DatabaseService.replaceAllAlarmPoints(
+        _alarmPoints.map((p) => p.toMap()).toList(),
+      );
     } catch (e) {
       DebugConsole.log('SQLite alarm save failed: $e');
     }
   }
 
-  void _deleteFromDb(String id) {
-    try {
-      DatabaseService.deleteAlarmPoint(id);
-    } catch (e) {
-      DebugConsole.log('SQLite alarm delete failed: $e');
-    }
-  }
-
-  // ─── Haversine ──────────────────────────────────
-
   static double _haversineMeters(
       double lat1, double lng1, double lat2, double lng2) {
-    const R = 6371000.0;
+    const r = 6371000.0;
     final dLat = _toRad(lat2 - lat1);
     final dLng = _toRad(lng2 - lng1);
     final a = sin(dLat / 2) * sin(dLat / 2) +
         cos(_toRad(lat1)) * cos(_toRad(lat2)) *
-        sin(dLng / 2) * sin(dLng / 2);
+            sin(dLng / 2) * sin(dLng / 2);
     final c = 2 * atan2(sqrt(a), sqrt(1 - a));
-    return R * c;
+    return r * c;
   }
 
   static double _toRad(double deg) => deg * pi / 180;

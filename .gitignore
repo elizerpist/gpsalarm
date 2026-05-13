@@ -44,3 +44,7 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 .superpowers/
+
+android/key.properties
+*.jks
+*.keystore

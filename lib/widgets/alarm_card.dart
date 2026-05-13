@@ -19,9 +19,9 @@ class AlarmCard extends StatefulWidget {
   final ValueChanged<TriggerType> onTriggerTypeChanged;
   final ValueChanged<int> onTimeChanged;
   final ValueChanged<bool>? onActiveChanged;
-  final void Function(AlarmPoint alarm) onSave;
+  final Future<void> Function(AlarmPoint alarm) onSave;
   final VoidCallback onCancel;
-  final VoidCallback? onDelete;
+  final Future<void> Function()? onDelete;
 
   const AlarmCard({
     super.key,
@@ -189,7 +189,9 @@ class _AlarmCardState extends State<AlarmCard> {
                     // Delete icon (edit mode only) — separate group
                     if (isEdit) ...[
                       GestureDetector(
-                        onTap: widget.onDelete,
+                        onTap: widget.onDelete == null
+                            ? null
+                            : () async => await widget.onDelete!(),
                         child: Icon(Icons.delete_outline, size: 22, color: Colors.red[400]),
                       ),
                       const SizedBox(width: 12),
@@ -291,7 +293,7 @@ class _AlarmCardState extends State<AlarmCard> {
                     )),
                     const SizedBox(width: 8),
                     Expanded(child: FilledButton(
-                      onPressed: _save,
+                      onPressed: () async => await _save(),
                       child: Text(tr('save')),
                     )),
                   ]),
@@ -341,9 +343,9 @@ class _AlarmCardState extends State<AlarmCard> {
     );
   }
 
-  void _save() {
+  Future<void> _save() async {
     final name = _nameController.text.isEmpty ? null : _nameController.text;
-    widget.onSave(AlarmPoint(
+    await widget.onSave(AlarmPoint(
       id: widget.existingPoint?.id ?? const Uuid().v4(),
       name: name,
       latitude: widget.latitude,

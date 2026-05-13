@@ -10,6 +10,7 @@ import 'providers/map_provider.dart';
 import 'screens/map_screen.dart';
 import 'services/debug_console.dart';
 import 'services/notification_service.dart';
+import 'services/background_monitoring_service.dart';
 
 void main() async {
   runZonedGuarded(() async {
@@ -39,6 +40,12 @@ void main() async {
       final settingsProvider = SettingsProvider();
       await settingsProvider.init();
 
+      final triggeredIds = await BackgroundMonitoringService.consumeTriggeredAlarmIds();
+      for (final id in triggeredIds) {
+        await alarmProvider.setActive(id, false);
+      }
+      _setupBackgroundMonitoring(alarmProvider, settingsProvider);
+
       runApp(
         EasyLocalization(
           supportedLocales: const [Locale('hu'), Locale('en')],
@@ -61,6 +68,58 @@ void main() async {
   }, (error, stack) {
     DebugConsole.log('ZONE ERROR: $error');
   });
+}
+
+final List<WidgetsBindingObserver> _backgroundObservers = [];
+
+void _setupBackgroundMonitoring(
+  AlarmProvider alarmProvider,
+  SettingsProvider settingsProvider,
+) {
+  if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
+
+  Future<void> sync() => BackgroundMonitoringService.sync(
+        alarms: alarmProvider.alarmPoints,
+        settings: settingsProvider.settings,
+      );
+
+  Future<void> consumeTriggeredIds() async {
+    final ids = await BackgroundMonitoringService.consumeTriggeredAlarmIds();
+    for (final id in ids) {
+      await alarmProvider.setActive(id, false);
+    }
+  }
+
+  void scheduleSync() => unawaited(sync());
+
+  alarmProvider.addListener(scheduleSync);
+  settingsProvider.addListener(scheduleSync);
+  final observer = _BackgroundTriggerObserver(
+    consumeTriggeredIds: consumeTriggeredIds,
+    sync: sync,
+  );
+  WidgetsBinding.instance.addObserver(observer);
+  _backgroundObservers.add(observer);
+  scheduleSync();
+}
+
+class _BackgroundTriggerObserver extends WidgetsBindingObserver {
+  final Future<void> Function() consumeTriggeredIds;
+  final Future<void> Function() sync;
+
+  _BackgroundTriggerObserver({
+    required this.consumeTriggeredIds,
+    required this.sync,
+  });
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    unawaited(() async {
+      await consumeTriggeredIds();
+      await sync();
+    }());
+  }
 }
 
 /// Shown when the app crashes during startup

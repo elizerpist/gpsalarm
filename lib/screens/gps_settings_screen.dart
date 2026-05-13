@@ -27,14 +27,14 @@ class GpsSettingsScreen extends StatelessWidget {
             title: Text(tr('continuous')),
             value: GpsPollingMode.continuous,
             groupValue: settings.gpsPollingMode,
-            onChanged: (v) => settingsProv.updateSettings(
+            onChanged: (v) async => await settingsProv.updateSettings(
                 settings.copyWith(gpsPollingMode: v)),
           ),
           RadioListTile<GpsPollingMode>(
             title: Text(tr('custom_interval')),
             value: GpsPollingMode.custom,
             groupValue: settings.gpsPollingMode,
-            onChanged: (v) => settingsProv.updateSettings(
+            onChanged: (v) async => await settingsProv.updateSettings(
                 settings.copyWith(gpsPollingMode: v)),
           ),
           if (settings.gpsPollingMode == GpsPollingMode.custom) ...[
@@ -47,7 +47,7 @@ class GpsSettingsScreen extends StatelessWidget {
               max: 300,
               divisions: 29,
               label: '${settings.customPollingInterval.inSeconds}s',
-              onChanged: (v) => settingsProv.updateSettings(
+              onChanged: (v) async => await settingsProv.updateSettings(
                 settings.copyWith(
                     customPollingInterval: Duration(seconds: v.round())),
               ),

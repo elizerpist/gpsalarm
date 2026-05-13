@@ -5,12 +5,14 @@ import '../models/alarm_point.dart';
 class AlarmTriggerScreen extends StatelessWidget {
   final AlarmPoint alarmPoint;
   final double distanceMeters;
-  final VoidCallback onDismiss;
+  final String? message;
+  final Future<void> Function() onDismiss;
 
   const AlarmTriggerScreen({
     super.key,
     required this.alarmPoint,
     required this.distanceMeters,
+    this.message,
     required this.onDismiss,
   });
 
@@ -38,14 +40,15 @@ class AlarmTriggerScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  '${distanceMeters.round()}m',
+                  message ?? '${distanceMeters.round()}m',
                   style: TextStyle(color: Colors.grey[400], fontSize: 18),
+                  textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 48),
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.icon(
-                    onPressed: onDismiss,
+                    onPressed: () async => await onDismiss(),
                     icon: const Icon(Icons.close),
                     label: Text(tr('dismiss'),
                         style: const TextStyle(fontSize: 18)),

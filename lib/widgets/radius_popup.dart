@@ -4,6 +4,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:uuid/uuid.dart';
 import '../models/alarm_point.dart';
 import '../providers/alarm_provider.dart';
+import '../services/permission_service.dart';
 
 class RadiusPopup extends StatefulWidget {
   final double latitude;
@@ -259,7 +260,7 @@ class _RadiusPopupState extends State<RadiusPopup> {
     );
   }
 
-  void _save(BuildContext context) {
+  Future<void> _save(BuildContext context) async {
     final alarmProv = context.read<AlarmProvider>();
 
     if (!alarmProv.canAddAlarm && widget.existingPoint == null) {
@@ -284,17 +285,22 @@ class _RadiusPopupState extends State<RadiusPopup> {
     );
 
     if (widget.existingPoint != null) {
-      alarmProv.updateAlarmPoint(point);
+      await alarmProv.updateAlarmPoint(point);
     } else {
-      alarmProv.addAlarmPoint(point);
+      if (point.isActive) {
+        await PermissionService.requestBackgroundLocation();
+      }
+      await alarmProv.addAlarmPoint(point);
     }
+    if (!context.mounted) return;
     Navigator.pop(context);
   }
 
-  void _delete(BuildContext context) {
+  Future<void> _delete(BuildContext context) async {
     if (widget.existingPoint == null) return;
     final alarmProv = context.read<AlarmProvider>();
-    alarmProv.removeAlarmPoint(widget.existingPoint!.id);
+    await alarmProv.removeAlarmPoint(widget.existingPoint!.id);
+    if (!context.mounted) return;
     Navigator.pop(context);
   }
 }

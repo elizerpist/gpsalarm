@@ -30,7 +30,7 @@ class _AlarmSettingsScreenState extends State<AlarmSettingsScreen> {
     );
     if (result != null && result.files.single.path != null) {
       final path = result.files.single.path!;
-      settingsProv.updateSettings(
+      await settingsProv.updateSettings(
           settingsProv.settings.copyWith(defaultAlarmSound: path));
     }
   }
@@ -66,14 +66,14 @@ class _AlarmSettingsScreenState extends State<AlarmSettingsScreen> {
             label: tr('sound_and_vibration'),
             value: AlarmType.soundAndVibration,
             groupValue: settings.defaultAlarmType,
-            onChanged: (v) => settingsProv.updateSettings(
+            onChanged: (v) async => await settingsProv.updateSettings(
                 settings.copyWith(defaultAlarmType: v)),
           ),
           _AlarmTypeRadio(
             label: tr('notification_only'),
             value: AlarmType.notificationOnly,
             groupValue: settings.defaultAlarmType,
-            onChanged: (v) => settingsProv.updateSettings(
+            onChanged: (v) async => await settingsProv.updateSettings(
                 settings.copyWith(defaultAlarmType: v)),
           ),
           if (PlatformService.supportsFullScreenAlarm)
@@ -81,7 +81,7 @@ class _AlarmSettingsScreenState extends State<AlarmSettingsScreen> {
               label: tr('full_screen_alarm'),
               value: AlarmType.fullScreenAlarm,
               groupValue: settings.defaultAlarmType,
-              onChanged: (v) => settingsProv.updateSettings(
+              onChanged: (v) async => await settingsProv.updateSettings(
                   settings.copyWith(defaultAlarmType: v)),
             ),
           const SizedBox(height: 24),
@@ -104,7 +104,7 @@ class _AlarmSettingsScreenState extends State<AlarmSettingsScreen> {
               icon: Icons.alarm,
               selected: settings.defaultAlarmSound == AudioService.systemAlarmKey,
               playing: _playingSound == AudioService.systemAlarmKey,
-              onTap: () => settingsProv.updateSettings(
+              onTap: () async => await settingsProv.updateSettings(
                   settings.copyWith(defaultAlarmSound: AudioService.systemAlarmKey)),
               onPreview: () => _togglePreview(AudioService.systemAlarmKey),
             ),
@@ -113,7 +113,7 @@ class _AlarmSettingsScreenState extends State<AlarmSettingsScreen> {
               icon: Icons.notifications,
               selected: settings.defaultAlarmSound == AudioService.systemNotificationKey,
               playing: _playingSound == AudioService.systemNotificationKey,
-              onTap: () => settingsProv.updateSettings(
+              onTap: () async => await settingsProv.updateSettings(
                   settings.copyWith(defaultAlarmSound: AudioService.systemNotificationKey)),
               onPreview: () => _togglePreview(AudioService.systemNotificationKey),
             ),
@@ -122,7 +122,7 @@ class _AlarmSettingsScreenState extends State<AlarmSettingsScreen> {
               icon: Icons.ring_volume,
               selected: settings.defaultAlarmSound == AudioService.systemRingtoneKey,
               playing: _playingSound == AudioService.systemRingtoneKey,
-              onTap: () => settingsProv.updateSettings(
+              onTap: () async => await settingsProv.updateSettings(
                   settings.copyWith(defaultAlarmSound: AudioService.systemRingtoneKey)),
               onPreview: () => _togglePreview(AudioService.systemRingtoneKey),
             ),
@@ -140,7 +140,7 @@ class _AlarmSettingsScreenState extends State<AlarmSettingsScreen> {
               icon: Icons.music_note,
               selected: settings.defaultAlarmSound == key,
               playing: _playingSound == key,
-              onTap: () => settingsProv
+              onTap: () async => await settingsProv
                   .updateSettings(settings.copyWith(defaultAlarmSound: key)),
               onPreview: () => _togglePreview(key),
             );
@@ -153,7 +153,7 @@ class _AlarmSettingsScreenState extends State<AlarmSettingsScreen> {
               icon: Icons.folder_open,
               selected: settings.defaultAlarmSound.startsWith('/'),
               playing: _playingSound != null && _playingSound!.startsWith('/'),
-              onTap: () => _pickCustomSound(settingsProv),
+              onTap: () async => await _pickCustomSound(settingsProv),
               onPreview: settings.defaultAlarmSound.startsWith('/')
                   ? () => _togglePreview(settings.defaultAlarmSound)
                   : () {},
@@ -167,7 +167,7 @@ class _AlarmSettingsScreenState extends State<AlarmSettingsScreen> {
               title: Text(tr('vibration')),
               subtitle: const Text('Alarm vibráció', style: TextStyle(fontSize: 11)),
               value: settings.vibrationEnabled,
-              onChanged: (v) => settingsProv
+              onChanged: (v) async => await settingsProv
                   .updateSettings(settings.copyWith(vibrationEnabled: v)),
             ),
           // Haptic feedback toggle (mobile only)
@@ -176,7 +176,7 @@ class _AlarmSettingsScreenState extends State<AlarmSettingsScreen> {
               title: const Text('Haptikus visszajelzés'),
               subtitle: const Text('Long press, fast assign', style: TextStyle(fontSize: 11)),
               value: settings.hapticFeedback,
-              onChanged: (v) => settingsProv
+              onChanged: (v) async => await settingsProv
                   .updateSettings(settings.copyWith(hapticFeedback: v)),
             ),
           const SizedBox(height: 16),
@@ -193,8 +193,8 @@ class _AlarmSettingsScreenState extends State<AlarmSettingsScreen> {
             max: 1,
             divisions: 10,
             label: '${(settings.volume * 100).round()}%',
-            onChanged: (v) =>
-                settingsProv.updateSettings(settings.copyWith(volume: v)),
+            onChanged: (v) async =>
+                await settingsProv.updateSettings(settings.copyWith(volume: v)),
           ),
         ],
       ),

@@ -10,17 +10,23 @@ class SettingsProvider extends ChangeNotifier {
   static const String _hiveKey = 'appSettings';
   static const String _dbKey = 'appSettings';
 
+  final bool enablePersistence;
   AppSettings _settings = AppSettings();
   Box? _hiveBox;
+
+  SettingsProvider({this.enablePersistence = true});
 
   AppSettings get settings => _settings;
 
   Future<void> init() async {
-    // Open Hive
+    if (!enablePersistence) {
+      notifyListeners();
+      return;
+    }
+
     _hiveBox = await Hive.openBox(_hiveBoxName);
 
-    // Try loading from SQLite first (primary), fallback to Hive
-    bool loadedFromDb = false;
+    var loadedFromDb = false;
     try {
       final dbJson = await DatabaseService.getSetting(_dbKey);
       if (dbJson != null) {
@@ -33,20 +39,18 @@ class SettingsProvider extends ChangeNotifier {
       DebugConsole.log('SQLite load failed: $e');
     }
 
-    // Fallback: load from Hive
     if (!loadedFromDb) {
       try {
         final raw = _hiveBox!.get(_hiveKey);
         if (raw != null) {
           _settings = AppSettings.fromMap(Map<String, dynamic>.from(raw as Map));
           DebugConsole.log('Settings loaded from Hive (fallback)');
-          // Mirror to SQLite
-          _saveToDb();
+          await _saveToDb();
         } else {
           DebugConsole.log('Settings: using defaults (first run)');
         }
       } catch (e) {
-        DebugConsole.log('Hive load failed: $e — using defaults');
+        DebugConsole.log('Hive load failed: $e - using defaults');
         _settings = AppSettings();
       }
     }
@@ -55,21 +59,23 @@ class SettingsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void updateSettings(AppSettings updated) {
+  Future<void> updateSettings(AppSettings updated) async {
     _settings = updated;
-    _saveToHive();
-    _saveToDb();
+    await _saveToHive();
+    await _saveToDb();
     notifyListeners();
   }
 
-  void _saveToHive() {
-    _hiveBox?.put(_hiveKey, _settings.toMap());
+  Future<void> _saveToHive() async {
+    if (!enablePersistence) return;
+    await _hiveBox?.put(_hiveKey, _settings.toMap());
   }
 
-  void _saveToDb() {
+  Future<void> _saveToDb() async {
+    if (!enablePersistence) return;
     try {
       final jsonStr = json.encode(_settings.toMap());
-      DatabaseService.saveSetting(_dbKey, jsonStr);
+      await DatabaseService.saveSetting(_dbKey, jsonStr);
     } catch (e) {
       DebugConsole.log('SQLite save failed: $e');
     }

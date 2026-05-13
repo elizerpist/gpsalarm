@@ -7,7 +7,7 @@ void main() {
     test('creates with defaults', () {
       final settings = AppSettings();
       expect(settings.defaultAlarmType, AlarmType.soundAndVibration);
-      expect(settings.defaultAlarmSound, 'classic_bell');
+      expect(settings.defaultAlarmSound, 'system_alarm');
       expect(settings.vibrationEnabled, true);
       expect(settings.volume, 0.7);
       expect(settings.gpsPollingMode, GpsPollingMode.continuous);

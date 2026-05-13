@@ -4,6 +4,7 @@ import 'package:easy_localization/easy_localization.dart';
 import '../providers/alarm_provider.dart';
 import '../widgets/alarm_list_tile.dart';
 import '../widgets/radius_popup.dart';
+import '../services/permission_service.dart';
 
 class AlarmListScreen extends StatelessWidget {
   const AlarmListScreen({super.key});
@@ -52,11 +53,16 @@ class AlarmListScreen extends StatelessWidget {
                     color: Colors.red,
                     child: const Icon(Icons.delete, color: Colors.white),
                   ),
-                  onDismissed: (_) => alarmProv.removeAlarmPoint(point.id),
+                  onDismissed: (_) async => await alarmProv.removeAlarmPoint(point.id),
                   child: AlarmListTile(
                     point: point,
-                    onDelete: () => alarmProv.removeAlarmPoint(point.id),
-                    onToggle: () => alarmProv.toggleActive(point.id),
+                    onDelete: () async => await alarmProv.removeAlarmPoint(point.id),
+                    onToggle: () async {
+                      if (!point.isActive) {
+                        await PermissionService.requestBackgroundLocation();
+                      }
+                      await alarmProv.toggleActive(point.id);
+                    },
                     onTap: () {
                       showModalBottomSheet(
                         context: context,

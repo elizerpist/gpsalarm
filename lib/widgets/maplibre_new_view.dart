@@ -8,8 +8,6 @@ import 'package:path_drawing/path_drawing.dart';
 import 'package:maplibre/maplibre.dart';
 import 'package:latlong2/latlong.dart' show LatLng;
 import 'package:provider/provider.dart';
-import 'package:easy_localization/easy_localization.dart';
-import 'package:uuid/uuid.dart';
 import 'package:vibration/vibration.dart';
 import 'package:flutter_compass/flutter_compass.dart';
 import '../models/alarm_point.dart';
@@ -23,7 +21,8 @@ import '../widgets/alarm_card.dart';
 import '../widgets/offline_indicator.dart';
 import '../services/location_service.dart';
 import '../services/alarm_service.dart';
-import '../services/notification_service.dart';
+import '../services/alarm_delivery_service.dart';
+import '../services/permission_service.dart';
 import '../services/debug_console.dart';
 import '../widgets/alarm_marker_renderer.dart';
 import '../widgets/scale_bar.dart';
@@ -213,7 +212,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   5) {
             setState(() => _userPos = newPos);
           }
-          _checkAlarms(position.latitude, position.longitude);
+          unawaited(_checkAlarms(position.latitude, position.longitude));
           // GPS follow: auto-center + bearing in 3D mode
           // GPS follow: auto-center (bearing handled by compass stream, not GPS heading)
           if (_gpsFollow) {
@@ -261,8 +260,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     );
   }
 
-  void _checkAlarms(double userLat, double userLng) {
+  Future<void> _checkAlarms(double userLat, double userLng) async {
     final alarmProv = context.read<AlarmProvider>();
+    final settings = context.read<SettingsProvider>().settings;
     final activeIds = alarmProv.alarmPoints
         .where((p) => p.isActive)
         .map((p) => p.id)
@@ -270,6 +270,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     _alarmInsideState.removeWhere((id, _) => !activeIds.contains(id));
 
     for (final point in alarmProv.alarmPoints.where((p) => p.isActive)) {
+      final distance = AlarmService.distanceMeters(
+        userLat,
+        userLng,
+        point.latitude,
+        point.longitude,
+      );
       final isInside = _alarmContainsUser(point, userLat, userLng);
       final wasInside = _alarmInsideState[point.id];
       _alarmInsideState[point.id] = isInside;
@@ -280,32 +286,15 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
           : wasInside && !isInside;
 
       if (shouldTrigger) {
-        alarmProv.toggleActive(point.id);
-        final title = point.name ?? tr('no_name');
-        final zoneText = point.zoneTrigger == ZoneTrigger.onEntry
-            ? 'Belépés'
-            : 'Kilépés';
-        NotificationService.showAlarmNotification(
-          title: 'GPS Alarm: $title',
-          body: '$zoneText — ${point.radiusMeters.round()}m',
-          id: point.id.hashCode,
+        DebugConsole.log('ALARM TRIGGERED: ${point.name ?? point.id}');
+        await alarmProv.setActive(point.id, false);
+        if (!mounted) return;
+        await AlarmDeliveryService.trigger(
+          context: context,
+          point: point,
+          settings: settings,
+          distanceMeters: distance,
         );
-        if (mounted) {
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (_) => AlertDialog(
-              icon: const Icon(Icons.alarm, color: Colors.red, size: 48),
-              title: Text(title),
-              actions: [
-                FilledButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: Text(tr('dismiss')),
-                ),
-              ],
-            ),
-          );
-        }
       }
     }
   }
@@ -920,7 +909,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
               searchActive: searchActive,
               myLocationIcon: Icons.my_location,
               onMyLocation: () => unawaited(_jumpToUserPosition()),
-              onMapToggleTap: () {
+              onMapToggleTap: () async {
                 final haptic = context
                     .read<SettingsProvider>()
                     .settings
@@ -928,11 +917,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                 if (haptic) Vibration.vibrate(duration: 30);
                 if (_isAssigning) this._cancelAssign();
                 final settings = context.read<SettingsProvider>();
-                settings.updateSettings(
+                await settings.updateSettings(
                   settings.settings.copyWith(mapProvider: MapTileProvider.free),
                 );
               },
-              onSkinTap: () {
+              onSkinTap: () async {
                 final haptic = context
                     .read<SettingsProvider>()
                     .settings
@@ -944,7 +933,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                 final currentKey = settings.settings.vectorStyleUrl;
                 final idx = keys.indexOf(currentKey);
                 final nextKey = keys[(idx + 1) % keys.length];
-                settings.updateSettings(
+                await settings.updateSettings(
                   settings.settings.copyWith(vectorStyleUrl: nextKey),
                 );
               },
@@ -1210,10 +1199,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
               onSave: (alarm) => this._saveAssign(alarm),
               onCancel: () => this._cancelAssign(),
               onDelete: _assignExisting != null
-                  ? () {
-                      context.read<AlarmProvider>().removeAlarmPoint(
+                  ? () async {
+                      await context.read<AlarmProvider>().removeAlarmPoint(
                         _assignExisting!.id,
                       );
+                      if (!mounted) return;
                       this._cancelAssign();
                     }
                   : null,
