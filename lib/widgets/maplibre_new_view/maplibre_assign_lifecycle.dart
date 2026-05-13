@@ -49,7 +49,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           alarmProv,
           updateMarker: updateMarker,
         );
-        this._scheduleVeilSync(reason: debugReason);
+        await this._syncAssignVeilWithOverlay(debugReason: debugReason);
         return;
       }
       var needsState = false;
@@ -65,7 +65,9 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         path = 'fast-native';
         await this._updateFastCircleLayer(style);
       }
-      if (style != null) this._scheduleVeilSync(reason: debugReason);
+      if (style != null) {
+        await this._syncAssignVeilWithOverlay(debugReason: debugReason);
+      }
       if (needsState && mounted) setState(() {});
     } finally {
       sw.stop();
@@ -101,10 +103,16 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     bool updateMarker = false,
     String debugReason = 'scheduled',
   }) {
+    if (_assignOverlayActivating) {
+      _assignOverlayPending = true;
+      _assignOverlayPendingMarker |= updateMarker;
+      _assignOverlayPendingReason = debugReason;
+      return;
+    }
     _assignOverlaySyncMarker |= updateMarker;
     _assignOverlaySyncReason = debugReason;
     if (_assignOverlaySyncTimer != null) return;
-    _assignOverlaySyncTimer = Timer(const Duration(milliseconds: 16), () {
+    _assignOverlaySyncTimer = Timer(Duration.zero, () {
       _assignOverlaySyncTimer = null;
       final marker = _assignOverlaySyncMarker;
       final reason = _assignOverlaySyncReason ?? 'scheduled';
@@ -194,6 +202,8 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _veilSyncRequestedIgnoreAssign = false;
     _veilSyncRequestedFullQuality = false;
     _veilSyncRequestedReason = null;
+    _cardRadiusLogCounter = 0;
+    _cardTimeLogCounter = 0;
     _assignCardSyncTimer?.cancel();
     _assignCardSyncTimer = null;
     _assignCardSyncPending = false;

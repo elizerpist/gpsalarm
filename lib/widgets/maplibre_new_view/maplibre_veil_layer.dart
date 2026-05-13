@@ -25,7 +25,7 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     );
     if (_veilSyncDrainFuture != null || _veilSyncTimer != null) return;
     final delay = _isAssigning && !fullQuality
-        ? const Duration(milliseconds: 100)
+        ? const Duration(milliseconds: 32)
         : const Duration(milliseconds: 16);
     _veilSyncTimer = Timer(delay, () {
       _veilSyncTimer = null;
@@ -45,7 +45,26 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
       fullQuality: fullQuality,
       reason: reason,
     );
+    final activeDrain = _veilSyncDrainFuture;
+    if (activeDrain != null) {
+      return activeDrain.then((_) => this._drainVeilSyncQueue());
+    }
     return this._drainVeilSyncQueue();
+  }
+
+  Future<void> _syncAssignVeilWithOverlay({
+    required String debugReason,
+  }) {
+    if (!_isAssigning ||
+        !_assignActive ||
+        _assignZoneTrigger != ZoneTrigger.onLeave ||
+        !(_showAssignOverlay || _useNativeExistingAssignLayer)) {
+      return Future<void>.value();
+    }
+    return this._flushVeilSync(
+      fullQuality: false,
+      reason: 'assign-overlay:$debugReason',
+    );
   }
 
   Future<void> _drainVeilSyncQueue() {
@@ -92,7 +111,7 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
   }) async {
     final sw = Stopwatch()..start();
     final seq = ++_veilUpdateSeq;
-    final segments = fullQuality ? 128 : 40;
+    final segments = fullQuality ? 128 : 32;
     final useLiveAssignHole = !ignoreAssign &&
         _isAssigning &&
         _assignActive &&

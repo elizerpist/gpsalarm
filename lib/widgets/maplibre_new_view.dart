@@ -496,6 +496,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   int _radiusLayerVersion = 0;
   Timer? _radiusDebounce;
   int _dragLogCounter = 0;
+  int _cardRadiusLogCounter = 0;
+  int _cardTimeLogCounter = 0;
   int _assignSyncSeq = 0;
   int _assignSyncSkipCount = 0;
   int _veilUpdateSeq = 0;
@@ -1115,11 +1117,20 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
               onRadiusChanged: (v) {
                 _assignRadius = v;
                 _radiusNotifier.value = this._currentRadiusPx;
-                DebugConsole.log(
-                  'CARD_RADIUS: r=${_assignRadius.round()}m ${_assignDebugState()}',
+                _cardRadiusLogCounter++;
+                if (_shouldLogAssignFrame(_cardRadiusLogCounter)) {
+                  DebugConsole.log(
+                    'CARD_RADIUS: frame=$_cardRadiusLogCounter '
+                    'r=${_assignRadius.round()}m ${_assignDebugState()}',
+                  );
+                }
+                this._scheduleAssignOverlaySync(
+                  debugReason: 'card-radius#$_cardRadiusLogCounter',
                 );
-                this._scheduleAssignOverlaySync(debugReason: 'card-radius');
-                this._refreshAssignMarker();
+                if (_cardRadiusLogCounter == 1 ||
+                    _cardRadiusLogCounter % 10 == 0) {
+                  this._refreshAssignMarker();
+                }
               },
               onZoneTriggerChanged: (v) {
                 setState(() => _assignZoneTrigger = v);
@@ -1144,11 +1155,20 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
               onTimeChanged: (v) {
                 _assignTimeMinutes = v;
                 _radiusNotifier.value = this._currentRadiusPx;
-                DebugConsole.log(
-                  'CARD_TIME: ${_assignTimeMinutes}min ${_assignDebugState()}',
+                _cardTimeLogCounter++;
+                if (_shouldLogAssignFrame(_cardTimeLogCounter)) {
+                  DebugConsole.log(
+                    'CARD_TIME: frame=$_cardTimeLogCounter '
+                    '${_assignTimeMinutes}min ${_assignDebugState()}',
+                  );
+                }
+                this._scheduleAssignOverlaySync(
+                  debugReason: 'card-time#$_cardTimeLogCounter',
                 );
-                this._scheduleAssignOverlaySync(debugReason: 'card-time');
-                this._refreshAssignMarker();
+                if (_cardTimeLogCounter == 1 ||
+                    _cardTimeLogCounter % 10 == 0) {
+                  this._refreshAssignMarker();
+                }
               },
               onActiveChanged: (v) {
                 setState(() => _assignActive = v);
