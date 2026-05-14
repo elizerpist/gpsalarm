@@ -212,7 +212,9 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     final id = _assignNativeAlarmLayerId;
     if (id == null) return;
     final shouldSuppress = active ?? this._usesLiveAssignVeilHole();
-    if (!shouldSuppress && !_assignExitNativeCircleSuppressed) return;
+    if (!shouldSuppress && !force && !_assignExitNativeCircleSuppressed) {
+      return;
+    }
     if (shouldSuppress && !force && _assignExitNativeCircleSuppressed) return;
 
     final layerId = 'radius-circle-$id';
@@ -701,12 +703,32 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     final style = _controller?.style;
     if (style == null) return;
     final id = 'alarm-$index';
-    _radiusCircleLayerKeys.remove(id);
     _radiusPaintOverrideIds.remove(id);
     _radiusPaintOverrideTokens.remove(id);
+    final layerId = 'radius-circle-$id';
+    final circleHidden = await this._setNativeLayerPaintProperty(
+      style,
+      layerId: layerId,
+      property: 'circle-opacity',
+      value: 0.0,
+    );
+    final strokeHidden = await this._setNativeLayerPaintProperty(
+      style,
+      layerId: layerId,
+      property: 'circle-stroke-opacity',
+      value: 0.0,
+    );
+    if (strokeHidden) {
+      _assignExitNativeCircleSuppressed = true;
+      return;
+    }
+    _radiusCircleLayerKeys.remove(id);
     try {
-      await style.removeLayer('radius-circle-$id');
+      await style.removeLayer(layerId);
     } catch (_) {}
+    if (circleHidden) {
+      _assignExitNativeCircleSuppressed = true;
+    }
   }
 
   Future<void> _clearLiveExitAssignVeilBeforeNativeRestore(

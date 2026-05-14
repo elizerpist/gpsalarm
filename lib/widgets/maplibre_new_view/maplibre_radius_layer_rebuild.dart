@@ -143,15 +143,18 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     ];
   }
 
+  bool _shouldHideLiveExitNativeCircle(_RadiusCircleData circle) {
+    return _assignExisting != null &&
+        this._usesLiveAssignVeilHole() &&
+        circle.id == _assignNativeAlarmLayerId;
+  }
+
   CircleStyleLayer _radiusCircleStyleLayer(
     _RadiusCircleData circle, {
     required String id,
     required String sourceId,
   }) {
-    final hideLiveExitNativeCircle =
-        _assignExisting != null &&
-        this._usesLiveAssignVeilHole() &&
-        circle.id == _assignNativeAlarmLayerId;
+    final hideLiveExitNativeCircle = _shouldHideLiveExitNativeCircle(circle);
     return CircleStyleLayer(
       id: id,
       sourceId: sourceId,
@@ -487,6 +490,9 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
       await style.addLayer(circleLayer);
     }
     _radiusCircleLayerKeys[circle.id] = _radiusCircleLayerKey(circle);
+    if (_shouldHideLiveExitNativeCircle(circle)) {
+      _assignExitNativeCircleSuppressed = true;
+    }
   }
 
   Future<void> _ensureRadiusCircleLayer(
