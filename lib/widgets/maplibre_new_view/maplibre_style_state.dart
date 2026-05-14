@@ -23,12 +23,10 @@ extension _MaplibreStyleState on _MaplibreNewViewState {
     _registeredMarkerImageKeys.clear();
     _radiusPointImageIds.clear();
     _radiusCircleLayerKeys.clear();
-    _radiusCircleSourceKeys.clear();
     _radiusVisualIds.clear();
     _radiusPaintOverrideIds.clear();
     _radiusPaintOverrideTokens.clear();
     _fastCircleLayerKey = null;
-    _fastCircleSourceKey = null;
     _controller = null;
   }
 

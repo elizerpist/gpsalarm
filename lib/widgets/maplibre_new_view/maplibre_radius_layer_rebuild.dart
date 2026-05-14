@@ -31,7 +31,7 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
       ['get', 'isLeave'],
       true,
     ],
-    'rgba(255,0,0,0.01)',
+    'rgba(0,0,0,0)',
     [
       '==',
       ['get', 'active'],
@@ -50,6 +50,20 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
   Object get _radiusStrokeColorExpression => [
     'case',
     [
+      'all',
+      [
+        '==',
+        ['get', 'isLeave'],
+        true,
+      ],
+      [
+        '==',
+        ['get', 'active'],
+        true,
+      ],
+    ],
+    'rgba(0,0,0,0)',
+    [
       '==',
       ['get', 'active'],
       false,
@@ -61,7 +75,7 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
       true,
     ],
     'rgba(255,152,0,0.7)',
-    'rgba(255,0,0,0.95)',
+    'rgba(255,0,0,0.6)',
   ];
 
   Future<String> _ensureRadiusMarkerImage(
@@ -122,23 +136,9 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
 
   String _radiusCircleLayerKey(_RadiusCircleData circle) {
     return [
-      'literal-radius-v4',
+      'literal-radius-v3',
       circle.lat.toStringAsFixed(6),
       circle.radiusMeters.toStringAsFixed(1),
-      circle.active ? 'a1' : 'a0',
-      circle.isTime ? 't1' : 't0',
-      circle.isLeave ? 'l1' : 'l0',
-    ].join('|');
-  }
-
-  String _radiusCircleSourceKey(_RadiusCircleData circle) {
-    return [
-      'source-v1',
-      circle.lng.toStringAsFixed(6),
-      circle.lat.toStringAsFixed(6),
-      circle.active ? 'a1' : 'a0',
-      circle.isTime ? 't1' : 't0',
-      circle.isLeave ? 'l1' : 'l0',
     ].join('|');
   }
 
@@ -170,8 +170,7 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
         'circle-radius': _radiusCircleExpression(circle),
         'circle-color': _radiusFillColorExpression,
         'circle-stroke-color': _radiusStrokeColorExpression,
-        'circle-stroke-width': 3.0,
-        'circle-stroke-opacity': 1.0,
+        'circle-stroke-width': 2.0,
         'circle-pitch-alignment': 'map',
         'circle-pitch-scale': 'map',
       },
@@ -202,12 +201,9 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
       _radiusPaintOverrideTokens[visualId] = ++_radiusPaintOverrideTokenSeq;
       sw.stop();
       final isImmediate = debugReason.startsWith('immediate:');
-      final logImmediateLeave =
-          _shouldLogImmediateLeaveRadiusPaint(debugReason);
       if (_isAssigning &&
-          (logImmediateLeave ||
-              ((!isImmediate && _shouldLogAssignFrame(_assignSyncSeq)) ||
-                  sw.elapsedMilliseconds > 8))) {
+          ((!isImmediate && _shouldLogAssignFrame(_assignSyncSeq)) ||
+              sw.elapsedMilliseconds > 8)) {
         DebugConsole.log(
           'RADIUS_PAINT_SYNC: layer=$layerId px=${radiusPx.toStringAsFixed(1)} '
           'ms=${sw.elapsedMilliseconds} reason=$debugReason',
@@ -312,38 +308,32 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     bool updateMarker = false,
     bool radiusOnly = false,
     bool preserveRadiusPaintOverride = false,
-    bool skipRadiusPaint = false,
   }) async {
     final sw = Stopwatch()..start();
     var markerMs = 0;
     var sourceMs = 0;
     var layerMs = 0;
-    final sourceKey = _radiusCircleSourceKey(circle);
-    final sourceFresh = _radiusCircleSourceKeys[circle.id] == sourceKey;
     if (radiusOnly &&
         !updateMarker &&
         _radiusVisualIds.contains(circle.id) &&
-        sourceFresh) {
-      if (skipRadiusPaint) return;
-      if (await this._setCircleLayerRadiusPaint(
-        style,
-        layerId: 'radius-circle-${circle.id}',
-        visualId: circle.id,
-        radiusPx: this._radiusPxForCircle(circle),
-        debugReason: 'source-radius-only',
-      )) {
-        sw.stop();
-        if ((_isAssigning && _shouldLogAssignFrame(_assignSyncSeq)) ||
-            sw.elapsedMilliseconds > 12) {
-          DebugConsole.log(
-            'RADIUS_SRC_SYNC: id=${circle.id} r=${circle.radiusMeters.round()}m '
-            'leave=${circle.isLeave} active=${circle.active} marker=$updateMarker '
-            'radiusOnly=true ms=${sw.elapsedMilliseconds} markerMs=0 sourceMs=0 '
-            'layerMs=0 visual=${_radiusVisualIds.contains(circle.id)}',
-          );
-        }
-        return;
+        await this._setCircleLayerRadiusPaint(
+          style,
+          layerId: 'radius-circle-${circle.id}',
+          visualId: circle.id,
+          radiusPx: this._radiusPxForCircle(circle),
+          debugReason: 'source-radius-only',
+        )) {
+      sw.stop();
+      if ((_isAssigning && _shouldLogAssignFrame(_assignSyncSeq)) ||
+          sw.elapsedMilliseconds > 12) {
+        DebugConsole.log(
+          'RADIUS_SRC_SYNC: id=${circle.id} r=${circle.radiusMeters.round()}m '
+          'leave=${circle.isLeave} active=${circle.active} marker=$updateMarker '
+          'radiusOnly=true ms=${sw.elapsedMilliseconds} markerMs=0 sourceMs=0 '
+          'layerMs=0 visual=${_radiusVisualIds.contains(circle.id)}',
+        );
       }
+      return;
     }
     if (updateMarker || !_radiusPointImageIds.containsKey(circle.id)) {
       final markerSw = Stopwatch()..start();
@@ -356,7 +346,6 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
       id: 'radius-pt-${circle.id}',
       data: _radiusPointSourceGeoJson(circle),
     );
-    _radiusCircleSourceKeys[circle.id] = sourceKey;
     sourceSw.stop();
     sourceMs = sourceSw.elapsedMilliseconds;
     if (_radiusVisualIds.contains(circle.id)) {
@@ -400,7 +389,6 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     AlarmProvider alarmProv, {
     bool updateMarker = false,
     bool radiusOnly = false,
-    bool skipRadiusPaint = false,
   }) async {
     final sw = Stopwatch()..start();
     final circle = this._currentAssignCircle(alarmProv);
@@ -422,7 +410,6 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
       circle,
       updateMarker: updateMarker,
       radiusOnly: radiusOnly,
-      skipRadiusPaint: skipRadiusPaint,
     );
     sw.stop();
     if (logThis || sw.elapsedMilliseconds > 12) {
@@ -440,7 +427,6 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
   }) async {
     _radiusVisualIds.remove(id);
     _radiusCircleLayerKeys.remove(id);
-    _radiusCircleSourceKeys.remove(id);
     _radiusPaintOverrideIds.remove(id);
     _radiusPaintOverrideTokens.remove(id);
     try {
@@ -550,24 +536,18 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     bool updateMarker = false,
     bool radiusOnly = false,
     bool preserveRadiusPaintOverride = false,
-    bool skipRadiusPaint = false,
   }) async {
-    final sourceKey = _radiusCircleSourceKey(circle);
-    final sourceFresh = _radiusCircleSourceKeys[circle.id] == sourceKey;
     if (radiusOnly &&
         !updateMarker &&
         _radiusCircleLayerKeys.containsKey(circle.id) &&
-        sourceFresh) {
-      if (skipRadiusPaint) return;
-      if (await this._setCircleLayerRadiusPaint(
-        style,
-        layerId: 'radius-circle-${circle.id}',
-        visualId: circle.id,
-        radiusPx: this._radiusPxForCircle(circle),
-        debugReason: 'draft-radius-only',
-      )) {
-        return;
-      }
+        await this._setCircleLayerRadiusPaint(
+          style,
+          layerId: 'radius-circle-${circle.id}',
+          visualId: circle.id,
+          radiusPx: this._radiusPxForCircle(circle),
+          debugReason: 'draft-radius-only',
+        )) {
+      return;
     }
     if (updateMarker || !_radiusPointImageIds.containsKey(circle.id)) {
       await this._syncRadiusMarkerImage(style, circle);
@@ -576,7 +556,6 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
       id: 'radius-pt-${circle.id}',
       data: _radiusPointSourceGeoJson(circle),
     );
-    _radiusCircleSourceKeys[circle.id] = sourceKey;
     final preserveOverride =
         _radiusPaintOverrideIds.contains(circle.id) &&
         preserveRadiusPaintOverride;
@@ -652,7 +631,6 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
         );
       } catch (_) {}
       _radiusCircleLayerKeys.remove(id);
-      _radiusCircleSourceKeys.remove(id);
       _radiusPaintOverrideIds.remove(id);
       _radiusPaintOverrideTokens.remove(id);
     }

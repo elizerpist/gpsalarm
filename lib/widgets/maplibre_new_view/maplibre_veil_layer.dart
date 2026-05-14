@@ -27,18 +27,10 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     _armVeilSyncTimer();
   }
 
-  Duration get _veilSyncDelay {
-    if (_assignActive &&
-        _assignZoneTrigger == ZoneTrigger.onLeave &&
-        _isDraggingRadius) {
-      return const Duration(milliseconds: 32);
-    }
-    return const Duration(milliseconds: 16);
-  }
-
   void _armVeilSyncTimer() {
     if (_veilSyncDrainFuture != null || _veilSyncTimer != null) return;
-    _veilSyncTimer = Timer(_veilSyncDelay, () {
+    final delay = const Duration(milliseconds: 16);
+    _veilSyncTimer = Timer(delay, () {
       _veilSyncTimer = null;
       unawaited(_drainVeilSyncQueue());
     });
@@ -124,8 +116,6 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     return _veilSyncDrainFuture!;
   }
 
-  int _liveAssignVeilSegments() => 32;
-
   Future<void> _updateVeil(
     StyleController style,
     AlarmProvider alarmProv, {
@@ -135,6 +125,7 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
   }) async {
     final sw = Stopwatch()..start();
     final seq = ++_veilUpdateSeq;
+    final segments = fullQuality ? 128 : 32;
     final useLiveAssignHole =
         !ignoreAssign &&
         _isAssigning &&
@@ -143,9 +134,6 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
         _assignActive &&
         _assignZoneTrigger == ZoneTrigger.onLeave &&
         (_showAssignOverlay || _useNativeExistingAssignLayer);
-    final segments = fullQuality
-        ? 128
-        : (useLiveAssignHole ? _liveAssignVeilSegments() : 32);
     final leaveAlarms = alarmProv.alarmPoints
         .where(
           (p) =>
