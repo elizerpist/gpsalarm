@@ -218,23 +218,26 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     if (shouldSuppress && !force && _assignExitNativeCircleSuppressed) return;
 
     final layerId = 'radius-circle-$id';
-    final opacity = shouldSuppress ? 0.0 : 1.0;
-    final circleHidden = await this._setNativeLayerPaintProperty(
-      style,
-      layerId: layerId,
-      property: 'circle-opacity',
-      value: opacity,
-    );
+    const visibleOpacity = 1.0;
+    final strokeOpacity = shouldSuppress ? 0.0 : visibleOpacity;
+    final circleVisible = shouldSuppress
+        ? true
+        : await this._setNativeLayerPaintProperty(
+            style,
+            layerId: layerId,
+            property: 'circle-opacity',
+            value: visibleOpacity,
+          );
     final strokeHidden = await this._setNativeLayerPaintProperty(
       style,
       layerId: layerId,
       property: 'circle-stroke-opacity',
-      value: opacity,
+      value: strokeOpacity,
     );
     _assignExitNativeCircleSuppressed = shouldSuppress;
     DebugConsole.log(
       'EXIT_NATIVE_CIRCLE_SUPPRESS: active=$shouldSuppress reason=$reason '
-      'layer=$layerId opacity=$opacity circle=$circleHidden stroke=$strokeHidden '
+      'layer=$layerId strokeOpacity=$strokeOpacity circle=$circleVisible stroke=$strokeHidden '
       '${_assignDebugState()}',
     );
   }
@@ -706,12 +709,6 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _radiusPaintOverrideIds.remove(id);
     _radiusPaintOverrideTokens.remove(id);
     final layerId = 'radius-circle-$id';
-    final circleHidden = await this._setNativeLayerPaintProperty(
-      style,
-      layerId: layerId,
-      property: 'circle-opacity',
-      value: 0.0,
-    );
     final strokeHidden = await this._setNativeLayerPaintProperty(
       style,
       layerId: layerId,
@@ -726,9 +723,6 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     try {
       await style.removeLayer(layerId);
     } catch (_) {}
-    if (circleHidden) {
-      _assignExitNativeCircleSuppressed = true;
-    }
   }
 
   Future<void> _clearLiveExitAssignVeilBeforeNativeRestore(
@@ -944,7 +938,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       if (liveExitExisting) {
         await this._hideExistingNativeAlarm(existing);
         DebugConsole.log(
-          'ASSIGN_START: removed native exit circle for live edit',
+          'ASSIGN_START: hid native exit stroke for live edit',
         );
         await this._flushVeilSync(
           fullQuality: true,
