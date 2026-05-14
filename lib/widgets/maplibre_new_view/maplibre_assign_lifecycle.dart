@@ -900,6 +900,13 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       DebugConsole.log('ASSIGN_START: updating veil immediately');
       await this._flushVeilSync(fullQuality: true, reason: 'assign-start');
     } else if (existing != null) {
+      final layerId = _assignNativeAlarmLayerId;
+      if (style != null && layerId != null) {
+        await _disableRadiusCircleOpacityTransition(
+          style,
+          'radius-circle-$layerId',
+        );
+      }
       DebugConsole.log('ASSIGN_START: keeping native alarm visual during edit');
     }
     setState(() {});

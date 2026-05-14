@@ -131,8 +131,7 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
   Object _radiusCircleExpression(_RadiusCircleData circle) {
     final cosLat = math.cos(circle.lat * math.pi / 180).abs();
     final safeCosLat = math.max(0.000001, cosLat);
-    final baseRadiusPx =
-        2 * circle.radiusMeters / (156543.03392 * safeCosLat);
+    final baseRadiusPx = 2 * circle.radiusMeters / (156543.03392 * safeCosLat);
     return [
       'interpolate',
       ['exponential', 2.0],
@@ -166,6 +165,25 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
   double _radiusPxForCircle(_RadiusCircleData circle) {
     final zoom = _controller?.camera?.zoom ?? _currentZoom;
     return circle.radiusMeters / _vectorMetersPerPx(circle.lat, zoom);
+  }
+
+  Future<void> _disableRadiusCircleOpacityTransition(
+    StyleController style,
+    String layerId,
+  ) async {
+    const noTransition = {'duration': 0, 'delay': 0};
+    await _setNativeLayerPaintProperty(
+      style,
+      layerId: layerId,
+      property: 'circle-opacity-transition',
+      value: noTransition,
+    );
+    await _setNativeLayerPaintProperty(
+      style,
+      layerId: layerId,
+      property: 'circle-stroke-opacity-transition',
+      value: noTransition,
+    );
   }
 
   Future<bool> _setCircleLayerRadiusPaint(
@@ -481,6 +499,10 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     } catch (_) {
       await style.addLayer(circleLayer);
     }
+    await _disableRadiusCircleOpacityTransition(
+      style,
+      'radius-circle-${circle.id}',
+    );
     _radiusCircleLayerKeys[circle.id] = _radiusCircleLayerKey(circle);
   }
 
