@@ -165,10 +165,6 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
         'circle-stroke-width': 2.0,
         'circle-pitch-alignment': 'map',
         'circle-pitch-scale': 'map',
-        'circle-color-transition': {'duration': 0, 'delay': 0},
-        'circle-opacity-transition': {'duration': 0, 'delay': 0},
-        'circle-stroke-color-transition': {'duration': 0, 'delay': 0},
-        'circle-stroke-opacity-transition': {'duration': 0, 'delay': 0},
         if (hideLiveExitNativeCircle) 'circle-stroke-opacity': 0.0,
       },
     );

@@ -14,7 +14,6 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
           'fill-color': '#FF0000',
           'fill-opacity': 0.15,
           'fill-antialias': false,
-          'fill-opacity-transition': {'duration': 0, 'delay': 0},
         },
       ),
     );
@@ -26,7 +25,6 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
         paint: {
           'line-color': 'rgba(255,0,0,0.62)',
           'line-opacity': 0.0,
-          'line-opacity-transition': {'duration': 0, 'delay': 0},
           'line-width': 2.0,
         },
       ),
@@ -40,7 +38,6 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
           'line-color': 'rgba(255,0,0,0.6)',
           'line-opacity': 0.0,
           'line-width': 2.0,
-          'line-opacity-transition': {'duration': 0, 'delay': 0},
         },
       ),
     );
