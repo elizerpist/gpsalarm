@@ -242,6 +242,25 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     );
   }
 
+  Future<void> _syncLiveExitNativeBaseCircle(
+    StyleController style,
+    AlarmProvider alarmProv, {
+    required bool updateMarker,
+  }) async {
+    if (!_useNativeAssignCircle || !this._usesLiveAssignVeilHole()) return;
+    if (_assignExisting == null) {
+      await this._updateFastCircleLayer(style, radiusOnly: false);
+      return;
+    }
+    if (_assignNativeHidden) return;
+    await this._updateExistingNativeAssignLayer(
+      style,
+      alarmProv,
+      updateMarker: updateMarker,
+      radiusOnly: false,
+    );
+  }
+
   bool _shouldSkipScheduledExitRadiusOnlySync({
     required bool updateMarker,
     required bool radiusOnly,
@@ -451,9 +470,23 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         }
         return;
       }
+      final liveExitAssignVeil = _usesLiveAssignVeilHole();
       final syncLiveVeilInOverlay =
-          !(radiusOnly && !updateMarker && this._usesLiveAssignVeilHole());
+          !(radiusOnly && !updateMarker && liveExitAssignVeil);
       if (style != null) {
+        if (liveExitAssignVeil) {
+          await this._syncLiveExitNativeBaseCircle(
+            style,
+            alarmProv,
+            updateMarker: updateMarker,
+          );
+        } else {
+          await this._syncAssignExitVeilOutlineMode(
+            style,
+            active: false,
+            reason: 'pre:$debugReason',
+          );
+        }
         await this._syncLiveExitNativeCircleSuppression(
           style,
           reason: debugReason,
@@ -464,7 +497,6 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         return;
       }
       final liveStyle = style;
-      final liveExitAssignVeil = _usesLiveAssignVeilHole();
       final canUpdateExistingNative =
           liveStyle != null &&
           _useNativeAssignCircle &&
