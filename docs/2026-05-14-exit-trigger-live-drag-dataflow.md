@@ -5,7 +5,7 @@
 The best known exit-trigger live-drag state is:
 
 ```text
-ec41947 Match exit edit circle visuals
+36f0f04 Remove enter fill fade on zone switch
 ```
 
 This commit was pushed after:
@@ -20,7 +20,7 @@ The earlier useful baseline was:
 3d9d0aa Keep exit outline native during fast drags
 ```
 
-`3d9d0aa` was important because it moved the exit outline away from the Flutter fallback border and back onto the native/live MapLibre path. It still had fade-out. `40f78db` removed the fade-out and cleaned up save/restore. `aea0748` kept that behavior and addressed the remaining fast-drag ghost. `2b0fdfe` kept the same flow but made the live edit border full opacity. `ec41947` keeps the fast drag flow, but matches the live edit outline back to the saved native stroke strength after screenshots showed the edit border was too strong and visually thicker. It also keeps the existing native circle layer hidden instead of removing it during existing exit edits, so exit-to-enter switches can restore the same layer without a first-switch fade or missing fill.
+`3d9d0aa` was important because it moved the exit outline away from the Flutter fallback border and back onto the native/live MapLibre path. It still had fade-out. `40f78db` removed the fade-out and cleaned up save/restore. `aea0748` kept that behavior and addressed the remaining fast-drag ghost. `2b0fdfe` kept the same flow but made the live edit border full opacity. `ec41947` keeps the fast drag flow, but matches the live edit outline back to the saved native stroke strength after screenshots showed the edit border was too strong and visually thicker. `36f0f04` keeps the existing native circle layer present and suppresses only the native exit stroke, not the full circle opacity, so exit-to-enter switches do not fade the enter fill back in.
 
 ## User-Visible Target
 
@@ -81,7 +81,7 @@ The logs showed `nativeSkipped=true` during drag while `EXIT_NATIVE_CIRCLE_SUPPR
 
 ## Current Fix
 
-`aea0748` fixed the remaining ghost without changing the hot pointer data flow. `2b0fdfe` tried a full-opacity live edit outline, but screenshots showed that was stronger than the saved circle. `ec41947` is the current visual match point.
+`aea0748` fixed the remaining ghost without changing the hot pointer data flow. `2b0fdfe` tried a full-opacity live edit outline, but screenshots showed that was stronger than the saved circle. `ec41947` is the border visual match point. `36f0f04` is the current switch visual match point because it removes the enter fill fade.
 
 In `maplibre_radius_layer_rebuild.dart`, existing live exit edits hide the native circle at layer creation:
 
@@ -97,7 +97,7 @@ if (hideLiveExitNativeCircle) 'circle-stroke-opacity': 0.0,
 
 When the native circle is hidden at creation, `_assignExitNativeCircleSuppressed` is also set so later exit-to-enter restores do not early-return as if there were nothing to restore.
 
-In `maplibre_assign_lifecycle.dart`, `_hideExistingNativeAlarm` now attempts to hide the existing native circle with `circle-opacity: 0.0` and `circle-stroke-opacity: 0.0` instead of immediately removing `radius-circle-alarm-N`. Keeping the layer present avoids a visible layer re-add/fade when the user switches from exit to enter while editing an existing alarm.
+In `maplibre_assign_lifecycle.dart`, `_hideExistingNativeAlarm` now hides only the existing native stroke with `circle-stroke-opacity: 0.0` instead of setting full `circle-opacity: 0.0` or immediately removing `radius-circle-alarm-N`. Exit circles already have transparent native fill, so hiding the full circle is unnecessary and causes the enter fill to fade in when switching from exit to enter.
 
 In `maplibre_radius_layer_init.dart`, the veil fill no longer draws an anti-aliased hole edge:
 
@@ -114,6 +114,8 @@ The live edit outline matches the saved native stroke strength:
 ```dart
 final outlineOpacity = active ? 1.0 : 0.0;
 ```
+
+Radius circle and veil opacity/color transitions are explicitly zero-duration on these layers, so restore/hide operations are immediate rather than animated.
 
 This keeps the red border always visible through `veil-live-outline`, prevents a stale native circle or fill-edge border from doubling it, and makes the edit border visually consistent with the saved native radius circle.
 
