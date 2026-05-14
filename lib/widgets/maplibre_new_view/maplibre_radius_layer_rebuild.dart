@@ -148,6 +148,10 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     required String id,
     required String sourceId,
   }) {
+    final hideLiveExitNativeCircle =
+        _assignExisting != null &&
+        this._usesLiveAssignVeilHole() &&
+        circle.id == _assignNativeAlarmLayerId;
     return CircleStyleLayer(
       id: id,
       sourceId: sourceId,
@@ -158,6 +162,8 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
         'circle-stroke-width': 2.0,
         'circle-pitch-alignment': 'map',
         'circle-pitch-scale': 'map',
+        if (hideLiveExitNativeCircle) 'circle-opacity': 0.0,
+        if (hideLiveExitNativeCircle) 'circle-stroke-opacity': 0.0,
       },
     );
   }

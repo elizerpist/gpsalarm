@@ -10,7 +10,11 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
       FillStyleLayer(
         id: 'veil-fill',
         sourceId: 'veil-src',
-        paint: {'fill-color': '#FF0000', 'fill-opacity': 0.15},
+        paint: {
+          'fill-color': '#FF0000',
+          'fill-opacity': 0.15,
+          'fill-antialias': false,
+        },
       ),
     );
     await style.addLayer(
