@@ -31,7 +31,9 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
       );
     }
     _radiusLayerReady = true;
-    DebugConsole.log('VECTOR: radius layer system ready fix=split-radius-v2');
+    DebugConsole.log(
+      'VECTOR: radius layer system ready fix=enter-8157-exit-native-border-v1',
+    );
   }
 
   Future<void> _updateFastCircleLayer(

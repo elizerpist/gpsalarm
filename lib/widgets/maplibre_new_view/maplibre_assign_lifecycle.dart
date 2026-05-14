@@ -52,6 +52,27 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
             _radiusCircleLayerKeys.containsKey(nativeCircleId));
   }
 
+  int? _assignRadiusFrameFromDebugReason(String debugReason) {
+    final hash = debugReason.lastIndexOf('#');
+    if (hash < 0 || hash == debugReason.length - 1) return null;
+    return int.tryParse(debugReason.substring(hash + 1));
+  }
+
+  bool _shouldSyncLiveAssignVeilForRadiusFrame(String debugReason) {
+    if (!_isDraggingRadius) return true;
+    final frame = _assignRadiusFrameFromDebugReason(debugReason);
+    if (frame == null) return false;
+    return frame == 1 || frame % 15 == 0;
+  }
+
+  bool _shouldLogImmediateLeaveRadiusPaint(String debugReason) {
+    if (!debugReason.startsWith('immediate:')) return false;
+    if (_assignZoneTrigger != ZoneTrigger.onLeave) return false;
+    final frame = _assignRadiusFrameFromDebugReason(debugReason);
+    if (frame == null) return false;
+    return frame == 1 || frame % 15 == 0;
+  }
+
   Future<void> _applyAssignRadiusPaint({required String debugReason}) async {
     if (!_isAssigning ||
         !_useNativeAssignCircle ||
@@ -126,7 +147,9 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       return;
     }
     this._syncAssignRadiusPaintImmediate(debugReason: debugReason);
-    if (_assignActive && _assignZoneTrigger == ZoneTrigger.onLeave) {
+    if (_assignActive &&
+        _assignZoneTrigger == ZoneTrigger.onLeave &&
+        _shouldSyncLiveAssignVeilForRadiusFrame(debugReason)) {
       this._scheduleVeilSync(
         fullQuality: false,
         reason: 'assign-radius:' + debugReason,
@@ -181,20 +204,10 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       _radiusNotifier.value = this._currentRadiusPx;
       final existing = _assignExisting;
       final style = _controller?.style;
-      final pureRadiusOnly = radiusOnly && !updateMarker;
-      final canTrustImmediateRadiusPaint =
-          _canTrustImmediateAssignRadiusPaint(
-            radiusOnly: radiusOnly,
-            updateMarker: updateMarker,
-          );
-      if (canTrustImmediateRadiusPaint &&
-          _assignZoneTrigger != ZoneTrigger.onLeave) {
-        path = 'native-radius-paint';
-        return;
-      }
       final alarmProv = context.read<AlarmProvider>();
       final shouldScheduleLiveVeil =
-          pureRadiusOnly &&
+          radiusOnly &&
+          !updateMarker &&
           _assignActive &&
           _assignZoneTrigger == ZoneTrigger.onLeave;
       if (_assignFlutterPreviewActive && !forceNative) {
@@ -213,8 +226,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           liveStyle,
           alarmProv,
           updateMarker: updateMarker,
-          radiusOnly: pureRadiusOnly,
-          skipRadiusPaint: canTrustImmediateRadiusPaint,
+          radiusOnly: radiusOnly && !updateMarker,
         );
         if (_assignVisualOwner == _AssignVisualOwner.nativeLive) {
           if (shouldScheduleLiveVeil) {
@@ -241,8 +253,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         path = 'fast-native';
         await this._updateFastCircleLayer(
           style,
-          radiusOnly: pureRadiusOnly,
-          skipRadiusPaint: canTrustImmediateRadiusPaint,
+          radiusOnly: radiusOnly && !updateMarker,
         );
       }
       if (style != null) {
@@ -294,13 +305,6 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     bool radiusOnly = false,
     String debugReason = 'scheduled',
   }) {
-    if (_assignZoneTrigger != ZoneTrigger.onLeave &&
-        _canTrustImmediateAssignRadiusPaint(
-          radiusOnly: radiusOnly,
-          updateMarker: updateMarker,
-        )) {
-      return;
-    }
     if (_assignOverlayActivating) {
       if (!_assignOverlayPending) {
         _assignOverlayPendingRadiusOnly = radiusOnly && !updateMarker;

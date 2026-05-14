@@ -202,9 +202,12 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
       _radiusPaintOverrideTokens[visualId] = ++_radiusPaintOverrideTokenSeq;
       sw.stop();
       final isImmediate = debugReason.startsWith('immediate:');
+      final logImmediateLeave =
+          _shouldLogImmediateLeaveRadiusPaint(debugReason);
       if (_isAssigning &&
-          ((!isImmediate && _shouldLogAssignFrame(_assignSyncSeq)) ||
-              sw.elapsedMilliseconds > 8)) {
+          (logImmediateLeave ||
+              ((!isImmediate && _shouldLogAssignFrame(_assignSyncSeq)) ||
+                  sw.elapsedMilliseconds > 8))) {
         DebugConsole.log(
           'RADIUS_PAINT_SYNC: layer=$layerId px=${radiusPx.toStringAsFixed(1)} '
           'ms=${sw.elapsedMilliseconds} reason=$debugReason',
