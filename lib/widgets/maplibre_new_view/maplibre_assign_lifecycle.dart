@@ -459,11 +459,30 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         return;
       }
       final liveStyle = style;
+      final liveExitAssignVeil = _usesLiveAssignVeilHole();
       final canUpdateExistingNative =
           liveStyle != null &&
           _useNativeAssignCircle &&
           existing != null &&
-          !_assignNativeHidden;
+          !_assignNativeHidden &&
+          !liveExitAssignVeil;
+      if (liveStyle != null &&
+          _useNativeAssignCircle &&
+          existing != null &&
+          !_assignNativeHidden &&
+          liveExitAssignVeil) {
+        path = 'live-exit-existing-veil';
+        await _syncLiveExitNativeCircleSuppression(
+          liveStyle,
+          reason: debugReason,
+          force: true,
+        );
+        if (_assignVisualOwner == _AssignVisualOwner.nativeLive &&
+            syncLiveVeilInOverlay) {
+          await _syncAssignVeilWithOverlay(debugReason: debugReason);
+        }
+        return;
+      }
       if (canUpdateExistingNative) {
         path = 'existing-native';
         await this._updateExistingNativeAssignLayer(
@@ -487,7 +506,6 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           await this._hideExistingNativeAlarm(existing);
         }
       }
-      final liveExitAssignVeil = this._usesLiveAssignVeilHole();
       if (_useNativeAssignCircle && style != null && !liveExitAssignVeil) {
         path = 'fast-native';
         await this._updateFastCircleLayer(
