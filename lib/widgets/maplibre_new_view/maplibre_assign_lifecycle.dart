@@ -452,6 +452,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       _assignPreviewCircleHidden = false;
       _assignPreviewVeilHidden = false;
       _assignPreviewLabelHidden = false;
+      _assignExitVeilOutlineActive = false;
       _assignVisualOwner = _AssignVisualOwner.nativeLive;
     }
     setState(() {
@@ -641,6 +642,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         value: 0.0,
       );
       _assignPreviewVeilHidden = true;
+      _assignExitVeilOutlineActive = false;
     } else if (!shouldHideVeil && _assignPreviewVeilHidden) {
       await this._restoreNativeVeilOpacity(style);
     }
@@ -765,6 +767,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       value: 0.0,
     );
     _assignPreviewVeilHidden = false;
+    _assignExitVeilOutlineActive = false;
   }
 
   Future<void> _cancelAssign({bool nativeAlreadySynced = false}) async {

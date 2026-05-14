@@ -74,7 +74,16 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     required AlarmProvider alarmProv,
     required String debugReason,
   }) {
-    if (!this._usesLiveAssignVeilHole()) return Future<void>.value();
+    if (!this._usesLiveAssignVeilHole()) {
+      if (_assignExitVeilOutlineActive) {
+        return this._syncAssignExitVeilOutlineMode(
+          style,
+          active: false,
+          reason: 'assign-radius:immediate:$debugReason',
+        );
+      }
+      return Future<void>.value();
+    }
 
     _veilSyncTimer?.cancel();
     _veilSyncTimer = null;
@@ -92,10 +101,49 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
   }
 
   Future<void> _syncAssignVeilWithOverlay({required String debugReason}) {
-    if (!this._usesLiveAssignVeilHole()) return Future<void>.value();
+    if (!this._usesLiveAssignVeilHole()) {
+      final style = _controller?.style;
+      if (style != null && _assignExitVeilOutlineActive) {
+        return this._syncAssignExitVeilOutlineMode(
+          style,
+          active: false,
+          reason: 'assign-overlay:$debugReason',
+        );
+      }
+      return Future<void>.value();
+    }
     return this._flushVeilSync(
       fullQuality: false,
       reason: 'assign-overlay:$debugReason',
+    );
+  }
+
+  Future<void> _syncAssignExitVeilOutlineMode(
+    StyleController style, {
+    required bool active,
+    required String reason,
+  }) async {
+    if (_assignExitVeilOutlineActive == active) return;
+    _assignExitVeilOutlineActive = active;
+    final outlineOpacity = active ? 0.62 : 0.0;
+    await this._setNativeLayerPaintProperty(
+      style,
+      layerId: 'veil-outline',
+      property: 'line-opacity',
+      value: outlineOpacity,
+    );
+    final id = _assignNativeAlarmLayerId;
+    if (id != null) {
+      await this._setNativeLayerPaintProperty(
+        style,
+        layerId: 'radius-circle-$id',
+        property: 'circle-stroke-opacity',
+        value: active ? 0.0 : 1.0,
+      );
+    }
+    DebugConsole.log(
+      'EXIT_OUTLINE_MODE: active=$active outline=$outlineOpacity '
+      'nativeStrokeHidden=$active reason=$reason ${_assignDebugState()}',
     );
   }
 
@@ -178,6 +226,11 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     final seq = ++_veilUpdateSeq;
     final useLiveAssignHole = this._usesLiveAssignVeilHole(
       ignoreAssign: ignoreAssign,
+    );
+    await this._syncAssignExitVeilOutlineMode(
+      style,
+      active: useLiveAssignHole,
+      reason: reason,
     );
     final segments = _veilSegments(
       fullQuality: fullQuality,
