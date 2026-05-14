@@ -177,39 +177,49 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     return (currentPx - previousPx).abs();
   }
 
+  void _scheduleExitVeilOutlineFastRestore(String reason) {
+    _assignExitVeilOutlineRestoreTimer?.cancel();
+    _assignExitVeilOutlineRestoreTimer = Timer(
+      const Duration(milliseconds: 220),
+      () {
+        _assignExitVeilOutlineRestoreTimer = null;
+        if (!mounted || !_usesLiveAssignVeilHole()) return;
+        if (!_assignExitVeilOutlineFastSuppressed) return;
+        final lastMoveAt = _lastOverlayMoveAt;
+        final idleMs = lastMoveAt == null
+            ? 9999
+            : DateTime.now().difference(lastMoveAt).inMilliseconds;
+        if (_isDraggingRadius && idleMs < 160) {
+          _scheduleExitVeilOutlineFastRestore(reason);
+          return;
+        }
+        _assignExitVeilOutlineFastSuppressed = false;
+        final liveStyle = _controller?.style;
+        if (liveStyle == null) return;
+        DebugConsole.log(
+          'EXIT_OUTLINE_FAST_SUPPRESS: active=false reason=restore '
+          'idleMs=$idleMs ${_assignDebugState()}',
+        );
+        unawaited(
+          _syncAssignExitVeilOutlineMode(
+            liveStyle,
+            active: true,
+            reason: 'fast-restore:$reason',
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _suppressExitVeilOutlineForFastSwipe(
     StyleController style, {
     required double deltaPx,
     required String reason,
   }) async {
-    _assignExitVeilOutlineRestoreTimer?.cancel();
-    _assignExitVeilOutlineRestoreTimer = Timer(
-      const Duration(milliseconds: 72),
-      () {
-        _assignExitVeilOutlineRestoreTimer = null;
-        if (!mounted || !_usesLiveAssignVeilHole()) return;
-        if (!_assignExitVeilOutlineFastSuppressed) return;
-        final liveStyle = _controller?.style;
-        if (liveStyle == null) return;
-        unawaited(() async {
-          _assignExitVeilOutlineFastSuppressed = false;
-          DebugConsole.log(
-            'EXIT_OUTLINE_FAST_SUPPRESS: active=false reason=restore '
-            '${_assignDebugState()}',
-          );
-          await _syncAssignExitVeilOutlineMode(
-            liveStyle,
-            active: true,
-            reason: 'fast-restore:$reason',
-          );
-          _refreshFastExitOutlineFallback();
-        }());
-      },
-    );
+    _scheduleExitVeilOutlineFastRestore(reason);
 
     if (_assignExitVeilOutlineFastSuppressed) return;
     _assignExitVeilOutlineFastSuppressed = true;
-    _refreshFastExitOutlineFallback();
     DebugConsole.log(
       'EXIT_OUTLINE_FAST_SUPPRESS: active=true '
       'dPx=${deltaPx.toStringAsFixed(1)} reason=$reason '
@@ -275,21 +285,8 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     required bool useLiveAssignHole,
   }) {
     if (fullQuality) return 128;
-    if (useLiveAssignHole) return 96;
+    if (useLiveAssignHole) return 64;
     return 32;
-  }
-
-  int _liveAssignVeilSegments(
-    _RadiusCircleData? circle, {
-    required bool fullQuality,
-    required int fallbackSegments,
-  }) {
-    if (circle == null) return fallbackSegments;
-    final radiusPx = _radiusPxForCircle(circle);
-    if (radiusPx >= 420) return 256;
-    if (radiusPx >= 220) return 192;
-    if (radiusPx >= 110) return 128;
-    return fullQuality ? 128 : math.max(fallbackSegments, 96);
   }
 
   List<List<double>> _veilHoleForRadiusCircle(
@@ -488,17 +485,9 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     final liveAssignCircle = useLiveAssignHole
         ? this._currentAssignNativeVisualCircle(alarmProv)
         : null;
-    final liveAssignSegments = _liveAssignVeilSegments(
-      liveAssignCircle,
-      fullQuality: fullQuality,
-      fallbackSegments: segments,
-    );
     final liveAssignRing = liveAssignCircle == null
         ? null
-        : _veilHoleForRadiusCircle(
-            liveAssignCircle,
-            segments: liveAssignSegments,
-          );
+        : _veilHoleForRadiusCircle(liveAssignCircle, segments: segments);
     final previousLiveMaskRadius = liveAssignCircle == null
         ? null
         : _exitDebugLastMaskRadiusM;
@@ -511,7 +500,7 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
         previousLiveMaskRadius != null &&
         !fullQuality &&
         reason.startsWith('assign-radius:immediate:') &&
-        liveRadiusDeltaPx >= 24.0;
+        liveRadiusDeltaPx >= 40.0;
     final hasFastLeave = liveAssignCircle != null;
     final liveAssignDebug = liveAssignCircle == null
         ? ''
@@ -528,7 +517,7 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
         style,
         circle: null,
         ring: null,
-        segments: liveAssignSegments,
+        segments: segments,
         reason: reason,
       );
       await this._syncAssignExitVeilOutlineMode(
@@ -620,14 +609,14 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
             : this._exitDebugRingStats(
                 liveAssignCircle,
                 liveAssignRing,
-                segments: liveAssignSegments,
+                segments: segments,
               );
         final screenStats = liveAssignRing == null
             ? 'screenRing=null'
             : this._exitDebugScreenRingStats(
                 liveAssignCircle,
                 liveAssignRing,
-                segments: liveAssignSegments,
+                segments: segments,
               );
         DebugConsole.log(
           'VEIL_MASK_SYNC: mSeq=$maskSeq updated=$maskUpdated '
@@ -641,7 +630,7 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
           'outlineSeq=$_exitDebugOutlineSeq '
           'outlineDelta=${_exitDebugDelta(_exitDebugLastOutlineRadiusM, liveAssignCircle.radiusMeters)} '
           'bytes=${veilGeoJson.length} leaves=${leaveAlarms.length} '
-          'holes=${holes.length} seg=$segments liveSeg=$liveAssignSegments ms=${sw.elapsedMilliseconds} '
+          'holes=${holes.length} seg=$segments ms=${sw.elapsedMilliseconds} '
           'reason=$reason $ringStats $screenStats ${_assignDebugState()}',
         );
       }
@@ -652,7 +641,7 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
       style,
       circle: liveAssignCircle,
       ring: liveAssignRing,
-      segments: liveAssignSegments,
+      segments: segments,
       reason: reason,
     );
     await _syncAssignExitVeilOutlineMode(
@@ -665,7 +654,7 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
       DebugConsole.log(
         'VEIL_SYNC: seq=$seq empty=false ms=${sw.elapsedMilliseconds} '
         'ignore=$ignoreAssign live=$useLiveAssignHole leaves=${leaveAlarms.length} '
-        'fastLeave=$hasFastLeave holes=${holes.length} seg=$segments liveSeg=$liveAssignSegments '
+        'fastLeave=$hasFastLeave holes=${holes.length} seg=$segments '
         '$liveAssignDebug full=$fullQuality reason=$reason '
         '${_assignDebugState()}',
       );

@@ -631,15 +631,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   final Map<String, bool> _alarmInsideState = {};
   bool get _useNativeAssignCircle => true;
 
-  bool get _showFastExitOutlineFallback =>
-      _assignExitVeilOutlineFastSuppressed &&
-      _isAssigning &&
-      !_assignFlutterPreviewActive &&
-      _assignVisualOwner == _AssignVisualOwner.nativeLive &&
-      _assignTriggerType == TriggerType.distance &&
-      _assignZoneTrigger == ZoneTrigger.onLeave &&
-      _assignActive;
-
   bool _shouldLogAssignFrame(int frame) => frame <= 3 || frame % 15 == 0;
 
   String _assignDebugState() {
@@ -651,10 +642,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         'active=$_assignActive r=${_assignRadius.round()}m '
         'px=${_radiusNotifier.value.toStringAsFixed(1)} '
         'zoom=${zoom.toStringAsFixed(2)}';
-  }
-
-  void _refreshFastExitOutlineFallback() {
-    if (mounted) setState(() {});
   }
 
   Position? _cachedUserPosition() {
@@ -1192,20 +1179,18 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                 },
                 child: CustomPaint(
                   painter:
-                      _assignScreenCenter != null &&
-                          (((_assignFlutterPreviewActive ||
-                                      !_useNativeAssignCircle) &&
-                                  (_assignFlutterPreviewActive ||
-                                      this._showAssignOverlay ||
-                                      _closingAssignCircle)) ||
-                              _showFastExitOutlineFallback)
+                      (_assignFlutterPreviewActive ||
+                              !_useNativeAssignCircle) &&
+                          _assignScreenCenter != null &&
+                          (_assignFlutterPreviewActive ||
+                              this._showAssignOverlay ||
+                              _closingAssignCircle)
                       ? _RadiusOverlayPainter(
                           center: _assignScreenCenter!,
                           radiusNotifier: _radiusNotifier,
                           isTime: _assignTriggerType == TriggerType.time,
                           isLeave: _assignZoneTrigger == ZoneTrigger.onLeave,
                           active: _assignActive,
-                          paintFill: !_showFastExitOutlineFallback,
                         )
                       : null,
                   child: const SizedBox.expand(),
