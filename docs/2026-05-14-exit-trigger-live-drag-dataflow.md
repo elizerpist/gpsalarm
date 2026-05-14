@@ -5,7 +5,7 @@
 The best known exit-trigger live-drag state is:
 
 ```text
-2b0fdfe Maximize exit live outline opacity
+ec41947 Match exit edit circle visuals
 ```
 
 This commit was pushed after:
@@ -20,7 +20,7 @@ The earlier useful baseline was:
 3d9d0aa Keep exit outline native during fast drags
 ```
 
-`3d9d0aa` was important because it moved the exit outline away from the Flutter fallback border and back onto the native/live MapLibre path. It still had fade-out. `40f78db` removed the fade-out and cleaned up save/restore. `aea0748` kept that behavior and addressed the remaining fast-drag ghost. `2b0fdfe` keeps the same flow and makes the live edit border full opacity.
+`3d9d0aa` was important because it moved the exit outline away from the Flutter fallback border and back onto the native/live MapLibre path. It still had fade-out. `40f78db` removed the fade-out and cleaned up save/restore. `aea0748` kept that behavior and addressed the remaining fast-drag ghost. `2b0fdfe` kept the same flow but made the live edit border full opacity. `ec41947` keeps the fast drag flow, but matches the live edit outline back to the saved native stroke strength after screenshots showed the edit border was too strong and visually thicker. It also keeps the existing native circle layer hidden instead of removing it during existing exit edits, so exit-to-enter switches can restore the same layer without a first-switch fade or missing fill.
 
 ## User-Visible Target
 
@@ -81,7 +81,7 @@ The logs showed `nativeSkipped=true` during drag while `EXIT_NATIVE_CIRCLE_SUPPR
 
 ## Current Fix
 
-`aea0748` fixed the remaining ghost without changing the hot pointer data flow. `2b0fdfe` then matched the live edit border opacity to the saved border.
+`aea0748` fixed the remaining ghost without changing the hot pointer data flow. `2b0fdfe` tried a full-opacity live edit outline, but screenshots showed that was stronger than the saved circle. `ec41947` is the current visual match point.
 
 In `maplibre_radius_layer_rebuild.dart`, existing live exit edits hide the native circle at layer creation:
 
@@ -95,23 +95,27 @@ if (hideLiveExitNativeCircle) 'circle-opacity': 0.0,
 if (hideLiveExitNativeCircle) 'circle-stroke-opacity': 0.0,
 ```
 
+When the native circle is hidden at creation, `_assignExitNativeCircleSuppressed` is also set so later exit-to-enter restores do not early-return as if there were nothing to restore.
+
+In `maplibre_assign_lifecycle.dart`, `_hideExistingNativeAlarm` now attempts to hide the existing native circle with `circle-opacity: 0.0` and `circle-stroke-opacity: 0.0` instead of immediately removing `radius-circle-alarm-N`. Keeping the layer present avoids a visible layer re-add/fade when the user switches from exit to enter while editing an existing alarm.
+
 In `maplibre_radius_layer_init.dart`, the veil fill no longer draws an anti-aliased hole edge:
 
 ```dart
 'fill-antialias': false,
 ```
 
-The live edit outline is intentionally max opacity:
+The live edit outline matches the saved native stroke strength:
 
 ```dart
-'line-color': '#FF0000',
+'line-color': 'rgba(255,0,0,0.6)',
 ```
 
 ```dart
 final outlineOpacity = active ? 1.0 : 0.0;
 ```
 
-This keeps the red border always visible through `veil-live-outline`, prevents a stale native circle or fill-edge border from doubling it, and makes the edit border match the saved border strength.
+This keeps the red border always visible through `veil-live-outline`, prevents a stale native circle or fill-edge border from doubling it, and makes the edit border visually consistent with the saved native radius circle.
 
 ## Constraints For Future Changes
 
