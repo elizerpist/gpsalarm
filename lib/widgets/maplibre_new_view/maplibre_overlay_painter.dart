@@ -8,6 +8,7 @@ class _RadiusOverlayPainter extends CustomPainter {
   final bool isTime;
   final bool isLeave;
   final bool active;
+  final bool paintFill;
 
   _RadiusOverlayPainter({
     required this.center,
@@ -15,6 +16,7 @@ class _RadiusOverlayPainter extends CustomPainter {
     required this.isTime,
     this.isLeave = false,
     this.active = true,
+    this.paintFill = true,
   }) : super(repaint: radiusNotifier);
 
   @override
@@ -22,16 +24,12 @@ class _RadiusOverlayPainter extends CustomPainter {
     final radiusPx = radiusNotifier.value;
     final fillColor = !active
         ? const Color(0x149E9E9E)
-        : (isTime
-            ? const Color(0x1AFF9800)
-            : const Color(0x1FFF0000));
+        : (isTime ? const Color(0x1AFF9800) : const Color(0x1FFF0000));
     final strokeColor = !active
         ? const Color(0xB39E9E9E)
-        : (isTime
-            ? const Color(0xB3FF9800)
-            : const Color(0x99FF0000));
+        : (isTime ? const Color(0xB3FF9800) : const Color(0x99FF0000));
 
-    if (isLeave && active) {
+    if (paintFill && isLeave && active) {
       final veilPath = Path()
         ..fillType = PathFillType.evenOdd
         ..addRect(Offset.zero & size)
@@ -39,7 +37,7 @@ class _RadiusOverlayPainter extends CustomPainter {
       canvas.drawPath(veilPath, Paint()..color = const Color(0x26FF0000));
     }
 
-    if (!isLeave) {
+    if (paintFill && !isLeave) {
       canvas.drawCircle(center, radiusPx, Paint()..color = fillColor);
     }
 
@@ -48,8 +46,12 @@ class _RadiusOverlayPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0;
     if (isTime) {
-      final path = Path()..addOval(Rect.fromCircle(center: center, radius: radiusPx));
-      final dashed = dashPath(path, dashArray: CircularIntervalList<double>([8.0, 4.0]));
+      final path = Path()
+        ..addOval(Rect.fromCircle(center: center, radius: radiusPx));
+      final dashed = dashPath(
+        path,
+        dashArray: CircularIntervalList<double>([8.0, 4.0]),
+      );
       canvas.drawPath(dashed, strokePaint);
     } else {
       canvas.drawCircle(center, radiusPx, strokePaint);
