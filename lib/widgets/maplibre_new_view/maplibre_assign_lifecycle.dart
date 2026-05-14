@@ -41,21 +41,27 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     }
     final style = _controller?.style;
     if (style == null) return;
-    final circle = this._currentAssignNativeVisualCircle(
-      context.read<AlarmProvider>(),
-    );
+    final alarmProv = context.read<AlarmProvider>();
+    final circle = this._currentAssignNativeVisualCircle(alarmProv);
     if (circle == null) return;
     if (!_radiusVisualIds.contains(circle.id) &&
         !_radiusCircleLayerKeys.containsKey(circle.id)) {
       return;
     }
-    await this._setCircleLayerRadiusPaint(
+    final updated = await this._setCircleLayerRadiusPaint(
       style,
       layerId: 'radius-circle-${circle.id}',
       visualId: circle.id,
       radiusPx: this._radiusPxForCircle(circle),
       debugReason: 'immediate:$debugReason',
     );
+    if (updated) {
+      await this._syncAssignVeilWithRadiusPaint(
+        style: style,
+        alarmProv: alarmProv,
+        debugReason: debugReason,
+      );
+    }
   }
 
   void _syncAssignRadiusPaintImmediate({required String debugReason}) {
@@ -142,6 +148,8 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       final existing = _assignExisting;
       final style = _controller?.style;
       final alarmProv = context.read<AlarmProvider>();
+      final syncLiveVeilInOverlay =
+          !(radiusOnly && !updateMarker && this._usesLiveAssignVeilHole());
       if (_assignFlutterPreviewActive && !forceNative) {
         path = 'flutter-preview';
         return;
@@ -160,7 +168,8 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           updateMarker: updateMarker,
           radiusOnly: radiusOnly && !updateMarker,
         );
-        if (_assignVisualOwner == _AssignVisualOwner.nativeLive) {
+        if (_assignVisualOwner == _AssignVisualOwner.nativeLive &&
+            syncLiveVeilInOverlay) {
           await this._syncAssignVeilWithOverlay(debugReason: debugReason);
         }
         return;
@@ -181,7 +190,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           radiusOnly: radiusOnly && !updateMarker,
         );
       }
-      if (style != null) {
+      if (style != null && syncLiveVeilInOverlay) {
         await this._syncAssignVeilWithOverlay(debugReason: debugReason);
       }
       if (needsState && mounted) setState(() {});

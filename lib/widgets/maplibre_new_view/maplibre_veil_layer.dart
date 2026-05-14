@@ -59,17 +59,40 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     return _drainVeilSyncQueue(drainAll: true);
   }
 
+  bool _usesLiveAssignVeilHole({bool ignoreAssign = false}) {
+    return !ignoreAssign &&
+        _isAssigning &&
+        _assignVisualOwner == _AssignVisualOwner.nativeLive &&
+        !_assignFlutterPreviewActive &&
+        _assignActive &&
+        _assignZoneTrigger == ZoneTrigger.onLeave &&
+        (_showAssignOverlay || _useNativeExistingAssignLayer);
+  }
+
+  Future<void> _syncAssignVeilWithRadiusPaint({
+    required StyleController style,
+    required AlarmProvider alarmProv,
+    required String debugReason,
+  }) {
+    if (!this._usesLiveAssignVeilHole()) return Future<void>.value();
+
+    _veilSyncTimer?.cancel();
+    _veilSyncTimer = null;
+    _veilSyncRequested = false;
+    _veilSyncRequestedIgnoreAssign = false;
+    _veilSyncRequestedFullQuality = false;
+    _veilSyncRequestedReason = null;
+
+    return this._updateVeil(
+      style,
+      alarmProv,
+      fullQuality: false,
+      reason: 'assign-radius:immediate:$debugReason',
+    );
+  }
+
   Future<void> _syncAssignVeilWithOverlay({required String debugReason}) {
-    if (_assignVisualOwner != _AssignVisualOwner.nativeLive ||
-        _assignFlutterPreviewActive) {
-      return Future<void>.value();
-    }
-    if (!_isAssigning ||
-        !_assignActive ||
-        _assignZoneTrigger != ZoneTrigger.onLeave ||
-        !(_showAssignOverlay || _useNativeExistingAssignLayer)) {
-      return Future<void>.value();
-    }
+    if (!this._usesLiveAssignVeilHole()) return Future<void>.value();
     return this._flushVeilSync(
       fullQuality: false,
       reason: 'assign-overlay:$debugReason',
@@ -145,14 +168,9 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
   }) async {
     final sw = Stopwatch()..start();
     final seq = ++_veilUpdateSeq;
-    final useLiveAssignHole =
-        !ignoreAssign &&
-        _isAssigning &&
-        _assignVisualOwner == _AssignVisualOwner.nativeLive &&
-        !_assignFlutterPreviewActive &&
-        _assignActive &&
-        _assignZoneTrigger == ZoneTrigger.onLeave &&
-        (_showAssignOverlay || _useNativeExistingAssignLayer);
+    final useLiveAssignHole = this._usesLiveAssignVeilHole(
+      ignoreAssign: ignoreAssign,
+    );
     final segments = _veilSegments(
       fullQuality: fullQuality,
       useLiveAssignHole: useLiveAssignHole,
