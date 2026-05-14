@@ -32,7 +32,7 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
     }
     _radiusLayerReady = true;
     DebugConsole.log(
-      'VECTOR: radius layer system ready fix=shared-radius-exit-mask-v3',
+      'VECTOR: radius layer system ready fix=shared-radius-exit-mask-v4',
     );
   }
 

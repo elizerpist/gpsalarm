@@ -99,6 +99,14 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     );
   }
 
+  bool _shouldLogVeilSync(String reason, int elapsedMs) {
+    return _isAssigning &&
+        (_shouldLogAssignFrame(_assignSyncSeq) ||
+            (reason.startsWith('assign-radius:immediate:') &&
+                this._shouldLogAssignDebugReason(reason)) ||
+            elapsedMs > 8);
+  }
+
   Future<void> _drainVeilSyncQueue({bool drainAll = false}) {
     final existing = _veilSyncDrainFuture;
     if (existing != null) return existing;
@@ -195,6 +203,10 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
         ? this._currentAssignNativeVisualCircle(alarmProv)
         : null;
     final hasFastLeave = liveAssignCircle != null;
+    final liveAssignDebug = liveAssignCircle == null
+        ? ''
+        : ' liveR=${liveAssignCircle.radiusMeters.round()}m '
+              'livePx=${this._radiusPxForCircle(liveAssignCircle).toStringAsFixed(1)}';
 
     if (leaveAlarms.isEmpty && !hasFastLeave) {
       if (_lastVeilGeoJson != _emptyGeoJson) {
@@ -204,9 +216,7 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
         } catch (_) {}
       }
       sw.stop();
-      if (_isAssigning &&
-          (_shouldLogAssignFrame(_assignSyncSeq) ||
-              sw.elapsedMilliseconds > 8)) {
+      if (this._shouldLogVeilSync(reason, sw.elapsedMilliseconds)) {
         DebugConsole.log(
           'VEIL_SYNC: seq=$seq empty=true ms=${sw.elapsedMilliseconds} '
           'ignore=$ignoreAssign live=$useLiveAssignHole leaves=0 '
@@ -262,13 +272,13 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
       }
     } catch (_) {}
     sw.stop();
-    if ((_isAssigning && _shouldLogAssignFrame(_assignSyncSeq)) ||
-        sw.elapsedMilliseconds > 8) {
+    if (this._shouldLogVeilSync(reason, sw.elapsedMilliseconds)) {
       DebugConsole.log(
         'VEIL_SYNC: seq=$seq empty=false ms=${sw.elapsedMilliseconds} '
         'ignore=$ignoreAssign live=$useLiveAssignHole leaves=${leaveAlarms.length} '
         'fastLeave=$hasFastLeave holes=${holes.length} seg=$segments '
-        'full=$fullQuality reason=$reason ${_assignDebugState()}',
+        '$liveAssignDebug full=$fullQuality reason=$reason '
+        '${_assignDebugState()}',
       );
     }
   }

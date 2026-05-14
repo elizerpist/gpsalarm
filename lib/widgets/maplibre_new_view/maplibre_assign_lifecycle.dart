@@ -33,6 +33,25 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     );
   }
 
+  bool _shouldLogAssignDebugReason(String reason) {
+    final hash = reason.lastIndexOf('#');
+    if (hash < 0 || hash + 1 >= reason.length) {
+      return _shouldLogAssignFrame(_assignSyncSeq);
+    }
+    final frame = int.tryParse(reason.substring(hash + 1));
+    return frame != null && _shouldLogAssignFrame(frame);
+  }
+
+  bool _shouldSkipScheduledExitRadiusOnlySync({
+    required bool updateMarker,
+    required bool radiusOnly,
+  }) {
+    return radiusOnly &&
+        !updateMarker &&
+        _nativeCircleRadiusPaintAvailable != false &&
+        this._usesLiveAssignVeilHole();
+  }
+
   Future<void> _applyAssignRadiusPaint({required String debugReason}) async {
     if (!_isAssigning ||
         !_useNativeAssignCircle ||
@@ -48,18 +67,34 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         !_radiusCircleLayerKeys.containsKey(circle.id)) {
       return;
     }
+    final sw = Stopwatch()..start();
+    final radiusPx = this._radiusPxForCircle(circle);
     final updated = await this._setCircleLayerRadiusPaint(
       style,
       layerId: 'radius-circle-${circle.id}',
       visualId: circle.id,
-      radiusPx: this._radiusPxForCircle(circle),
+      radiusPx: radiusPx,
       debugReason: 'immediate:$debugReason',
     );
-    if (updated) {
+    final syncsLiveExitVeil = updated && this._usesLiveAssignVeilHole();
+    if (syncsLiveExitVeil) {
       await this._syncAssignVeilWithRadiusPaint(
         style: style,
         alarmProv: alarmProv,
         debugReason: debugReason,
+      );
+    }
+    sw.stop();
+    if (circle.isLeave &&
+        (this._shouldLogAssignDebugReason(debugReason) ||
+            sw.elapsedMilliseconds > 8 ||
+            !updated)) {
+      DebugConsole.log(
+        'ASSIGN_RADIUS_IMMEDIATE: reason=$debugReason updated=$updated '
+        'veil=$syncsLiveExitVeil id=${circle.id} '
+        'r=${circle.radiusMeters.round()}m px=${radiusPx.toStringAsFixed(1)} '
+        'ms=${sw.elapsedMilliseconds} nativePaint=$_nativeCircleRadiusPaintAvailable '
+        '${_assignDebugState()}',
       );
     }
   }
@@ -148,6 +183,21 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       final existing = _assignExisting;
       final style = _controller?.style;
       final alarmProv = context.read<AlarmProvider>();
+      final skipScheduledExitRadiusOnlySync =
+          this._shouldSkipScheduledExitRadiusOnlySync(
+        updateMarker: updateMarker,
+        radiusOnly: radiusOnly,
+      );
+      if (skipScheduledExitRadiusOnlySync) {
+        path = 'live-exit-immediate-skip';
+        if (this._shouldLogAssignDebugReason(debugReason)) {
+          DebugConsole.log(
+            'ASSIGN_SYNC_SKIP_ACTIVE: reason=$debugReason '
+            'radiusOnly=$radiusOnly marker=$updateMarker ${_assignDebugState()}',
+          );
+        }
+        return;
+      }
       final syncLiveVeilInOverlay =
           !(radiusOnly && !updateMarker && this._usesLiveAssignVeilHole());
       if (_assignFlutterPreviewActive && !forceNative) {
@@ -232,6 +282,18 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     bool radiusOnly = false,
     String debugReason = 'scheduled',
   }) {
+    if (this._shouldSkipScheduledExitRadiusOnlySync(
+      updateMarker: updateMarker,
+      radiusOnly: radiusOnly,
+    )) {
+      if (this._shouldLogAssignDebugReason(debugReason)) {
+        DebugConsole.log(
+          'ASSIGN_SYNC_SKIP: reason=$debugReason path=live-exit-immediate '
+          'radiusOnly=$radiusOnly marker=$updateMarker ${_assignDebugState()}',
+        );
+      }
+      return;
+    }
     if (_assignOverlayActivating) {
       if (!_assignOverlayPending) {
         _assignOverlayPendingRadiusOnly = radiusOnly && !updateMarker;
