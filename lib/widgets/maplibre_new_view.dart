@@ -84,6 +84,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   bool _assignActive = true;
   bool _isDraggingRadius = false;
   int? _dragPointerId;
+  double? _radiusDragStartDistancePx;
+  double? _radiusDragStartRadiusM;
   double _currentZoom = 13;
   bool _zoomInitialized = false;
   double _deviceDpr = 1.0;
@@ -591,9 +593,13 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   double? _exitDebugLastInputRadiusM;
   double? _exitDebugLastInputRadiusPx;
   DateTime? _exitDebugLastInputAt;
+  DateTime? _exitDebugCenterGuardSince;
+  double? _exitDebugCenterGuardHeldRadiusM;
+  double? _exitDebugCenterGuardHeldRadiusPx;
   double? _exitDebugLastNativePaintRadiusM;
   double? _exitDebugLastOutlineRadiusM;
   double? _exitDebugLastMaskRadiusM;
+  bool _assignExitNativeCircleSuppressed = false;
   String _lastVeilGeoJson = '';
   Timer? _veilSyncTimer;
   Future<void>? _veilSyncDrainFuture;
@@ -715,6 +721,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                     'useNative=$_useNativeAssignCircle',
                   );
                   _dragLogCounter = 0;
+                  _radiusDragStartDistancePx = null;
+                  _radiusDragStartRadiusM = null;
+                  _exitDebugCenterGuardSince = null;
+                  _exitDebugCenterGuardHeldRadiusM = null;
+                  _exitDebugCenterGuardHeldRadiusPx = null;
                   _lastOverlayMoveAt = DateTime.now();
                   if (geo != null) {
                     unawaited(
@@ -742,18 +753,21 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                       : now.difference(_lastOverlayMoveAt!).inMilliseconds;
                   _lastOverlayMoveAt = now;
                   if (_assignTriggerType == TriggerType.distance) {
+                    final mpp = _vectorMetersPerPx(_assignLat, _currentZoom);
+                    final nextRadius = (dist * mpp)
+                        .clamp(100.0, 5000.0)
+                        .toDouble();
                     if (this._shouldHoldExitRadiusAtCenter(
                       source: 'longpress',
                       frame: _dragLogCounter,
                       distPx: dist,
+                      candidateRadiusM: nextRadius,
                       eventDtMs: deltaMs,
                     )) {
                       _radiusNotifier.value = this._currentRadiusPx;
                       return;
                     }
-                    _assignRadius =
-                        (dist * _vectorMetersPerPx(_assignLat, _currentZoom))
-                            .clamp(100.0, 5000.0);
+                    _assignRadius = nextRadius;
                   } else {
                     _assignTimeMinutes = (dist * 0.3).clamp(5.0, 120.0).round();
                   }
@@ -793,6 +807,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                     'LONGPRESS_END: frames=$_dragLogCounter ${_assignDebugState()}',
                   );
                   _isDraggingRadius = false;
+                  _radiusDragStartDistancePx = null;
+                  _radiusDragStartRadiusM = null;
+                  _exitDebugCenterGuardSince = null;
+                  _exitDebugCenterGuardHeldRadiusM = null;
+                  _exitDebugCenterGuardHeldRadiusPx = null;
                   this._refreshAssignMarker();
                   unawaited(
                     this._flushAssignOverlaySync(
@@ -1046,6 +1065,16 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                     _dragPointerId = e.pointer;
                     _isDraggingRadius = true;
                     _dragLogCounter = 0;
+                    if (_assignTriggerType == TriggerType.distance) {
+                      _radiusDragStartDistancePx = dist;
+                      _radiusDragStartRadiusM = _assignRadius;
+                    } else {
+                      _radiusDragStartDistancePx = null;
+                      _radiusDragStartRadiusM = null;
+                    }
+                    _exitDebugCenterGuardSince = null;
+                    _exitDebugCenterGuardHeldRadiusM = null;
+                    _exitDebugCenterGuardHeldRadiusPx = null;
                     _lastOverlayMoveAt = DateTime.now();
                   }
                 },
@@ -1062,19 +1091,28 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                       : now.difference(_lastOverlayMoveAt!).inMilliseconds;
                   _lastOverlayMoveAt = now;
                   if (_assignTriggerType == TriggerType.distance) {
+                    final mpp = _vectorMetersPerPx(_assignLat, _currentZoom);
+                    final dragStartDistancePx = _radiusDragStartDistancePx;
+                    final dragStartRadiusM = _radiusDragStartRadiusM;
+                    final nextRadius =
+                        (dragStartDistancePx != null && dragStartRadiusM != null
+                                ? dragStartRadiusM +
+                                      (dist - dragStartDistancePx) * mpp
+                                : dist * mpp)
+                            .clamp(100.0, 5000.0)
+                            .toDouble();
                     if (this._shouldHoldExitRadiusAtCenter(
                       source: 'overlay',
                       frame: _dragLogCounter,
                       distPx: dist,
+                      candidateRadiusM: nextRadius,
                       pointer: e.pointer,
                       eventDtMs: deltaMs,
                     )) {
                       _radiusNotifier.value = this._currentRadiusPx;
                       return;
                     }
-                    _assignRadius =
-                        (dist * _vectorMetersPerPx(_assignLat, _currentZoom))
-                            .clamp(100.0, 5000.0);
+                    _assignRadius = nextRadius;
                   } else {
                     _assignTimeMinutes = (dist * 0.3).clamp(5.0, 120.0).round();
                   }
@@ -1121,6 +1159,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   if (e.pointer != _dragPointerId) return;
                   _isDraggingRadius = false;
                   _dragPointerId = null;
+                  _radiusDragStartDistancePx = null;
+                  _radiusDragStartRadiusM = null;
+                  _exitDebugCenterGuardSince = null;
+                  _exitDebugCenterGuardHeldRadiusM = null;
+                  _exitDebugCenterGuardHeldRadiusPx = null;
                   this._refreshAssignMarker();
                   unawaited(
                     this._flushAssignOverlaySync(

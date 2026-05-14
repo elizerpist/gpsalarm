@@ -55,6 +55,9 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _exitDebugLastInputRadiusM = null;
     _exitDebugLastInputRadiusPx = null;
     _exitDebugLastInputAt = null;
+    _exitDebugCenterGuardSince = null;
+    _exitDebugCenterGuardHeldRadiusM = null;
+    _exitDebugCenterGuardHeldRadiusPx = null;
     _exitDebugLastNativePaintRadiusM = null;
     _exitDebugLastOutlineRadiusM = null;
     _exitDebugLastMaskRadiusM = null;
@@ -140,55 +143,98 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     required String source,
     required int frame,
     required double distPx,
+    double? candidateRadiusM,
     int? pointer,
     int? eventDtMs,
   }) {
     if (!_isExitDebugTraceActive) return false;
-    final previousRadius = _exitDebugLastInputRadiusM;
-    final previousPx = _exitDebugLastInputRadiusPx;
-    if (previousRadius == null || previousPx == null) return false;
-
-    final now = DateTime.now();
-    final lastInputAgeMs = _exitDebugLastInputAt == null
-        ? null
-        : now.difference(_exitDebugLastInputAt!).inMilliseconds;
-    if (lastInputAgeMs != null && lastInputAgeMs > 120) return false;
 
     final zoom = _controller?.camera?.zoom ?? _currentZoom;
     final mpp = _vectorMetersPerPx(_assignLat, zoom);
     if (!mpp.isFinite || mpp <= 0) return false;
 
     final minRadiusPx = 100.0 / mpp;
-    final centerGuardPx = math.max(30.0, minRadiusPx * 2.15);
-    final candidateRadius = (distPx * mpp).clamp(100.0, 5000.0);
+    final centerGuardPx = math.max(48.0, minRadiusPx * 1.8);
+    final candidateRadius = (candidateRadiusM ?? distPx * mpp)
+        .clamp(100.0, 5000.0)
+        .toDouble();
     final candidatePx = candidateRadius / mpp;
-    final dropM = previousRadius - candidateRadius;
-    final dropPx = previousPx - candidatePx;
-    final fastEnough = eventDtMs == null || eventDtMs <= 64;
-    final hold =
-        fastEnough &&
+    final currentRadius = _assignRadius;
+    final currentPx = _radiusNotifier.value;
+    final shrinkingIntoCenter =
         distPx <= centerGuardPx &&
-        dropM >= 220.0 &&
-        dropPx >= 28.0;
+        candidatePx <= centerGuardPx &&
+        candidateRadius < currentRadius - 1.0;
+
+    if (!shrinkingIntoCenter) {
+      _exitDebugCenterGuardSince = null;
+      _exitDebugCenterGuardHeldRadiusM = null;
+      _exitDebugCenterGuardHeldRadiusPx = null;
+      return false;
+    }
+
+    final now = DateTime.now();
+    _exitDebugCenterGuardSince ??= now;
+    _exitDebugCenterGuardHeldRadiusM ??= currentRadius;
+    _exitDebugCenterGuardHeldRadiusPx ??= currentPx;
+    final dwellMs = now.difference(_exitDebugCenterGuardSince!).inMilliseconds;
+    final hold = dwellMs < 320;
     if (!hold) return false;
 
+    final heldRadius = _exitDebugCenterGuardHeldRadiusM ?? currentRadius;
+    final heldPx = _exitDebugCenterGuardHeldRadiusPx ?? currentPx;
     DebugConsole.log(
       'EXIT_CENTER_GUARD: source=$source frame=$frame pointer=$pointer '
-      'dt=${eventDtMs ?? -1}ms lastInputAge=${lastInputAgeMs ?? -1}ms '
-      'heldR=${previousRadius.round()}m '
+      'dt=${eventDtMs ?? -1}ms dwell=${dwellMs}ms '
+      'heldR=${heldRadius.round()}m currentR=${currentRadius.round()}m '
       'candidateR=${candidateRadius.round()}m '
-      'heldPx=${previousPx.toStringAsFixed(1)} '
+      'heldPx=${heldPx.toStringAsFixed(1)} '
+      'currentPx=${currentPx.toStringAsFixed(1)} '
       'candidatePx=${candidatePx.toStringAsFixed(1)} '
       'distPx=${distPx.toStringAsFixed(1)} '
       'minPx=${minRadiusPx.toStringAsFixed(1)} '
       'guardPx=${centerGuardPx.toStringAsFixed(1)} '
-      'dropM=${dropM.toStringAsFixed(1)} '
-      'dropPx=${dropPx.toStringAsFixed(1)} '
+      'dropM=${(currentRadius - candidateRadius).toStringAsFixed(1)} '
+      'dropPx=${(currentPx - candidatePx).toStringAsFixed(1)} '
       'inputSeq=$_exitDebugInputSeq nativeSeq=$_exitDebugNativePaintSeq '
       'outlineSeq=$_exitDebugOutlineSeq maskSeq=$_exitDebugMaskSeq '
       '${_assignDebugState()}',
     );
     return true;
+  }
+
+  Future<void> _syncLiveExitNativeCircleSuppression(
+    StyleController style, {
+    required String reason,
+    bool? active,
+    bool force = false,
+  }) async {
+    final id = _assignNativeAlarmLayerId;
+    if (id == null) return;
+    final shouldSuppress = active ?? this._usesLiveAssignVeilHole();
+    if (!shouldSuppress && !_assignExitNativeCircleSuppressed) return;
+    if (shouldSuppress && !force && _assignExitNativeCircleSuppressed) return;
+
+    final layerId = 'radius-circle-$id';
+    final opacity = shouldSuppress ? 0.0 : 1.0;
+    final circleHidden = await this._setNativeLayerPaintProperty(
+      style,
+      layerId: layerId,
+      property: 'circle-opacity',
+      value: opacity,
+    );
+    final strokeHidden = await this._setNativeLayerPaintProperty(
+      style,
+      layerId: layerId,
+      property: 'circle-stroke-opacity',
+      value: opacity,
+    );
+    _assignExitNativeCircleSuppressed = shouldSuppress;
+    DebugConsole.log(
+      'EXIT_NATIVE_CIRCLE_SUPPRESS: active=$shouldSuppress reason=$reason '
+      'layer=$layerId opacity=$opacity circle=$circleHidden stroke=$strokeHidden '
+      '${_assignDebugState()}',
+    );
   }
 
   bool _shouldSkipScheduledExitRadiusOnlySync({
@@ -221,6 +267,10 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     final liveExitVeil = circle.isLeave && this._usesLiveAssignVeilHole();
     var updated = false;
     if (liveExitVeil) {
+      await this._syncLiveExitNativeCircleSuppression(
+        style,
+        reason: 'immediate:$debugReason',
+      );
       await this._syncAssignVeilWithRadiusPaint(
         style: style,
         alarmProv: alarmProv,
@@ -398,6 +448,12 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       }
       final syncLiveVeilInOverlay =
           !(radiusOnly && !updateMarker && this._usesLiveAssignVeilHole());
+      if (style != null) {
+        await this._syncLiveExitNativeCircleSuppression(
+          style,
+          reason: debugReason,
+        );
+      }
       if (_assignFlutterPreviewActive && !forceNative) {
         path = 'flutter-preview';
         return;
@@ -431,12 +487,17 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           await this._hideExistingNativeAlarm(existing);
         }
       }
-      if (_useNativeAssignCircle && style != null) {
+      final liveExitAssignVeil = this._usesLiveAssignVeilHole();
+      if (_useNativeAssignCircle && style != null && !liveExitAssignVeil) {
         path = 'fast-native';
         await this._updateFastCircleLayer(
           style,
           radiusOnly: radiusOnly && !updateMarker,
         );
+      } else if (_useNativeAssignCircle &&
+          style != null &&
+          liveExitAssignVeil) {
+        path = 'live-exit-veil';
       }
       if (style != null && syncLiveVeilInOverlay) {
         await this._syncAssignVeilWithOverlay(debugReason: debugReason);
@@ -647,6 +708,8 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignOverlayPendingReason = null;
     _assignRadiusPaintSyncPending = false;
     _assignRadiusPaintSyncReason = null;
+    _radiusDragStartDistancePx = null;
+    _radiusDragStartRadiusM = null;
     _veilSyncTimer?.cancel();
     _veilSyncTimer = null;
     _veilSyncRequested = false;
@@ -664,6 +727,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       _assignPreviewVeilHidden = false;
       _assignPreviewLabelHidden = false;
       _assignExitVeilOutlineActive = false;
+      _assignExitNativeCircleSuppressed = false;
       _assignVisualOwner = _AssignVisualOwner.nativeLive;
     }
     setState(() {
@@ -750,6 +814,8 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignOverlayPendingReason = null;
     _assignRadiusPaintSyncPending = false;
     _assignRadiusPaintSyncReason = null;
+    _radiusDragStartDistancePx = null;
+    _radiusDragStartRadiusM = null;
     _veilSyncTimer?.cancel();
     _veilSyncTimer = null;
     _veilSyncRequested = false;
@@ -763,6 +829,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignPreviewCircleHidden = false;
     _assignPreviewVeilHidden = false;
     _assignPreviewLabelHidden = false;
+    _assignExitNativeCircleSuppressed = false;
     this._resetExitDebugTrace();
     _assignVisualOwner = _AssignVisualOwner.nativeLive;
     _closingAssignMarker = false;
@@ -799,6 +866,10 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     final style = _controller?.style;
     if (style != null && _showAssignOverlay) {
       if (_useNativeAssignCircle) await this._updateFastCircleLayer(style);
+      await this._syncLiveExitNativeCircleSuppression(
+        style,
+        reason: 'assign-start',
+      );
       DebugConsole.log('ASSIGN_START: updating veil immediately');
       await this._flushVeilSync(fullQuality: true, reason: 'assign-start');
     } else if (existing != null) {
@@ -1036,6 +1107,11 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           circle,
           updateMarker: true,
         );
+        await this._syncLiveExitNativeCircleSuppression(
+          liveStyle,
+          reason: 'cancel-in-place-restore',
+          active: false,
+        );
       } else if (_assignNativeAlarmLayerId != null) {
         await this._removeRadiusVisual(
           liveStyle,
@@ -1191,6 +1267,11 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
             updateMarker: true,
             preserveRadiusPaintOverride: true,
           );
+          await this._syncLiveExitNativeCircleSuppression(
+            liveStyle,
+            reason: 'save-in-place-restore',
+            active: false,
+          );
         }
         if (keepPreview) {
           await this._hideNativeAssignVisualForPreview(
@@ -1258,6 +1339,11 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
             liveStyle,
             singleCircle,
             preserveRadiusPaintOverride: true,
+          );
+          await this._syncLiveExitNativeCircleSuppression(
+            liveStyle,
+            reason: 'save-promote-restore',
+            active: false,
           );
           _lastRadiusDataHash = this._radiusHash(circles);
         } else {
