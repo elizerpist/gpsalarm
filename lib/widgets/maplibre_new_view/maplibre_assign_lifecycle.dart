@@ -242,12 +242,12 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     );
   }
 
-  Future<void> _syncLiveExitNativeBaseCircle(
+  Future<void> _syncAssignNativeBaseCircle(
     StyleController style,
     AlarmProvider alarmProv, {
     required bool updateMarker,
   }) async {
-    if (!_useNativeAssignCircle || !this._usesLiveAssignVeilHole()) return;
+    if (!_useNativeAssignCircle) return;
     if (_assignExisting == null) {
       await this._updateFastCircleLayer(style, radiusOnly: false);
       return;
@@ -474,13 +474,15 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       final syncLiveVeilInOverlay =
           !(radiusOnly && !updateMarker && liveExitAssignVeil);
       if (style != null) {
-        if (liveExitAssignVeil) {
-          await this._syncLiveExitNativeBaseCircle(
+        final preSyncNativeBase = !radiusOnly || updateMarker;
+        if (preSyncNativeBase) {
+          await this._syncAssignNativeBaseCircle(
             style,
             alarmProv,
             updateMarker: updateMarker,
           );
-        } else {
+        }
+        if (!liveExitAssignVeil) {
           await this._syncAssignExitVeilOutlineMode(
             style,
             active: false,
