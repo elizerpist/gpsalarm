@@ -129,9 +129,7 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
       _assignExitVeilOutlineFastSuppressed = false;
     }
 
-    final outlineOpacity = active && !_assignExitVeilOutlineFastSuppressed
-        ? 0.62
-        : 0.0;
+    final outlineOpacity = active ? 0.62 : 0.0;
     if (_assignExitVeilOutlineActive == active &&
         (_assignExitVeilOutlineOpacity - outlineOpacity).abs() < 0.001) {
       return;
@@ -206,7 +204,6 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
             active: true,
             reason: 'fast-restore:$reason',
           );
-          _refreshFastExitOutlineFallback();
         }());
       },
     );
@@ -221,7 +218,6 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
 
     if (_assignExitVeilOutlineFastSuppressed) return;
     _assignExitVeilOutlineFastSuppressed = true;
-    _refreshFastExitOutlineFallback();
     DebugConsole.log(
       'EXIT_OUTLINE_FAST_SUPPRESS: active=true '
       'dPx=${deltaPx.toStringAsFixed(1)} reason=$reason '
