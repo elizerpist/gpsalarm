@@ -18,16 +18,17 @@ extension _MaplibreStyleState on _MaplibreNewViewState {
     _veilSyncRequestedReason = null;
     _assignRadiusPaintSyncPending = false;
     _assignRadiusPaintSyncReason = null;
-    _liveVeilOutlineHidden = false;
     _radiusLayerVersion++;
     _styleGeneration++;
     _registeredMarkerImageKeys.clear();
     _radiusPointImageIds.clear();
     _radiusCircleLayerKeys.clear();
+    _radiusCircleSourceKeys.clear();
     _radiusVisualIds.clear();
     _radiusPaintOverrideIds.clear();
     _radiusPaintOverrideTokens.clear();
     _fastCircleLayerKey = null;
+    _fastCircleSourceKey = null;
     _controller = null;
   }
 

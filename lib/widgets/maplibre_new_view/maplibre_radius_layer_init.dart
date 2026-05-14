@@ -17,6 +17,7 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
         layout: {'line-cap': 'round', 'line-join': 'round'},
         paint: {
           'line-color': 'rgba(255,0,0,0.62)',
+          'line-opacity': 0.0,
           'line-width': 2.0,
         },
       ),
@@ -30,12 +31,13 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
       );
     }
     _radiusLayerReady = true;
-    DebugConsole.log('VECTOR: radius layer system ready');
+    DebugConsole.log('VECTOR: radius layer system ready fix=split-radius-v2');
   }
 
   Future<void> _updateFastCircleLayer(
     StyleController style, {
     bool radiusOnly = false,
+    bool skipRadiusPaint = false,
   }) async {
     final sw = Stopwatch()..start();
     final isTime = _assignTriggerType == TriggerType.time;
@@ -47,15 +49,20 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
     final draftId = _assignExisting == null ? _assignNativeAlarmLayerId : null;
     if (draftId != null) {
       try {
-        await this._updateDraftRadiusCircleLayer(style, (
-          id: draftId,
-          lng: _assignLng,
-          lat: _assignLat,
-          radiusMeters: radius,
-          active: _assignActive,
-          isTime: isTime,
-          isLeave: _assignZoneTrigger == ZoneTrigger.onLeave,
-        ), radiusOnly: radiusOnly);
+        await this._updateDraftRadiusCircleLayer(
+          style,
+          (
+            id: draftId,
+            lng: _assignLng,
+            lat: _assignLat,
+            radiusMeters: radius,
+            active: _assignActive,
+            isTime: isTime,
+            isLeave: _assignZoneTrigger == ZoneTrigger.onLeave,
+          ),
+          radiusOnly: radiusOnly,
+          skipRadiusPaint: skipRadiusPaint,
+        );
       } catch (_) {}
       sw.stop();
       if (_shouldLogAssignFrame(_assignSyncSeq) || sw.elapsedMilliseconds > 12) {
@@ -69,7 +76,21 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
     }
 
     try {
+      final circle = (
+        id: 'fast',
+        lng: _assignLng,
+        lat: _assignLat,
+        radiusMeters: radius,
+        active: _assignActive,
+        isTime: isTime,
+        isLeave: _assignZoneTrigger == ZoneTrigger.onLeave,
+      );
+      final sourceKey = this._radiusCircleSourceKey(circle);
+      final sourceFresh = _fastCircleSourceKey == sourceKey;
+
       if (radiusOnly &&
+          sourceFresh &&
+          !skipRadiusPaint &&
           _assignZoneTrigger != ZoneTrigger.onLeave &&
           _fastCircleLayerKey != null &&
           await this._setCircleLayerRadiusPaint(
@@ -93,26 +114,19 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
       await style.updateGeoJsonSource(
         id: 'fast-pt-src',
         data: _pointGeoJson(
-          _assignLng,
-          _assignLat,
+          circle.lng,
+          circle.lat,
           properties: _circleProps(
-            lat: _assignLat,
-            radiusMeters: radius,
-            isTime: isTime,
-            isLeave: _assignZoneTrigger == ZoneTrigger.onLeave,
-            active: _assignActive,
+            lat: circle.lat,
+            radiusMeters: circle.radiusMeters,
+            isTime: circle.isTime,
+            isLeave: circle.isLeave,
+            active: circle.active,
           ),
         ),
       );
-      await this._ensureFastCircleLayer(style, (
-        id: 'fast',
-        lng: _assignLng,
-        lat: _assignLat,
-        radiusMeters: radius,
-        active: _assignActive,
-        isTime: isTime,
-        isLeave: _assignZoneTrigger == ZoneTrigger.onLeave,
-      ));
+      _fastCircleSourceKey = sourceKey;
+      await this._ensureFastCircleLayer(style, circle);
     } catch (_) {}
     sw.stop();
     if (_shouldLogAssignFrame(_assignSyncSeq) || sw.elapsedMilliseconds > 12) {
@@ -130,6 +144,7 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
       await style.removeLayer('fast-circle');
     } catch (_) {}
     _fastCircleLayerKey = null;
+    _fastCircleSourceKey = null;
     _radiusPaintOverrideIds.remove('fast');
     _radiusPaintOverrideTokens.remove('fast');
     try {
