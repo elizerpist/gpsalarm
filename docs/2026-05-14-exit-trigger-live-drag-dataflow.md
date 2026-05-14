@@ -5,7 +5,7 @@
 The best known exit-trigger live-drag state is:
 
 ```text
-7041cd2 Remove unsupported MapLibre transitions
+7cd7492 Refresh native circle on zone switch
 ```
 
 This commit was pushed after:
@@ -20,7 +20,7 @@ The earlier useful baseline was:
 3d9d0aa Keep exit outline native during fast drags
 ```
 
-`3d9d0aa` was important because it moved the exit outline away from the Flutter fallback border and back onto the native/live MapLibre path. It still had fade-out. `40f78db` removed the fade-out and cleaned up save/restore. `aea0748` kept that behavior and addressed the remaining fast-drag ghost. `2b0fdfe` kept the same flow but made the live edit border full opacity. `ec41947` keeps the fast drag flow, but matches the live edit outline back to the saved native stroke strength after screenshots showed the edit border was too strong and visually thicker. `36f0f04` keeps the existing native circle layer present and suppresses only the native exit stroke, not the full circle opacity, so exit-to-enter switches do not fade the enter fill back in. `7041cd2` removes the attempted MapLibre transition paint properties because the Android plugin rejects nested transition maps during style initialization.
+`3d9d0aa` was important because it moved the exit outline away from the Flutter fallback border and back onto the native/live MapLibre path. It still had fade-out. `40f78db` removed the fade-out and cleaned up save/restore. `aea0748` kept that behavior and addressed the remaining fast-drag ghost. `2b0fdfe` kept the same flow but made the live edit border full opacity. `ec41947` keeps the fast drag flow, but matches the live edit outline back to the saved native stroke strength after screenshots showed the edit border was too strong and visually thicker. `36f0f04` keeps the existing native circle layer present and suppresses only the native exit stroke, not the full circle opacity, so exit-to-enter switches do not fade the enter fill back in. `7041cd2` removes the attempted MapLibre transition paint properties because the Android plugin rejects nested transition maps during style initialization. `7cd7492` refreshes the native circle source once when entering live exit mode so a draft/edited enter circle cannot leave its native fill under the exit veil hole, and turns off the live outline before restoring native stroke on enter.
 
 ## User-Visible Target
 
@@ -81,7 +81,7 @@ The logs showed `nativeSkipped=true` during drag while `EXIT_NATIVE_CIRCLE_SUPPR
 
 ## Current Fix
 
-`aea0748` fixed the remaining ghost without changing the hot pointer data flow. `2b0fdfe` tried a full-opacity live edit outline, but screenshots showed that was stronger than the saved circle. `ec41947` is the border visual match point. `36f0f04` is the switch visual match point because it removes the enter fill fade. `7041cd2` is the current initialization-safe state because it removes unsupported `*-transition` paint maps.
+`aea0748` fixed the remaining ghost without changing the hot pointer data flow. `2b0fdfe` tried a full-opacity live edit outline, but screenshots showed that was stronger than the saved circle. `ec41947` is the border visual match point. `36f0f04` is the switch visual match point because it removes the enter fill fade. `7041cd2` is the initialization-safe state because it removes unsupported `*-transition` paint maps. `7cd7492` is the current zone-switch visual state because it fixes stale native fill and border restore order.
 
 In `maplibre_radius_layer_rebuild.dart`, existing live exit edits hide the native circle at layer creation:
 
@@ -98,6 +98,8 @@ if (hideLiveExitNativeCircle) 'circle-stroke-opacity': 0.0,
 When the native circle is hidden at creation, `_assignExitNativeCircleSuppressed` is also set so later exit-to-enter restores do not early-return as if there were nothing to restore.
 
 In `maplibre_assign_lifecycle.dart`, `_hideExistingNativeAlarm` now hides only the existing native stroke with `circle-stroke-opacity: 0.0` instead of setting full `circle-opacity: 0.0` or immediately removing `radius-circle-alarm-N`. Exit circles already have transparent native fill, so hiding the full circle is unnecessary and causes the enter fill to fade in when switching from exit to enter.
+
+When switching into live exit mode, `_syncLiveExitNativeBaseCircle` updates the draft/existing native circle source once before the veil takes visual ownership. This makes `isLeave=true` reach the native circle expression, clearing any stale enter fill inside the exit hole without reintroducing per-frame native radius syncing. When switching back to enter, `_syncAssignExitVeilOutlineMode(active: false)` runs before native stroke restore so the live outline is off before `circle-stroke-opacity` returns to `1.0`.
 
 In `maplibre_radius_layer_init.dart`, the veil fill no longer draws an anti-aliased hole edge:
 
