@@ -142,11 +142,6 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       final existing = _assignExisting;
       final style = _controller?.style;
       final alarmProv = context.read<AlarmProvider>();
-      final shouldScheduleLiveVeil =
-          radiusOnly &&
-          !updateMarker &&
-          _assignActive &&
-          _assignZoneTrigger == ZoneTrigger.onLeave;
       if (_assignFlutterPreviewActive && !forceNative) {
         path = 'flutter-preview';
         return;
@@ -166,14 +161,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           radiusOnly: radiusOnly && !updateMarker,
         );
         if (_assignVisualOwner == _AssignVisualOwner.nativeLive) {
-          if (shouldScheduleLiveVeil) {
-            this._scheduleVeilSync(
-              fullQuality: false,
-              reason: 'assign-overlay:$debugReason',
-            );
-          } else {
-            await this._syncAssignVeilWithOverlay(debugReason: debugReason);
-          }
+          await this._syncAssignVeilWithOverlay(debugReason: debugReason);
         }
         return;
       }
@@ -194,14 +182,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         );
       }
       if (style != null) {
-        if (shouldScheduleLiveVeil) {
-          this._scheduleVeilSync(
-            fullQuality: false,
-            reason: 'assign-overlay:$debugReason',
-          );
-        } else {
-          await this._syncAssignVeilWithOverlay(debugReason: debugReason);
-        }
+        await this._syncAssignVeilWithOverlay(debugReason: debugReason);
       }
       if (needsState && mounted) setState(() {});
     } finally {

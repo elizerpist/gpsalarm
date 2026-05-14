@@ -116,6 +116,26 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     return _veilSyncDrainFuture!;
   }
 
+  int _veilSegments({
+    required bool fullQuality,
+    required bool useLiveAssignHole,
+  }) {
+    if (fullQuality || useLiveAssignHole) return 128;
+    return 32;
+  }
+
+  List<List<double>> _veilHoleForRadiusCircle(
+    _RadiusCircleData circle, {
+    required int segments,
+  }) {
+    return _geoCircle(
+      circle.lng,
+      circle.lat,
+      circle.radiusMeters,
+      segments: segments,
+    );
+  }
+
   Future<void> _updateVeil(
     StyleController style,
     AlarmProvider alarmProv, {
@@ -125,7 +145,6 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
   }) async {
     final sw = Stopwatch()..start();
     final seq = ++_veilUpdateSeq;
-    final segments = fullQuality ? 128 : 32;
     final useLiveAssignHole =
         !ignoreAssign &&
         _isAssigning &&
@@ -134,6 +153,10 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
         _assignActive &&
         _assignZoneTrigger == ZoneTrigger.onLeave &&
         (_showAssignOverlay || _useNativeExistingAssignLayer);
+    final segments = _veilSegments(
+      fullQuality: fullQuality,
+      useLiveAssignHole: useLiveAssignHole,
+    );
     final leaveAlarms = alarmProv.alarmPoints
         .where(
           (p) =>
@@ -188,12 +211,7 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     }
     if (liveAssignCircle != null) {
       holes.add(
-        _geoCircle(
-          liveAssignCircle.lng,
-          liveAssignCircle.lat,
-          liveAssignCircle.radiusMeters,
-          segments: segments,
-        ),
+        _veilHoleForRadiusCircle(liveAssignCircle, segments: segments),
       );
     }
 
