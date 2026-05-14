@@ -11,7 +11,11 @@ extension _MaplibreStyleState on _MaplibreNewViewState {
     _lastVeilGeoJson = '';
     _lastVeilOutlineGeoJson = '';
     this._resetExitDebugTrace();
+    _assignExitVeilOutlineRestoreTimer?.cancel();
+    _assignExitVeilOutlineRestoreTimer = null;
     _assignExitVeilOutlineActive = false;
+    _assignExitVeilOutlineFastSuppressed = false;
+    _assignExitVeilOutlineOpacity = 0.0;
     _radiusDebounce?.cancel();
     _veilSyncTimer?.cancel();
     _veilSyncTimer = null;

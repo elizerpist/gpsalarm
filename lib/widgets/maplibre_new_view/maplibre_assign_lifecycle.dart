@@ -744,7 +744,11 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       _assignPreviewCircleHidden = false;
       _assignPreviewVeilHidden = false;
       _assignPreviewLabelHidden = false;
+      _assignExitVeilOutlineRestoreTimer?.cancel();
+      _assignExitVeilOutlineRestoreTimer = null;
       _assignExitVeilOutlineActive = false;
+      _assignExitVeilOutlineFastSuppressed = false;
+      _assignExitVeilOutlineOpacity = 0.0;
       _assignExitNativeCircleSuppressed = false;
       _assignVisualOwner = _AssignVisualOwner.nativeLive;
     }
@@ -847,6 +851,11 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignPreviewCircleHidden = false;
     _assignPreviewVeilHidden = false;
     _assignPreviewLabelHidden = false;
+    _assignExitVeilOutlineRestoreTimer?.cancel();
+    _assignExitVeilOutlineRestoreTimer = null;
+    _assignExitVeilOutlineActive = false;
+    _assignExitVeilOutlineFastSuppressed = false;
+    _assignExitVeilOutlineOpacity = 0.0;
     _assignExitNativeCircleSuppressed = false;
     this._resetExitDebugTrace();
     _assignVisualOwner = _AssignVisualOwner.nativeLive;
@@ -949,7 +958,11 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         value: 0.0,
       );
       _assignPreviewVeilHidden = true;
+      _assignExitVeilOutlineRestoreTimer?.cancel();
+      _assignExitVeilOutlineRestoreTimer = null;
       _assignExitVeilOutlineActive = false;
+      _assignExitVeilOutlineFastSuppressed = false;
+      _assignExitVeilOutlineOpacity = 0.0;
     } else if (!shouldHideVeil && _assignPreviewVeilHidden) {
       await this._restoreNativeVeilOpacity(style);
     }
@@ -1086,7 +1099,11 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     );
     _lastVeilOutlineGeoJson = _emptyGeoJson;
     _assignPreviewVeilHidden = false;
+    _assignExitVeilOutlineRestoreTimer?.cancel();
+    _assignExitVeilOutlineRestoreTimer = null;
     _assignExitVeilOutlineActive = false;
+    _assignExitVeilOutlineFastSuppressed = false;
+    _assignExitVeilOutlineOpacity = 0.0;
   }
 
   Future<void> _cancelAssign({bool nativeAlreadySynced = false}) async {

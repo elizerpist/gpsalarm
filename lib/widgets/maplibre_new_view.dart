@@ -106,6 +106,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   bool _assignPreviewVeilHidden = false;
   bool _assignPreviewLabelHidden = false;
   bool _assignExitVeilOutlineActive = false;
+  bool _assignExitVeilOutlineFastSuppressed = false;
+  double _assignExitVeilOutlineOpacity = -1.0;
+  Timer? _assignExitVeilOutlineRestoreTimer;
   String _lastVeilOutlineGeoJson = '';
   _AssignVisualOwner _assignVisualOwner = _AssignVisualOwner.nativeLive;
   bool _closingAssignMarker = false;
@@ -311,6 +314,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     _compassSub?.cancel();
     _radiusDebounce?.cancel();
     _assignVisualClearTimer?.cancel();
+    _assignExitVeilOutlineRestoreTimer?.cancel();
     _nativeRenderAckTimeout?.cancel();
     final pendingAck = _nativeRenderAckCompleter;
     if (pendingAck != null && !pendingAck.isCompleted) {
