@@ -8,6 +8,7 @@ class _RadiusOverlayPainter extends CustomPainter {
   final bool isTime;
   final bool isLeave;
   final bool active;
+  final bool paintFill;
 
   _RadiusOverlayPainter({
     required this.center,
@@ -15,6 +16,7 @@ class _RadiusOverlayPainter extends CustomPainter {
     required this.isTime,
     this.isLeave = false,
     this.active = true,
+    this.paintFill = true,
   }) : super(repaint: radiusNotifier);
 
   @override
@@ -27,7 +29,7 @@ class _RadiusOverlayPainter extends CustomPainter {
         ? const Color(0xB39E9E9E)
         : (isTime ? const Color(0xB3FF9800) : const Color(0x99FF0000));
 
-    if (isLeave && active) {
+    if (paintFill && isLeave && active) {
       final veilPath = Path()
         ..fillType = PathFillType.evenOdd
         ..addRect(Offset.zero & size)
@@ -35,7 +37,7 @@ class _RadiusOverlayPainter extends CustomPainter {
       canvas.drawPath(veilPath, Paint()..color = const Color(0x26FF0000));
     }
 
-    if (!isLeave) {
+    if (paintFill && !isLeave) {
       canvas.drawCircle(center, radiusPx, Paint()..color = fillColor);
     }
 

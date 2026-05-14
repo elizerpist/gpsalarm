@@ -200,13 +200,14 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
           'EXIT_OUTLINE_FAST_SUPPRESS: active=false reason=restore '
           'idleMs=$idleMs ${_assignDebugState()}',
         );
-        unawaited(
-          _syncAssignExitVeilOutlineMode(
+        unawaited(() async {
+          await _syncAssignExitVeilOutlineMode(
             liveStyle,
             active: true,
             reason: 'fast-restore:$reason',
-          ),
-        );
+          );
+          _refreshFastExitOutlineFallback();
+        }());
       },
     );
   }
@@ -220,6 +221,7 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
 
     if (_assignExitVeilOutlineFastSuppressed) return;
     _assignExitVeilOutlineFastSuppressed = true;
+    _refreshFastExitOutlineFallback();
     DebugConsole.log(
       'EXIT_OUTLINE_FAST_SUPPRESS: active=true '
       'dPx=${deltaPx.toStringAsFixed(1)} reason=$reason '
