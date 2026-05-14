@@ -42,6 +42,155 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     return frame != null && _shouldLogAssignFrame(frame);
   }
 
+  bool get _isExitDebugTraceActive =>
+      _isAssigning &&
+      _assignTriggerType == TriggerType.distance &&
+      _assignZoneTrigger == ZoneTrigger.onLeave;
+
+  void _resetExitDebugTrace() {
+    _exitDebugInputSeq = 0;
+    _exitDebugNativePaintSeq = 0;
+    _exitDebugOutlineSeq = 0;
+    _exitDebugMaskSeq = 0;
+    _exitDebugLastInputRadiusM = null;
+    _exitDebugLastInputRadiusPx = null;
+    _exitDebugLastInputAt = null;
+    _exitDebugLastNativePaintRadiusM = null;
+    _exitDebugLastOutlineRadiusM = null;
+    _exitDebugLastMaskRadiusM = null;
+  }
+
+  String _exitDebugDelta(double? previous, double current) {
+    if (previous == null) return 'n/a';
+    final delta = current - previous;
+    final sign = delta >= 0 ? '+' : '';
+    return '$sign${delta.toStringAsFixed(1)}';
+  }
+
+  bool _shouldLogExitDebugTrace({
+    String? reason,
+    int? frame,
+    int? elapsedMs,
+    double? radiusDeltaM,
+    bool force = false,
+  }) {
+    if (!_isExitDebugTraceActive) return false;
+    if (force) return true;
+    if (reason != null && this._shouldLogAssignDebugReason(reason)) return true;
+    if (frame != null && _shouldLogAssignFrame(frame)) return true;
+    if (elapsedMs != null && elapsedMs > 8) return true;
+    if (radiusDeltaM != null && radiusDeltaM.abs() >= 250.0) return true;
+    return false;
+  }
+
+  void _logExitRadiusInputTrace({
+    required String source,
+    required int frame,
+    required double distPx,
+    required double radiusPx,
+    int? pointer,
+    int? eventDtMs,
+  }) {
+    if (!_isExitDebugTraceActive) return;
+    final now = DateTime.now();
+    final computedDt = _exitDebugLastInputAt == null
+        ? eventDtMs
+        : now.difference(_exitDebugLastInputAt!).inMilliseconds;
+    final previousRadius = _exitDebugLastInputRadiusM;
+    final previousPx = _exitDebugLastInputRadiusPx;
+    final radiusDelta = previousRadius == null
+        ? 0.0
+        : _assignRadius - previousRadius;
+    final seq = ++_exitDebugInputSeq;
+    _exitDebugLastInputRadiusM = _assignRadius;
+    _exitDebugLastInputRadiusPx = radiusPx;
+    _exitDebugLastInputAt = now;
+    final shouldLog = this._shouldLogExitDebugTrace(
+      frame: frame,
+      radiusDeltaM: radiusDelta,
+      force: computedDt != null && (computedDt < 8 || computedDt > 48),
+    );
+    if (!shouldLog) return;
+    final zoom = _controller?.camera?.zoom ?? _currentZoom;
+    final mpp = _vectorMetersPerPx(_assignLat, zoom);
+    DebugConsole.log(
+      'EXIT_INPUT_TRACE: iSeq=$seq source=$source frame=$frame '
+      'pointer=$pointer dt=${computedDt ?? eventDtMs ?? -1}ms '
+      'distPx=${distPx.toStringAsFixed(1)} r=${_assignRadius.round()}m '
+      'px=${radiusPx.toStringAsFixed(1)} '
+      'dM=${_exitDebugDelta(previousRadius, _assignRadius)} '
+      'dPx=${_exitDebugDelta(previousPx, radiusPx)} '
+      'mpp=${mpp.toStringAsFixed(3)} zoom=${zoom.toStringAsFixed(2)} '
+      'nativeSeq=$_exitDebugNativePaintSeq '
+      'nativeDelta=${_exitDebugDelta(_exitDebugLastNativePaintRadiusM, _assignRadius)} '
+      'outlineSeq=$_exitDebugOutlineSeq '
+      'outlineDelta=${_exitDebugDelta(_exitDebugLastOutlineRadiusM, _assignRadius)} '
+      'maskSeq=$_exitDebugMaskSeq '
+      'maskDelta=${_exitDebugDelta(_exitDebugLastMaskRadiusM, _assignRadius)} '
+      'paintActive=$_assignRadiusPaintSyncActive '
+      'paintPending=$_assignRadiusPaintSyncPending '
+      'overlayTimer=${_assignOverlaySyncTimer != null} '
+      'veilTimer=${_veilSyncTimer != null} '
+      'veilDrain=${_veilSyncDrainFuture != null} '
+      '${_assignDebugState()}',
+    );
+  }
+
+  bool _shouldHoldExitRadiusAtCenter({
+    required String source,
+    required int frame,
+    required double distPx,
+    int? pointer,
+    int? eventDtMs,
+  }) {
+    if (!_isExitDebugTraceActive) return false;
+    final previousRadius = _exitDebugLastInputRadiusM;
+    final previousPx = _exitDebugLastInputRadiusPx;
+    if (previousRadius == null || previousPx == null) return false;
+
+    final now = DateTime.now();
+    final lastInputAgeMs = _exitDebugLastInputAt == null
+        ? null
+        : now.difference(_exitDebugLastInputAt!).inMilliseconds;
+    if (lastInputAgeMs != null && lastInputAgeMs > 120) return false;
+
+    final zoom = _controller?.camera?.zoom ?? _currentZoom;
+    final mpp = _vectorMetersPerPx(_assignLat, zoom);
+    if (!mpp.isFinite || mpp <= 0) return false;
+
+    final minRadiusPx = 100.0 / mpp;
+    final centerGuardPx = math.max(30.0, minRadiusPx * 2.15);
+    final candidateRadius = (distPx * mpp).clamp(100.0, 5000.0);
+    final candidatePx = candidateRadius / mpp;
+    final dropM = previousRadius - candidateRadius;
+    final dropPx = previousPx - candidatePx;
+    final fastEnough = eventDtMs == null || eventDtMs <= 64;
+    final hold =
+        fastEnough &&
+        distPx <= centerGuardPx &&
+        dropM >= 220.0 &&
+        dropPx >= 28.0;
+    if (!hold) return false;
+
+    DebugConsole.log(
+      'EXIT_CENTER_GUARD: source=$source frame=$frame pointer=$pointer '
+      'dt=${eventDtMs ?? -1}ms lastInputAge=${lastInputAgeMs ?? -1}ms '
+      'heldR=${previousRadius.round()}m '
+      'candidateR=${candidateRadius.round()}m '
+      'heldPx=${previousPx.toStringAsFixed(1)} '
+      'candidatePx=${candidatePx.toStringAsFixed(1)} '
+      'distPx=${distPx.toStringAsFixed(1)} '
+      'minPx=${minRadiusPx.toStringAsFixed(1)} '
+      'guardPx=${centerGuardPx.toStringAsFixed(1)} '
+      'dropM=${dropM.toStringAsFixed(1)} '
+      'dropPx=${dropPx.toStringAsFixed(1)} '
+      'inputSeq=$_exitDebugInputSeq nativeSeq=$_exitDebugNativePaintSeq '
+      'outlineSeq=$_exitDebugOutlineSeq maskSeq=$_exitDebugMaskSeq '
+      '${_assignDebugState()}',
+    );
+    return true;
+  }
+
   bool _shouldSkipScheduledExitRadiusOnlySync({
     required bool updateMarker,
     required bool radiusOnly,
@@ -69,15 +218,26 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     }
     final sw = Stopwatch()..start();
     final radiusPx = this._radiusPxForCircle(circle);
-    final updated = await this._setCircleLayerRadiusPaint(
-      style,
-      layerId: 'radius-circle-${circle.id}',
-      visualId: circle.id,
-      radiusPx: radiusPx,
-      debugReason: 'immediate:$debugReason',
-    );
-    final syncsLiveExitVeil = updated && this._usesLiveAssignVeilHole();
-    if (syncsLiveExitVeil) {
+    final liveExitVeil = circle.isLeave && this._usesLiveAssignVeilHole();
+    var updated = false;
+    if (liveExitVeil) {
+      await this._syncAssignVeilWithRadiusPaint(
+        style: style,
+        alarmProv: alarmProv,
+        debugReason: debugReason,
+      );
+    } else {
+      updated = await this._setCircleLayerRadiusPaint(
+        style,
+        layerId: 'radius-circle-${circle.id}',
+        visualId: circle.id,
+        radiusPx: radiusPx,
+        debugReason: 'immediate:$debugReason',
+      );
+    }
+    final syncsLiveExitVeil =
+        liveExitVeil || updated && this._usesLiveAssignVeilHole();
+    if (!liveExitVeil && syncsLiveExitVeil) {
       await this._syncAssignVeilWithRadiusPaint(
         style: style,
         alarmProv: alarmProv,
@@ -85,13 +245,43 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       );
     }
     sw.stop();
+    if (circle.isLeave && _assignTriggerType == TriggerType.distance) {
+      final previousNativeRadius = _exitDebugLastNativePaintRadiusM;
+      final nativeDelta = previousNativeRadius == null
+          ? 0.0
+          : circle.radiusMeters - previousNativeRadius;
+      final nativeSeq = ++_exitDebugNativePaintSeq;
+      _exitDebugLastNativePaintRadiusM = circle.radiusMeters;
+      if (this._shouldLogExitDebugTrace(
+        reason: debugReason,
+        elapsedMs: sw.elapsedMilliseconds,
+        radiusDeltaM: nativeDelta,
+        force: !updated && !liveExitVeil,
+      )) {
+        DebugConsole.log(
+          'EXIT_NATIVE_TRACE: nSeq=$nativeSeq reason=$debugReason '
+          'updated=$updated nativeSkipped=$liveExitVeil veil=$syncsLiveExitVeil '
+          'r=${circle.radiusMeters.round()}m px=${radiusPx.toStringAsFixed(1)} '
+          'dNative=${_exitDebugDelta(previousNativeRadius, circle.radiusMeters)} '
+          'inputSeq=$_exitDebugInputSeq '
+          'inputDelta=${_exitDebugDelta(_exitDebugLastInputRadiusM, circle.radiusMeters)} '
+          'outlineSeq=$_exitDebugOutlineSeq '
+          'outlineDelta=${_exitDebugDelta(_exitDebugLastOutlineRadiusM, circle.radiusMeters)} '
+          'maskSeq=$_exitDebugMaskSeq '
+          'maskDelta=${_exitDebugDelta(_exitDebugLastMaskRadiusM, circle.radiusMeters)} '
+          'ms=${sw.elapsedMilliseconds} nativePaint=$_nativeCircleRadiusPaintAvailable '
+          'active=$_assignRadiusPaintSyncActive pending=$_assignRadiusPaintSyncPending '
+          '${_assignDebugState()}',
+        );
+      }
+    }
     if (circle.isLeave &&
         (this._shouldLogAssignDebugReason(debugReason) ||
             sw.elapsedMilliseconds > 8 ||
-            !updated)) {
+            (!updated && !liveExitVeil))) {
       DebugConsole.log(
         'ASSIGN_RADIUS_IMMEDIATE: reason=$debugReason updated=$updated '
-        'veil=$syncsLiveExitVeil id=${circle.id} '
+        'nativeSkipped=$liveExitVeil veil=$syncsLiveExitVeil id=${circle.id} '
         'r=${circle.radiusMeters.round()}m px=${radiusPx.toStringAsFixed(1)} '
         'ms=${sw.elapsedMilliseconds} nativePaint=$_nativeCircleRadiusPaintAvailable '
         '${_assignDebugState()}',
@@ -103,6 +293,14 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignRadiusPaintSyncReason = debugReason;
     if (_assignRadiusPaintSyncActive) {
       _assignRadiusPaintSyncPending = true;
+      if (this._shouldLogExitDebugTrace(reason: debugReason)) {
+        DebugConsole.log(
+          'EXIT_NATIVE_QUEUE: reason=$debugReason active=true pending=true '
+          'inputSeq=$_exitDebugInputSeq nativeSeq=$_exitDebugNativePaintSeq '
+          'outlineSeq=$_exitDebugOutlineSeq maskSeq=$_exitDebugMaskSeq '
+          '${_assignDebugState()}',
+        );
+      }
       return;
     }
     _assignRadiusPaintSyncActive = true;
@@ -290,6 +488,19 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         DebugConsole.log(
           'ASSIGN_SYNC_SKIP: reason=$debugReason path=live-exit-immediate '
           'radiusOnly=$radiusOnly marker=$updateMarker ${_assignDebugState()}',
+        );
+      }
+      if (this._shouldLogExitDebugTrace(reason: debugReason)) {
+        DebugConsole.log(
+          'EXIT_SCHED_SKIP_TRACE: reason=$debugReason radiusOnly=$radiusOnly '
+          'marker=$updateMarker inputSeq=$_exitDebugInputSeq '
+          'nativeSeq=$_exitDebugNativePaintSeq outlineSeq=$_exitDebugOutlineSeq '
+          'maskSeq=$_exitDebugMaskSeq r=${_assignRadius.round()}m '
+          'inputDelta=${_exitDebugDelta(_exitDebugLastInputRadiusM, _assignRadius)} '
+          'nativeDelta=${_exitDebugDelta(_exitDebugLastNativePaintRadiusM, _assignRadius)} '
+          'outlineDelta=${_exitDebugDelta(_exitDebugLastOutlineRadiusM, _assignRadius)} '
+          'maskDelta=${_exitDebugDelta(_exitDebugLastMaskRadiusM, _assignRadius)} '
+          '${_assignDebugState()}',
         );
       }
       return;
@@ -552,6 +763,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignPreviewCircleHidden = false;
     _assignPreviewVeilHidden = false;
     _assignPreviewLabelHidden = false;
+    this._resetExitDebugTrace();
     _assignVisualOwner = _AssignVisualOwner.nativeLive;
     _closingAssignMarker = false;
     _suspendCompassForAssign();

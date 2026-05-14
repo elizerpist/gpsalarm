@@ -584,6 +584,16 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   int _assignSyncSeq = 0;
   int _assignSyncSkipCount = 0;
   int _veilUpdateSeq = 0;
+  int _exitDebugInputSeq = 0;
+  int _exitDebugNativePaintSeq = 0;
+  int _exitDebugOutlineSeq = 0;
+  int _exitDebugMaskSeq = 0;
+  double? _exitDebugLastInputRadiusM;
+  double? _exitDebugLastInputRadiusPx;
+  DateTime? _exitDebugLastInputAt;
+  double? _exitDebugLastNativePaintRadiusM;
+  double? _exitDebugLastOutlineRadiusM;
+  double? _exitDebugLastMaskRadiusM;
   String _lastVeilGeoJson = '';
   Timer? _veilSyncTimer;
   Future<void>? _veilSyncDrainFuture;
@@ -725,16 +735,36 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   if (!_isDraggingRadius || _assignScreenCenter == null) return;
                   final dist =
                       (details.localPosition - _assignScreenCenter!).distance;
+                  _dragLogCounter++;
+                  final now = DateTime.now();
+                  final deltaMs = _lastOverlayMoveAt == null
+                      ? 0
+                      : now.difference(_lastOverlayMoveAt!).inMilliseconds;
+                  _lastOverlayMoveAt = now;
                   if (_assignTriggerType == TriggerType.distance) {
+                    if (this._shouldHoldExitRadiusAtCenter(
+                      source: 'longpress',
+                      frame: _dragLogCounter,
+                      distPx: dist,
+                      eventDtMs: deltaMs,
+                    )) {
+                      _radiusNotifier.value = this._currentRadiusPx;
+                      return;
+                    }
                     _assignRadius =
                         (dist * _vectorMetersPerPx(_assignLat, _currentZoom))
                             .clamp(100.0, 5000.0);
                   } else {
                     _assignTimeMinutes = (dist * 0.3).clamp(5.0, 120.0).round();
                   }
-                  _dragLogCounter++;
                   final radiusPx = this._currentRadiusPx;
                   _radiusNotifier.value = radiusPx;
+                  this._logExitRadiusInputTrace(
+                    source: 'longpress',
+                    frame: _dragLogCounter,
+                    distPx: dist,
+                    radiusPx: radiusPx,
+                  );
                   if (_useNativeAssignCircle && !_assignFlutterPreviewActive) {
                     this._syncAssignRadiusPaintImmediate(
                       debugReason: 'longpress#$_dragLogCounter',
@@ -1025,22 +1055,40 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   if (e.pointer != _dragPointerId) return;
                   final dist =
                       (e.localPosition - _assignScreenCenter!).distance;
-                  if (_assignTriggerType == TriggerType.distance) {
-                    _assignRadius =
-                        (dist * _vectorMetersPerPx(_assignLat, _currentZoom))
-                            .clamp(100.0, 5000.0);
-                  } else {
-                    _assignTimeMinutes = (dist * 0.3).clamp(5.0, 120.0).round();
-                  }
                   _dragLogCounter++;
                   final now = DateTime.now();
                   final deltaMs = _lastOverlayMoveAt == null
                       ? 0
                       : now.difference(_lastOverlayMoveAt!).inMilliseconds;
                   _lastOverlayMoveAt = now;
+                  if (_assignTriggerType == TriggerType.distance) {
+                    if (this._shouldHoldExitRadiusAtCenter(
+                      source: 'overlay',
+                      frame: _dragLogCounter,
+                      distPx: dist,
+                      pointer: e.pointer,
+                      eventDtMs: deltaMs,
+                    )) {
+                      _radiusNotifier.value = this._currentRadiusPx;
+                      return;
+                    }
+                    _assignRadius =
+                        (dist * _vectorMetersPerPx(_assignLat, _currentZoom))
+                            .clamp(100.0, 5000.0);
+                  } else {
+                    _assignTimeMinutes = (dist * 0.3).clamp(5.0, 120.0).round();
+                  }
                   // Update overlay circle instantly (no widget rebuild)
                   final radiusPx = this._currentRadiusPx;
                   _radiusNotifier.value = radiusPx;
+                  this._logExitRadiusInputTrace(
+                    source: 'overlay',
+                    frame: _dragLogCounter,
+                    distPx: dist,
+                    radiusPx: radiusPx,
+                    pointer: e.pointer,
+                    eventDtMs: deltaMs,
+                  );
                   if (!_assignFlutterPreviewActive) {
                     this._syncAssignRadiusPaintImmediate(
                       debugReason: 'overlay#$_dragLogCounter',
@@ -1134,6 +1182,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                 _assignRadius = v;
                 _radiusNotifier.value = this._currentRadiusPx;
                 _cardRadiusLogCounter++;
+                this._logExitRadiusInputTrace(
+                  source: 'card-radius',
+                  frame: _cardRadiusLogCounter,
+                  distPx: this._currentRadiusPx,
+                  radiusPx: this._currentRadiusPx,
+                );
                 if (_shouldLogAssignFrame(_cardRadiusLogCounter)) {
                   DebugConsole.log(
                     'CARD_RADIUS: frame=$_cardRadiusLogCounter '

@@ -206,7 +206,8 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     required bool fullQuality,
     required bool useLiveAssignHole,
   }) {
-    if (fullQuality || useLiveAssignHole) return 128;
+    if (fullQuality) return 128;
+    if (useLiveAssignHole) return 64;
     return 32;
   }
 
@@ -223,34 +224,96 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
   }
 
   String _veilLiveOutlineGeoJson(
-    _RadiusCircleData circle, {
-    required int segments,
-  }) {
+    _RadiusCircleData circle,
+    List<List<double>> ring,
+  ) {
     return jsonEncode({
       'type': 'FeatureCollection',
       'features': [
         {
           'type': 'Feature',
-          'geometry': {
-            'type': 'LineString',
-            'coordinates': _veilHoleForRadiusCircle(circle, segments: segments),
-          },
+          'geometry': {'type': 'LineString', 'coordinates': ring},
           'properties': {'radius_m': circle.radiusMeters},
         },
       ],
     });
   }
 
+  String _exitDebugRingStats(
+    _RadiusCircleData circle,
+    List<List<double>> ring, {
+    required int segments,
+  }) {
+    if (ring.length < segments + 1 || segments < 4) return 'ring=incomplete';
+    double metersAt(int index) {
+      final point = ring[index.clamp(0, ring.length - 1)];
+      return AlarmService.distanceMeters(
+        circle.lat,
+        circle.lng,
+        point[1],
+        point[0],
+      );
+    }
+
+    final north = metersAt(0);
+    final east = metersAt((segments / 4).round());
+    final south = metersAt((segments / 2).round());
+    final west = metersAt((segments * 3 / 4).round());
+    final closed =
+        (ring.first[0] - ring.last[0]).abs() < 0.0000001 &&
+        (ring.first[1] - ring.last[1]).abs() < 0.0000001;
+    return 'geoN=${north.toStringAsFixed(1)} '
+        'geoE=${east.toStringAsFixed(1)} '
+        'geoS=${south.toStringAsFixed(1)} '
+        'geoW=${west.toStringAsFixed(1)} '
+        'geoEW=${(east - west).toStringAsFixed(2)} '
+        'geoNS=${(north - south).toStringAsFixed(2)} closed=$closed';
+  }
+
+  String _exitDebugScreenRingStats(
+    _RadiusCircleData circle,
+    List<List<double>> ring, {
+    required int segments,
+  }) {
+    final center = this._geoToScreen(circle.lat, circle.lng);
+    if (center == null || ring.length < segments + 1 || segments < 4) {
+      return 'screenRing=unavailable';
+    }
+
+    double? pxAt(int index) {
+      final point = ring[index.clamp(0, ring.length - 1)];
+      final screen = this._geoToScreen(point[1], point[0]);
+      if (screen == null) return null;
+      return (screen - center).distance;
+    }
+
+    final north = pxAt(0);
+    final east = pxAt((segments / 4).round());
+    final south = pxAt((segments / 2).round());
+    final west = pxAt((segments * 3 / 4).round());
+    if (north == null || east == null || south == null || west == null) {
+      return 'screenRing=partial';
+    }
+    return 'scrN=${north.toStringAsFixed(1)} '
+        'scrE=${east.toStringAsFixed(1)} '
+        'scrS=${south.toStringAsFixed(1)} '
+        'scrW=${west.toStringAsFixed(1)} '
+        'scrEW=${(east - west).toStringAsFixed(2)} '
+        'scrNS=${(north - south).toStringAsFixed(2)} '
+        'screenCenter=${center.dx.toStringAsFixed(1)},${center.dy.toStringAsFixed(1)}';
+  }
+
   Future<void> _syncLiveExitVeilOutlineSource(
     StyleController style, {
     required _RadiusCircleData? circle,
+    required List<List<double>>? ring,
     required int segments,
     required String reason,
   }) async {
     final sw = Stopwatch()..start();
-    final data = circle == null
+    final data = circle == null || ring == null
         ? _emptyGeoJson
-        : _veilLiveOutlineGeoJson(circle, segments: segments);
+        : _veilLiveOutlineGeoJson(circle, ring);
     final unchanged = _lastVeilOutlineGeoJson == data;
     var updated = false;
     if (!unchanged) {
@@ -262,16 +325,51 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
       if (updated) _lastVeilOutlineGeoJson = data;
     }
     sw.stop();
-    if (this._shouldLogVeilSync(reason, sw.elapsedMilliseconds) ||
+    if (circle == null) {
+      _exitDebugLastOutlineRadiusM = null;
+      if (this._shouldLogVeilSync(reason, sw.elapsedMilliseconds) ||
+          sw.elapsedMilliseconds > 4) {
+        DebugConsole.log(
+          'VEIL_OUTLINE_SYNC: updated=$updated unchanged=$unchanged '
+          'empty=true seg=$segments ms=${sw.elapsedMilliseconds} '
+          'reason=$reason ${_assignDebugState()}',
+        );
+      }
+      return;
+    }
+
+    final previousOutlineRadius = _exitDebugLastOutlineRadiusM;
+    final outlineDelta = previousOutlineRadius == null
+        ? 0.0
+        : circle.radiusMeters - previousOutlineRadius;
+    final outlineSeq = ++_exitDebugOutlineSeq;
+    _exitDebugLastOutlineRadiusM = circle.radiusMeters;
+    if (this._shouldLogExitDebugTrace(
+          reason: reason,
+          elapsedMs: sw.elapsedMilliseconds,
+          radiusDeltaM: outlineDelta,
+          force: !updated && !unchanged,
+        ) ||
         sw.elapsedMilliseconds > 4) {
-      final radiusDebug = circle == null
-          ? 'empty=true'
-          : 'empty=false r=${circle.radiusMeters.round()}m '
-                'px=${this._radiusPxForCircle(circle).toStringAsFixed(1)}';
+      final ringStats = ring == null
+          ? 'ring=null'
+          : this._exitDebugRingStats(circle, ring, segments: segments);
+      final screenStats = ring == null
+          ? 'screenRing=null'
+          : this._exitDebugScreenRingStats(circle, ring, segments: segments);
       DebugConsole.log(
-        'VEIL_OUTLINE_SYNC: updated=$updated unchanged=$unchanged '
-        '$radiusDebug seg=$segments ms=${sw.elapsedMilliseconds} '
-        'reason=$reason ${_assignDebugState()}',
+        'VEIL_OUTLINE_SYNC: oSeq=$outlineSeq updated=$updated '
+        'unchanged=$unchanged empty=false r=${circle.radiusMeters.round()}m '
+        'px=${this._radiusPxForCircle(circle).toStringAsFixed(1)} '
+        'dOutline=${_exitDebugDelta(previousOutlineRadius, circle.radiusMeters)} '
+        'inputSeq=$_exitDebugInputSeq '
+        'inputDelta=${_exitDebugDelta(_exitDebugLastInputRadiusM, circle.radiusMeters)} '
+        'nativeSeq=$_exitDebugNativePaintSeq '
+        'nativeDelta=${_exitDebugDelta(_exitDebugLastNativePaintRadiusM, circle.radiusMeters)} '
+        'maskSeq=$_exitDebugMaskSeq '
+        'maskDelta=${_exitDebugDelta(_exitDebugLastMaskRadiusM, circle.radiusMeters)} '
+        'bytes=${data.length} seg=$segments ms=${sw.elapsedMilliseconds} '
+        'reason=$reason $ringStats $screenStats ${_assignDebugState()}',
       );
     }
   }
@@ -309,23 +407,14 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     final liveAssignCircle = useLiveAssignHole
         ? this._currentAssignNativeVisualCircle(alarmProv)
         : null;
+    final liveAssignRing = liveAssignCircle == null
+        ? null
+        : _veilHoleForRadiusCircle(liveAssignCircle, segments: segments);
     final hasFastLeave = liveAssignCircle != null;
     final liveAssignDebug = liveAssignCircle == null
         ? ''
         : ' liveR=${liveAssignCircle.radiusMeters.round()}m '
               'livePx=${this._radiusPxForCircle(liveAssignCircle).toStringAsFixed(1)}';
-    await this._syncLiveExitVeilOutlineSource(
-      style,
-      circle: liveAssignCircle,
-      segments: segments,
-      reason: reason,
-    );
-    await this._syncAssignExitVeilOutlineMode(
-      style,
-      active: liveAssignCircle != null,
-      reason: reason,
-    );
-
     if (leaveAlarms.isEmpty && !hasFastLeave) {
       if (_lastVeilGeoJson != _emptyGeoJson) {
         try {
@@ -333,6 +422,18 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
           _lastVeilGeoJson = _emptyGeoJson;
         } catch (_) {}
       }
+      await this._syncLiveExitVeilOutlineSource(
+        style,
+        circle: null,
+        ring: null,
+        segments: segments,
+        reason: reason,
+      );
+      await this._syncAssignExitVeilOutlineMode(
+        style,
+        active: false,
+        reason: reason,
+      );
       sw.stop();
       if (this._shouldLogVeilSync(reason, sw.elapsedMilliseconds)) {
         DebugConsole.log(
@@ -355,8 +456,8 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
       }
       holes.add(_geoCircle(p.longitude, p.latitude, r, segments: segments));
     }
-    if (liveAssignCircle != null) {
-      holes.add(_veilHoleForRadiusCircle(liveAssignCircle, segments: segments));
+    if (liveAssignRing != null) {
+      holes.add(liveAssignRing);
     }
 
     final coords = <List<List<double>>>[
@@ -381,12 +482,74 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
       ],
     });
 
-    try {
-      if (_lastVeilGeoJson != veilGeoJson) {
-        await style.updateGeoJsonSource(id: 'veil-src', data: veilGeoJson);
-        _lastVeilGeoJson = veilGeoJson;
+    final maskUnchanged = _lastVeilGeoJson == veilGeoJson;
+    var maskUpdated = false;
+    if (!maskUnchanged) {
+      maskUpdated = await this._tryUpdateGeoJsonSource(
+        style,
+        id: 'veil-src',
+        data: veilGeoJson,
+      );
+      if (maskUpdated) _lastVeilGeoJson = veilGeoJson;
+    }
+    if (liveAssignCircle != null) {
+      final previousMaskRadius = _exitDebugLastMaskRadiusM;
+      final maskDelta = previousMaskRadius == null
+          ? 0.0
+          : liveAssignCircle.radiusMeters - previousMaskRadius;
+      final maskSeq = ++_exitDebugMaskSeq;
+      _exitDebugLastMaskRadiusM = liveAssignCircle.radiusMeters;
+      if (this._shouldLogExitDebugTrace(
+        reason: reason,
+        elapsedMs: sw.elapsedMilliseconds,
+        radiusDeltaM: maskDelta,
+        force: !maskUpdated && !maskUnchanged,
+      )) {
+        final ringStats = liveAssignRing == null
+            ? 'ring=null'
+            : this._exitDebugRingStats(
+                liveAssignCircle,
+                liveAssignRing,
+                segments: segments,
+              );
+        final screenStats = liveAssignRing == null
+            ? 'screenRing=null'
+            : this._exitDebugScreenRingStats(
+                liveAssignCircle,
+                liveAssignRing,
+                segments: segments,
+              );
+        DebugConsole.log(
+          'VEIL_MASK_SYNC: mSeq=$maskSeq updated=$maskUpdated '
+          'unchanged=$maskUnchanged r=${liveAssignCircle.radiusMeters.round()}m '
+          'px=${this._radiusPxForCircle(liveAssignCircle).toStringAsFixed(1)} '
+          'dMask=${_exitDebugDelta(previousMaskRadius, liveAssignCircle.radiusMeters)} '
+          'inputSeq=$_exitDebugInputSeq '
+          'inputDelta=${_exitDebugDelta(_exitDebugLastInputRadiusM, liveAssignCircle.radiusMeters)} '
+          'nativeSeq=$_exitDebugNativePaintSeq '
+          'nativeDelta=${_exitDebugDelta(_exitDebugLastNativePaintRadiusM, liveAssignCircle.radiusMeters)} '
+          'outlineSeq=$_exitDebugOutlineSeq '
+          'outlineDelta=${_exitDebugDelta(_exitDebugLastOutlineRadiusM, liveAssignCircle.radiusMeters)} '
+          'bytes=${veilGeoJson.length} leaves=${leaveAlarms.length} '
+          'holes=${holes.length} seg=$segments ms=${sw.elapsedMilliseconds} '
+          'reason=$reason $ringStats $screenStats ${_assignDebugState()}',
+        );
       }
-    } catch (_) {}
+    } else {
+      _exitDebugLastMaskRadiusM = null;
+    }
+    await this._syncLiveExitVeilOutlineSource(
+      style,
+      circle: liveAssignCircle,
+      ring: liveAssignRing,
+      segments: segments,
+      reason: reason,
+    );
+    await this._syncAssignExitVeilOutlineMode(
+      style,
+      active: liveAssignCircle != null,
+      reason: reason,
+    );
     sw.stop();
     if (this._shouldLogVeilSync(reason, sw.elapsedMilliseconds)) {
       DebugConsole.log(

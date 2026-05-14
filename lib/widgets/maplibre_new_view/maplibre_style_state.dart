@@ -10,6 +10,7 @@ extension _MaplibreStyleState on _MaplibreNewViewState {
     _lastRadiusDataHash = '';
     _lastVeilGeoJson = '';
     _lastVeilOutlineGeoJson = '';
+    this._resetExitDebugTrace();
     _assignExitVeilOutlineActive = false;
     _radiusDebounce?.cancel();
     _veilSyncTimer?.cancel();
