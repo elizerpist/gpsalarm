@@ -104,6 +104,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   bool _assignPreviewVeilHidden = false;
   bool _assignPreviewLabelHidden = false;
   bool _assignExitVeilOutlineActive = false;
+  String _lastVeilOutlineGeoJson = '';
   _AssignVisualOwner _assignVisualOwner = _AssignVisualOwner.nativeLive;
   bool _closingAssignMarker = false;
   Timer? _assignVisualClearTimer;

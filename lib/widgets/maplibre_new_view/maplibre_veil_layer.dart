@@ -130,6 +130,12 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
       style,
       layerId: 'veil-outline',
       property: 'line-opacity',
+      value: 0.0,
+    );
+    await this._setNativeLayerPaintProperty(
+      style,
+      layerId: 'veil-live-outline',
+      property: 'line-opacity',
       value: outlineOpacity,
     );
     final id = _assignNativeAlarmLayerId;
@@ -142,8 +148,9 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
       );
     }
     DebugConsole.log(
-      'EXIT_OUTLINE_MODE: active=$active outline=$outlineOpacity '
-      'nativeStrokeHidden=$active reason=$reason ${_assignDebugState()}',
+      'EXIT_OUTLINE_MODE: active=$active liveOutline=$outlineOpacity '
+      'maskOutline=0.0 nativeStrokeHidden=$active reason=$reason '
+      '${_assignDebugState()}',
     );
   }
 
@@ -215,6 +222,60 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     );
   }
 
+  String _veilLiveOutlineGeoJson(
+    _RadiusCircleData circle, {
+    required int segments,
+  }) {
+    return jsonEncode({
+      'type': 'FeatureCollection',
+      'features': [
+        {
+          'type': 'Feature',
+          'geometry': {
+            'type': 'LineString',
+            'coordinates': _veilHoleForRadiusCircle(circle, segments: segments),
+          },
+          'properties': {'radius_m': circle.radiusMeters},
+        },
+      ],
+    });
+  }
+
+  Future<void> _syncLiveExitVeilOutlineSource(
+    StyleController style, {
+    required _RadiusCircleData? circle,
+    required int segments,
+    required String reason,
+  }) async {
+    final sw = Stopwatch()..start();
+    final data = circle == null
+        ? _emptyGeoJson
+        : _veilLiveOutlineGeoJson(circle, segments: segments);
+    final unchanged = _lastVeilOutlineGeoJson == data;
+    var updated = false;
+    if (!unchanged) {
+      updated = await this._tryUpdateGeoJsonSource(
+        style,
+        id: 'veil-live-outline-src',
+        data: data,
+      );
+      if (updated) _lastVeilOutlineGeoJson = data;
+    }
+    sw.stop();
+    if (this._shouldLogVeilSync(reason, sw.elapsedMilliseconds) ||
+        sw.elapsedMilliseconds > 4) {
+      final radiusDebug = circle == null
+          ? 'empty=true'
+          : 'empty=false r=${circle.radiusMeters.round()}m '
+                'px=${this._radiusPxForCircle(circle).toStringAsFixed(1)}';
+      DebugConsole.log(
+        'VEIL_OUTLINE_SYNC: updated=$updated unchanged=$unchanged '
+        '$radiusDebug seg=$segments ms=${sw.elapsedMilliseconds} '
+        'reason=$reason ${_assignDebugState()}',
+      );
+    }
+  }
+
   Future<void> _updateVeil(
     StyleController style,
     AlarmProvider alarmProv, {
@@ -227,11 +288,6 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     final useLiveAssignHole = this._usesLiveAssignVeilHole(
       ignoreAssign: ignoreAssign,
     );
-    await this._syncAssignExitVeilOutlineMode(
-      style,
-      active: useLiveAssignHole,
-      reason: reason,
-    );
     final segments = _veilSegments(
       fullQuality: fullQuality,
       useLiveAssignHole: useLiveAssignHole,
@@ -241,9 +297,7 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
           (p) =>
               p.isActive &&
               p.zoneTrigger == ZoneTrigger.onLeave &&
-              !(!ignoreAssign &&
-                  _isAssigning &&
-                  _assignExisting?.id == p.id),
+              !(!ignoreAssign && _isAssigning && _assignExisting?.id == p.id),
         )
         .where(
           (p) =>
@@ -260,6 +314,17 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
         ? ''
         : ' liveR=${liveAssignCircle.radiusMeters.round()}m '
               'livePx=${this._radiusPxForCircle(liveAssignCircle).toStringAsFixed(1)}';
+    await this._syncLiveExitVeilOutlineSource(
+      style,
+      circle: liveAssignCircle,
+      segments: segments,
+      reason: reason,
+    );
+    await this._syncAssignExitVeilOutlineMode(
+      style,
+      active: liveAssignCircle != null,
+      reason: reason,
+    );
 
     if (leaveAlarms.isEmpty && !hasFastLeave) {
       if (_lastVeilGeoJson != _emptyGeoJson) {
@@ -291,9 +356,7 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
       holes.add(_geoCircle(p.longitude, p.latitude, r, segments: segments));
     }
     if (liveAssignCircle != null) {
-      holes.add(
-        _veilHoleForRadiusCircle(liveAssignCircle, segments: segments),
-      );
+      holes.add(_veilHoleForRadiusCircle(liveAssignCircle, segments: segments));
     }
 
     final coords = <List<List<double>>>[

@@ -183,11 +183,11 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       final existing = _assignExisting;
       final style = _controller?.style;
       final alarmProv = context.read<AlarmProvider>();
-      final skipScheduledExitRadiusOnlySync =
-          this._shouldSkipScheduledExitRadiusOnlySync(
-        updateMarker: updateMarker,
-        radiusOnly: radiusOnly,
-      );
+      final skipScheduledExitRadiusOnlySync = this
+          ._shouldSkipScheduledExitRadiusOnlySync(
+            updateMarker: updateMarker,
+            radiusOnly: radiusOnly,
+          );
       if (skipScheduledExitRadiusOnlySync) {
         path = 'live-exit-immediate-skip';
         if (this._shouldLogAssignDebugReason(debugReason)) {
@@ -641,6 +641,12 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         property: 'line-opacity',
         value: 0.0,
       );
+      await this._setNativeLayerPaintProperty(
+        style,
+        layerId: 'veil-live-outline',
+        property: 'line-opacity',
+        value: 0.0,
+      );
       _assignPreviewVeilHidden = true;
       _assignExitVeilOutlineActive = false;
     } else if (!shouldHideVeil && _assignPreviewVeilHidden) {
@@ -766,6 +772,18 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       property: 'line-opacity',
       value: 0.0,
     );
+    await this._setNativeLayerPaintProperty(
+      style,
+      layerId: 'veil-live-outline',
+      property: 'line-opacity',
+      value: 0.0,
+    );
+    await this._tryUpdateGeoJsonSource(
+      style,
+      id: 'veil-live-outline-src',
+      data: _emptyGeoJson,
+    );
+    _lastVeilOutlineGeoJson = _emptyGeoJson;
     _assignPreviewVeilHidden = false;
     _assignExitVeilOutlineActive = false;
   }
@@ -985,10 +1003,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           nativeAck: nativeAck,
         );
         if (circle != null) {
-          this._scheduleCircleLayerRadiusExpressionRestore(
-            liveStyle,
-            circle,
-          );
+          this._scheduleCircleLayerRadiusExpressionRestore(liveStyle, circle);
         }
         await this._clearFastCircleLayer(liveStyle);
         _beginClosingAssignVisual(
@@ -1062,10 +1077,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         nativeAck: nativeAck,
       );
       if (promotedCircle != null && style != null) {
-        this._scheduleCircleLayerRadiusExpressionRestore(
-          style,
-          promotedCircle,
-        );
+        this._scheduleCircleLayerRadiusExpressionRestore(style, promotedCircle);
       }
       _beginClosingAssignVisual(
         keepCircle: false,

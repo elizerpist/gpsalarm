@@ -3,6 +3,9 @@ part of '../maplibre_new_view.dart';
 extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
   Future<void> _initRadiusLayer(StyleController style) async {
     await style.addSource(GeoJsonSource(id: 'veil-src', data: _emptyGeoJson));
+    await style.addSource(
+      GeoJsonSource(id: 'veil-live-outline-src', data: _emptyGeoJson),
+    );
     await style.addLayer(
       FillStyleLayer(
         id: 'veil-fill',
@@ -22,6 +25,18 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
         },
       ),
     );
+    await style.addLayer(
+      LineStyleLayer(
+        id: 'veil-live-outline',
+        sourceId: 'veil-live-outline-src',
+        layout: {'line-cap': 'round', 'line-join': 'round'},
+        paint: {
+          'line-color': 'rgba(255,0,0,0.62)',
+          'line-opacity': 0.0,
+          'line-width': 2.0,
+        },
+      ),
+    );
     await style.addSource(
       GeoJsonSource(id: 'fast-pt-src', data: _emptyGeoJson),
     );
@@ -32,7 +47,7 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
     }
     _radiusLayerReady = true;
     DebugConsole.log(
-      'VECTOR: radius layer system ready fix=shared-radius-exit-mask-v5',
+      'VECTOR: radius layer system ready fix=split-exit-outline-v6',
     );
   }
 
@@ -61,7 +76,8 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
         ), radiusOnly: radiusOnly);
       } catch (_) {}
       sw.stop();
-      if (_shouldLogAssignFrame(_assignSyncSeq) || sw.elapsedMilliseconds > 12) {
+      if (_shouldLogAssignFrame(_assignSyncSeq) ||
+          sw.elapsedMilliseconds > 12) {
         DebugConsole.log(
           'FAST_CIRCLE_SYNC: mode=draft id=$draftId r=${radius.round()}m '
           'leave=${_assignZoneTrigger == ZoneTrigger.onLeave} '
