@@ -5,7 +5,7 @@
 The best known exit-trigger live-drag state is:
 
 ```text
-aea0748 Hide native exit circle during live drag
+2b0fdfe Maximize exit live outline opacity
 ```
 
 This commit was pushed after:
@@ -20,7 +20,7 @@ The earlier useful baseline was:
 3d9d0aa Keep exit outline native during fast drags
 ```
 
-`3d9d0aa` was important because it moved the exit outline away from the Flutter fallback border and back onto the native/live MapLibre path. It still had fade-out. `40f78db` removed the fade-out and cleaned up save/restore. `aea0748` kept that behavior and addressed the remaining fast-drag ghost.
+`3d9d0aa` was important because it moved the exit outline away from the Flutter fallback border and back onto the native/live MapLibre path. It still had fade-out. `40f78db` removed the fade-out and cleaned up save/restore. `aea0748` kept that behavior and addressed the remaining fast-drag ghost. `2b0fdfe` keeps the same flow and makes the live edit border full opacity.
 
 ## User-Visible Target
 
@@ -81,7 +81,7 @@ The logs showed `nativeSkipped=true` during drag while `EXIT_NATIVE_CIRCLE_SUPPR
 
 ## Current Fix
 
-`aea0748` fixes the remaining ghost without changing the hot pointer data flow.
+`aea0748` fixed the remaining ghost without changing the hot pointer data flow. `2b0fdfe` then matched the live edit border opacity to the saved border.
 
 In `maplibre_radius_layer_rebuild.dart`, existing live exit edits hide the native circle at layer creation:
 
@@ -96,3 +96,31 @@ if (hideLiveExitNativeCircle) 'circle-stroke-opacity': 0.0,
 ```
 
 In `maplibre_radius_layer_init.dart`, the veil fill no longer draws an anti-aliased hole edge:
+
+```dart
+'fill-antialias': false,
+```
+
+The live edit outline is intentionally max opacity:
+
+```dart
+'line-color': '#FF0000',
+```
+
+```dart
+final outlineOpacity = active ? 1.0 : 0.0;
+```
+
+This keeps the red border always visible through `veil-live-outline`, prevents a stale native circle or fill-edge border from doubling it, and makes the edit border match the saved border strength.
+
+## Constraints For Future Changes
+
+Do not reintroduce these into the live exit drag path:
+
+- Flutter fallback borders for the radius circle.
+- Opacity fade transitions on radius circle restore.
+- Per-frame forced native circle suppression writes.
+- Scheduled native radius-only sync during live exit drag.
+- Polygon radius rendering for the actual saved radius circle.
+
+If this area needs another change, preserve the split between saved radius rendering and live exit drag rendering. Saved alarms can use native `CircleStyleLayer` radius expressions. Fast exit drag should keep the live veil mask and live outline path as the visual owner.
