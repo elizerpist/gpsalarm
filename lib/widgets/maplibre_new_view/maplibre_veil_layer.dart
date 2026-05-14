@@ -150,7 +150,10 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
                   _assignExisting!.id == p.id),
         )
         .toList();
-    final hasFastLeave = useLiveAssignHole;
+    final liveAssignCircle = useLiveAssignHole
+        ? this._currentAssignNativeVisualCircle(alarmProv)
+        : null;
+    final hasFastLeave = liveAssignCircle != null;
 
     if (leaveAlarms.isEmpty && !hasFastLeave) {
       if (_lastVeilGeoJson != _emptyGeoJson) {
@@ -183,11 +186,15 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
       }
       holes.add(_geoCircle(p.longitude, p.latitude, r, segments: segments));
     }
-    if (hasFastLeave) {
-      final r = _assignTriggerType == TriggerType.time
-          ? math.max(200.0, (_speedKmh / 3.6) * _assignTimeMinutes * 60)
-          : _assignRadius;
-      holes.add(_geoCircle(_assignLng, _assignLat, r, segments: segments));
+    if (liveAssignCircle != null) {
+      holes.add(
+        _geoCircle(
+          liveAssignCircle.lng,
+          liveAssignCircle.lat,
+          liveAssignCircle.radiusMeters,
+          segments: segments,
+        ),
+      );
     }
 
     final coords = <List<List<double>>>[

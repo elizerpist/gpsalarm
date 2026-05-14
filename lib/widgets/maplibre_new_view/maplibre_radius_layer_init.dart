@@ -17,6 +17,7 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
         layout: {'line-cap': 'round', 'line-join': 'round'},
         paint: {
           'line-color': 'rgba(255,0,0,0.62)',
+          'line-opacity': 0.0,
           'line-width': 2.0,
         },
       ),
@@ -30,7 +31,9 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
       );
     }
     _radiusLayerReady = true;
-    DebugConsole.log('VECTOR: radius layer system ready');
+    DebugConsole.log(
+      'VECTOR: radius layer system ready fix=shared-radius-exit-mask-v1',
+    );
   }
 
   Future<void> _updateFastCircleLayer(

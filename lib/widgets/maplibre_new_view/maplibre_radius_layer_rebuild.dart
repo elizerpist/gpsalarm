@@ -50,20 +50,6 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
   Object get _radiusStrokeColorExpression => [
     'case',
     [
-      'all',
-      [
-        '==',
-        ['get', 'isLeave'],
-        true,
-      ],
-      [
-        '==',
-        ['get', 'active'],
-        true,
-      ],
-    ],
-    'rgba(0,0,0,0)',
-    [
       '==',
       ['get', 'active'],
       false,
