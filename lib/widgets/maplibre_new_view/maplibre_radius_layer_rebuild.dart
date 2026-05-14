@@ -167,25 +167,6 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     return circle.radiusMeters / _vectorMetersPerPx(circle.lat, zoom);
   }
 
-  Future<void> _disableRadiusCircleOpacityTransition(
-    StyleController style,
-    String layerId,
-  ) async {
-    const noTransition = {'duration': 0, 'delay': 0};
-    await _setNativeLayerPaintProperty(
-      style,
-      layerId: layerId,
-      property: 'circle-opacity-transition',
-      value: noTransition,
-    );
-    await _setNativeLayerPaintProperty(
-      style,
-      layerId: layerId,
-      property: 'circle-stroke-opacity-transition',
-      value: noTransition,
-    );
-  }
-
   Future<bool> _setCircleLayerRadiusPaint(
     StyleController style, {
     required String layerId,
@@ -499,10 +480,6 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     } catch (_) {
       await style.addLayer(circleLayer);
     }
-    await _disableRadiusCircleOpacityTransition(
-      style,
-      'radius-circle-${circle.id}',
-    );
     _radiusCircleLayerKeys[circle.id] = _radiusCircleLayerKey(circle);
   }
 

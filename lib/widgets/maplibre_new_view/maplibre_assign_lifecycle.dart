@@ -709,6 +709,19 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     } catch (_) {}
   }
 
+  Future<void> _clearLiveExitAssignVeilBeforeNativeRestore(
+    String reason,
+  ) {
+    if (!this._usesLiveAssignVeilHole()) {
+      return Future<void>.value();
+    }
+    return this._flushVeilSync(
+      ignoreAssign: true,
+      fullQuality: true,
+      reason: reason,
+    );
+  }
+
   void _beginClosingAssignVisual({
     required bool keepCircle,
     bool keepPreview = false,
@@ -900,14 +913,26 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       DebugConsole.log('ASSIGN_START: updating veil immediately');
       await this._flushVeilSync(fullQuality: true, reason: 'assign-start');
     } else if (existing != null) {
-      final layerId = _assignNativeAlarmLayerId;
-      if (style != null && layerId != null) {
-        await _disableRadiusCircleOpacityTransition(
-          style,
-          'radius-circle-$layerId',
+      final liveExitExisting =
+          style != null &&
+          _useNativeAssignCircle &&
+          _assignActive &&
+          _assignTriggerType == TriggerType.distance &&
+          _assignZoneTrigger == ZoneTrigger.onLeave;
+      if (liveExitExisting) {
+        await this._hideExistingNativeAlarm(existing);
+        DebugConsole.log(
+          'ASSIGN_START: removed native exit circle for live edit',
+        );
+        await this._flushVeilSync(
+          fullQuality: true,
+          reason: 'assign-start-existing',
+        );
+      } else {
+        DebugConsole.log(
+          'ASSIGN_START: keeping native alarm visual during edit',
         );
       }
-      DebugConsole.log('ASSIGN_START: keeping native alarm visual during edit');
     }
     setState(() {});
   }
@@ -1143,6 +1168,9 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         wasExisting!.id,
         circles: circles,
       );
+      await this._clearLiveExitAssignVeilBeforeNativeRestore(
+        'cancel-in-place-pre-native',
+      );
       if (circle != null) {
         await this._updateRadiusCircleSources(
           liveStyle,
@@ -1301,6 +1329,9 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           alarmProv,
           effectiveAlarm.id,
           circles: circles,
+        );
+        await this._clearLiveExitAssignVeilBeforeNativeRestore(
+          'save-in-place-pre-native',
         );
         if (circle != null) {
           await this._updateRadiusCircleSources(
