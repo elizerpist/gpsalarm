@@ -129,7 +129,7 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
       _assignExitVeilOutlineFastSuppressed = false;
     }
 
-    final outlineOpacity = active ? 0.62 : 0.0;
+    final outlineOpacity = active ? 1.0 : 0.0;
     if (_assignExitVeilOutlineActive == active &&
         (_assignExitVeilOutlineOpacity - outlineOpacity).abs() < 0.001) {
       return;

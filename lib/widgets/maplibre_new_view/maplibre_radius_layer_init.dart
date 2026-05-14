@@ -35,7 +35,7 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
         sourceId: 'veil-live-outline-src',
         layout: {'line-cap': 'round', 'line-join': 'round'},
         paint: {
-          'line-color': 'rgba(255,0,0,0.62)',
+          'line-color': '#FF0000',
           'line-opacity': 0.0,
           'line-width': 2.0,
         },
