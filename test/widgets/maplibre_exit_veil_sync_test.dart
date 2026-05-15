@@ -170,29 +170,66 @@ void main() {
       );
     });
 
-    test('flushes static veil before disabling live exit annulus on save', () {
+    test('keeps live exit annulus until native save render ack', () {
       final lifecycle = File(
         'lib/widgets/maplibre_new_view/maplibre_assign_lifecycle.dart',
       ).readAsStringSync();
 
-      final start = lifecycle.indexOf(
-        'Future<void> _clearLiveExitAssignVeilBeforeNativeRestore',
+      final prepareStart = lifecycle.indexOf(
+        'Future<bool> _prepareLiveExitAssignVeilBeforeNativeRestore',
       );
-      final end = lifecycle.indexOf('void _beginClosingAssignVisual', start);
-      expect(start, isNonNegative);
-      expect(end, greaterThan(start));
+      expect(prepareStart, isNonNegative);
+      final prepareEnd = lifecycle.indexOf(
+        'Future<void> _clearLiveExitAssignVeilAfterNativeRestore',
+        prepareStart < 0 ? 0 : prepareStart,
+      );
+      expect(prepareEnd, greaterThan(prepareStart));
 
-      final method = lifecycle.substring(start, end);
-      final staticFlush = method.indexOf('_flushVeilSync');
-      final liveModeOff = method.indexOf('_syncNativeLiveExitVeilMode');
-
-      expect(staticFlush, isNonNegative);
-      expect(liveModeOff, isNonNegative);
+      final prepareMethod = lifecycle.substring(prepareStart, prepareEnd);
+      expect(prepareMethod, contains('_flushVeilSync'));
       expect(
-        staticFlush,
-        lessThan(liveModeOff),
+        prepareMethod,
+        isNot(contains('_syncNativeLiveExitVeilMode')),
         reason:
-            'Saving an exit alarm must prepare the static veil source while the live annulus still covers the map, then reveal the static fill to avoid a save-time flash.',
+            'The static veil source must be prepared while the live annulus still covers the map.',
+      );
+
+      final clearEnd = lifecycle.indexOf(
+        'Future<void> _clearLiveExitAssignVeilBeforeNativeRestore',
+        prepareEnd,
+      );
+      expect(clearEnd, greaterThan(prepareEnd));
+      final clearMethod = lifecycle.substring(prepareEnd, clearEnd);
+      expect(clearMethod, contains('_syncNativeLiveExitVeilMode'));
+
+      final inPlaceAck = lifecycle.indexOf(
+        "_waitForNativeRenderAck(\n          reason: 'save-in-place-native-flush'",
+      );
+      final inPlaceClear = lifecycle.indexOf(
+        "_clearLiveExitAssignVeilAfterNativeRestore(\n          'save-in-place-native-flush-post-native'",
+      );
+      expect(inPlaceAck, isNonNegative);
+      expect(inPlaceClear, isNonNegative);
+      expect(
+        inPlaceAck,
+        lessThan(inPlaceClear),
+        reason:
+            'In-place saves must keep the live annulus visible until the native radius/source update has rendered.',
+      );
+
+      final rebuildAck = lifecycle.indexOf(
+        "_waitForNativeRenderAck(reason: 'save-native-flush')",
+      );
+      final rebuildClear = lifecycle.indexOf(
+        "_clearLiveExitAssignVeilAfterNativeRestore(\n          'save-native-flush-post-native'",
+      );
+      expect(rebuildAck, isNonNegative);
+      expect(rebuildClear, isNonNegative);
+      expect(
+        rebuildAck,
+        lessThan(rebuildClear),
+        reason:
+            'New/rebuilt exit saves must not disable the live annulus before the saved static veil has rendered.',
       );
     });
 

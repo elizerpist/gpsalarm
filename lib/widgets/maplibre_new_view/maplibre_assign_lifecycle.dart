@@ -684,7 +684,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     } catch (_) {}
   }
 
-  Future<void> _clearLiveExitAssignVeilBeforeNativeRestore(
+  Future<bool> _prepareLiveExitAssignVeilBeforeNativeRestore(
     String reason,
   ) async {
     final liveHole = this._usesLiveAssignVeilHole();
@@ -695,13 +695,22 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       'needsFlush=$needsFlush liveHole=$liveHole nativeActive=$activeBefore '
       'hasStyle=${_controller?.style != null} ${_assignDebugState()}',
     );
-    if (!needsFlush) return;
-    final style = _controller?.style;
+    if (!needsFlush) return false;
     await this._flushVeilSync(
       ignoreAssign: true,
       fullQuality: true,
       reason: reason,
     );
+    DebugConsole.log(
+      'EXIT_NATIVE_VEIL_CLEAR: stage=static-ready reason=$reason '
+      'nativeActive=$_assignNativeLiveVeilActive ${_assignDebugState()}',
+    );
+    return true;
+  }
+
+  Future<void> _clearLiveExitAssignVeilAfterNativeRestore(String reason) async {
+    final style = _controller?.style;
+    final activeBefore = _assignNativeLiveVeilActive;
     if (style != null && activeBefore) {
       await this._syncNativeLiveExitVeilMode(
         style,
@@ -711,8 +720,19 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     }
     DebugConsole.log(
       'EXIT_NATIVE_VEIL_CLEAR: stage=done reason=$reason '
-      'nativeActive=$_assignNativeLiveVeilActive ${_assignDebugState()}',
+      'nativeActive=$_assignNativeLiveVeilActive hasStyle=${style != null} '
+      '${_assignDebugState()}',
     );
+  }
+
+  Future<void> _clearLiveExitAssignVeilBeforeNativeRestore(
+    String reason,
+  ) async {
+    final prepared = await this._prepareLiveExitAssignVeilBeforeNativeRestore(
+      reason,
+    );
+    if (!prepared) return;
+    await this._clearLiveExitAssignVeilAfterNativeRestore(reason);
   }
 
   void _beginClosingAssignVisual({
@@ -1357,7 +1377,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           effectiveAlarm.id,
           circles: circles,
         );
-        await this._clearLiveExitAssignVeilBeforeNativeRestore(
+        await this._prepareLiveExitAssignVeilBeforeNativeRestore(
           'save-in-place-pre-native',
         );
         if (circle != null) {
@@ -1388,6 +1408,10 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         );
         final nativeAck = this._waitForNativeRenderAck(
           reason: 'save-in-place-native-flush',
+        );
+        await nativeAck;
+        await this._clearLiveExitAssignVeilAfterNativeRestore(
+          'save-in-place-native-flush-post-native',
         );
         await this._completeFlutterPreviewNativeHandoff(
           style: liveStyle,
@@ -1426,7 +1450,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           excludeEditing: false,
         );
         _radiusLayerVersion++;
-        await this._clearLiveExitAssignVeilBeforeNativeRestore(
+        await this._prepareLiveExitAssignVeilBeforeNativeRestore(
           'save-rebuild-pre-native',
         );
         final singleCircle = !wasExisting
@@ -1470,6 +1494,10 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
             force: true,
           );
         }
+        await nativeAck;
+        await this._clearLiveExitAssignVeilAfterNativeRestore(
+          'save-native-flush-post-native',
+        );
       }
       await this._completeFlutterPreviewNativeHandoff(
         style: style,
