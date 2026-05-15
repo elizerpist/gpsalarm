@@ -486,7 +486,7 @@ packages:
     source: hosted
     version: "0.20.2"
   jni:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: jni
       sha256: d2c361082d554d4593c3012e26f6b188f902acd291330f13d6427641a92b3da1

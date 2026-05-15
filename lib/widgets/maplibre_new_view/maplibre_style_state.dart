@@ -28,6 +28,7 @@ extension _MaplibreStyleState on _MaplibreNewViewState {
     _radiusLayerVersion++;
     _styleGeneration++;
     _registeredMarkerImageKeys.clear();
+    _androidGeoJsonSyncViewId = null;
     _radiusPointImageIds.clear();
     _radiusCircleLayerKeys.clear();
     _radiusVisualIds.clear();
@@ -42,9 +43,83 @@ extension _MaplibreStyleState on _MaplibreNewViewState {
     required String id,
     required String data,
   }) async {
+    final isVeilSource = id == 'veil-src' || id == 'veil-live-outline-src';
+    if (isVeilSource &&
+        _tryUpdateGeoJsonSourceSyncAndroid(id: id, data: data)) {
+      return true;
+    }
+
     try {
       await style.updateGeoJsonSource(id: id, data: data);
       return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  bool _tryUpdateGeoJsonSourceSyncAndroid({
+    required String id,
+    required String data,
+  }) {
+    if (foundation.defaultTargetPlatform != foundation.TargetPlatform.android) {
+      return false;
+    }
+
+    final cachedViewId = _androidGeoJsonSyncViewId;
+    if (cachedViewId != null &&
+        _tryUpdateGeoJsonSourceSyncAndroidView(
+          viewId: cachedViewId,
+          id: id,
+          data: data,
+        )) {
+      return true;
+    }
+
+    for (var viewId = 63; viewId >= 0; viewId--) {
+      if (viewId == cachedViewId) continue;
+      if (_tryUpdateGeoJsonSourceSyncAndroidView(
+        viewId: viewId,
+        id: id,
+        data: data,
+      )) {
+        _androidGeoJsonSyncViewId = viewId;
+        return true;
+      }
+    }
+
+    _androidGeoJsonSyncViewId = null;
+    return false;
+  }
+
+  bool _tryUpdateGeoJsonSourceSyncAndroidView({
+    required int viewId,
+    required String id,
+    required String data,
+  }) {
+    try {
+      return using((arena) {
+        final registry = maplibre_jni.MapLibreRegistry.INSTANCE
+          ..releasedBy(arena);
+        final map = registry.getMap(viewId);
+        if (map == null) return false;
+        map.releasedBy(arena);
+
+        final style = map.getStyle$1();
+        if (style == null) return false;
+        style.releasedBy(arena);
+
+        final sourceId = id.toJString()..releasedBy(arena);
+        final source = style.getSourceAs(
+          sourceId,
+          T: maplibre_jni.GeoJsonSource.type,
+        );
+        if (source == null) return false;
+        source.releasedBy(arena);
+
+        final geoJson = data.toJString()..releasedBy(arena);
+        source.setGeoJsonSync$3(geoJson);
+        return true;
+      });
     } catch (_) {
       return false;
     }

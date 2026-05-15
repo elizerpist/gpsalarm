@@ -3,9 +3,13 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart' as foundation;
 import 'package:flutter/material.dart';
+import 'package:jni/jni.dart';
 import 'package:path_drawing/path_drawing.dart';
 import 'package:maplibre/maplibre.dart';
+// ignore: implementation_imports
+import 'package:maplibre/src/platform/android/jni.dart' as maplibre_jni;
 import 'package:latlong2/latlong.dart' show LatLng;
 import 'package:provider/provider.dart';
 import 'package:vibration/vibration.dart';
@@ -58,6 +62,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   String? _activeStyleUrl;
   String? _registeredStyleUrl;
   int _styleGeneration = 0;
+  int? _androidGeoJsonSyncViewId;
   final LocationService _locationService = LocationService();
   // 3D view + GPS follow + compass
   bool _is3D = false;

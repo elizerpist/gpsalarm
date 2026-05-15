@@ -29,6 +29,7 @@ dependencies:
   path: ^1.9.0
   shared_preferences: ^2.3.5
   maplibre: ^0.2.0
+  jni: ^0.14.2
   connectivity_plus: ^6.1.2
   path_drawing: ^1.0.1
   flutter_compass: ^0.8.0

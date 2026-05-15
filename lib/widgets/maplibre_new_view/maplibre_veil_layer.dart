@@ -506,10 +506,12 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
               'livePx=${this._radiusPxForCircle(liveAssignCircle).toStringAsFixed(1)}';
     if (leaveAlarms.isEmpty && !hasFastLeave) {
       if (_lastVeilGeoJson != _emptyGeoJson) {
-        try {
-          await style.updateGeoJsonSource(id: 'veil-src', data: _emptyGeoJson);
-          _lastVeilGeoJson = _emptyGeoJson;
-        } catch (_) {}
+        final updated = await this._tryUpdateGeoJsonSource(
+          style,
+          id: 'veil-src',
+          data: _emptyGeoJson,
+        );
+        if (updated) _lastVeilGeoJson = _emptyGeoJson;
       }
       await this._syncLiveExitVeilOutlineSource(
         style,
