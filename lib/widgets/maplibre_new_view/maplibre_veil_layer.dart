@@ -162,13 +162,20 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
         if (updated) _nativeLiveExitVeilSourceKey = sourceKey;
       }
     }
+    final nativeCircleOpacity = active ? 0.0 : 1.0;
     final id = _assignNativeAlarmLayerId;
     if (id != null) {
-      await this._setNativeLayerPaintProperty(
+      await _setNativeLayerPaintProperty(
+        style,
+        layerId: 'radius-circle-$id',
+        property: 'circle-opacity',
+        value: nativeCircleOpacity,
+      );
+      await _setNativeLayerPaintProperty(
         style,
         layerId: 'radius-circle-$id',
         property: 'circle-stroke-opacity',
-        value: 1.0,
+        value: nativeCircleOpacity,
       );
     }
     _assignExitVeilOutlineActive = active;
@@ -176,6 +183,7 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     DebugConsole.log(
       'EXIT_NATIVE_VEIL_MODE: active=$active nativeFillHidden=$active '
       'fillOpacity=$fillOpacity fillUpdated=$fillUpdated annulusLayer=veil-live-annulus '
+      'nativeCircleOpacity=$nativeCircleOpacity '
       'reason=$reason ${_assignDebugState()}',
     );
   }

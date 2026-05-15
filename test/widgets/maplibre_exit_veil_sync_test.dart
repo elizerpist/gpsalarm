@@ -49,7 +49,7 @@ void main() {
     });
 
     test(
-      'uses native annulus paint for live exit veil while native radius stays live',
+      'uses native annulus paint for live exit veil while stale radius circle is muted',
       () {
         final view = File(
           'lib/widgets/maplibre_new_view.dart',
@@ -195,7 +195,7 @@ void main() {
       );
     });
 
-    test('updates native radius paint before the live exit veil mask', () {
+    test('skips stale native circle radius paint during live exit annulus drags', () {
       final lifecycle = File(
         'lib/widgets/maplibre_new_view/maplibre_assign_lifecycle.dart',
       ).readAsStringSync();
@@ -211,31 +211,21 @@ void main() {
       expect(end, greaterThan(start));
 
       final method = lifecycle.substring(start, end);
-      final paintCall = method.indexOf(
-        'final updated = await this._setCircleLayerRadiusPaint',
-      );
-      final firstVeilSync = method.indexOf(
-        'await this._syncAssignVeilWithRadiusPaint',
-      );
-      final veilSyncAfterPaint = method.indexOf(
-        'await this._syncAssignVeilWithRadiusPaint',
-        paintCall,
-      );
-
-      expect(paintCall, isNonNegative);
-      expect(firstVeilSync, isNonNegative);
-      expect(veilSyncAfterPaint, isNonNegative);
       expect(
-        firstVeilSync,
-        equals(veilSyncAfterPaint),
+        method,
+        matches(
+          RegExp(
+            r'if \(liveExitVeil\) \{[\s\S]*?_syncAssignVeilWithRadiusPaint[\s\S]*?\} else \{[\s\S]*?_setCircleLayerRadiusPaint',
+          ),
+        ),
         reason:
-            'The live exit veil must not be submitted before the native border radius paint.',
+            'Fast exit swipes should paint the annulus veil directly and keep the old radius circle out of the live path.',
       );
       expect(
-        paintCall,
-        lessThan(veilSyncAfterPaint),
+        method,
+        contains('nativeSkipped=\$liveExitVeil'),
         reason:
-            'The veil hole should be built after the native circle radius has been updated.',
+            'Exit debug logs must show that the native circle paint was intentionally skipped.',
       );
     });
   });

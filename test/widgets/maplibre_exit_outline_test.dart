@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('MapLibre exit trigger live outline', () {
-    test('keeps native alarm circle as the visible edit outline', () {
+    test('hides the stale native radius circle while annulus veil is live', () {
       final veilLayer = File(
         'lib/widgets/maplibre_new_view/maplibre_veil_layer.dart',
       ).readAsStringSync();
@@ -18,19 +18,19 @@ void main() {
       expect(
         veilLayer,
         contains('const outlineOpacity = 0.0;'),
-        reason: 'The veil outline must not become the visible edit circle.',
+        reason: 'The GeoJSON veil outline must not become a second circle.',
       );
       expect(
         veilLayer,
-        matches(RegExp(r"property: 'circle-stroke-opacity',\s*value: 1\.0,")),
-        reason: 'The native circle stroke must stay visible in exit edit mode.',
+        contains('final nativeCircleOpacity = active ? 0.0 : 1.0;'),
+        reason:
+            'When the native annulus draws the live exit veil, the old radius circle must be hidden so it cannot trail fast swipes.',
       );
-      expect(veilLayer, contains('nativeStrokeHidden=false'));
       expect(
         assignLifecycle,
-        contains('const strokeOpacity = 1.0;'),
+        contains('final opacity = shouldSuppress ? 0.0 : 1.0;'),
         reason:
-            'Suppression may keep the circle active, but must not hide stroke.',
+            'Live exit suppression must actually hide the stale native circle instead of just marking it suppressed.',
       );
       expect(
         radiusRebuild,
@@ -39,6 +39,8 @@ void main() {
             r'bool _shouldHideLiveExitNativeCircle\(_RadiusCircleData [^)]+\) => false;',
           ),
         ),
+        reason:
+            'Static circles can stay normal; live annulus mode handles the temporary hide explicitly.',
       );
     });
   });
