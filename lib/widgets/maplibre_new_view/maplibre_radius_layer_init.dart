@@ -6,6 +6,9 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
     await style.addSource(
       GeoJsonSource(id: 'veil-live-outline-src', data: _emptyGeoJson),
     );
+    await style.addSource(
+      GeoJsonSource(id: 'veil-live-annulus-src', data: _emptyGeoJson),
+    );
     await style.addLayer(
       FillStyleLayer(
         id: 'veil-fill',
@@ -41,6 +44,22 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
         },
       ),
     );
+    await style.addLayer(
+      CircleStyleLayer(
+        id: 'veil-live-annulus',
+        sourceId: 'veil-live-annulus-src',
+        paint: {
+          'circle-radius': 0.0,
+          'circle-color': 'rgba(255,0,0,0)',
+          'circle-opacity': 0.0,
+          'circle-stroke-color': '#FF0000',
+          'circle-stroke-opacity': 0.0,
+          'circle-stroke-width': 0.0,
+          'circle-pitch-alignment': 'viewport',
+          'circle-pitch-scale': 'viewport',
+        },
+      ),
+    );
     await style.addSource(
       GeoJsonSource(id: 'fast-pt-src', data: _emptyGeoJson),
     );
@@ -51,7 +70,7 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
     }
     _radiusLayerReady = true;
     DebugConsole.log(
-      'VECTOR: radius layer system ready fix=single-native-outline-v10-flutter-exit-veil',
+      'VECTOR: radius layer system ready fix=single-native-outline-v11-native-exit-veil',
     );
   }
 

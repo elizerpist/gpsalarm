@@ -49,7 +49,7 @@ void main() {
     });
 
     test(
-      'uses Flutter overlay for live exit veil while native radius stays live',
+      'uses native annulus paint for live exit veil while native radius stays live',
       () {
         final view = File(
           'lib/widgets/maplibre_new_view.dart',
@@ -57,26 +57,27 @@ void main() {
         final veilLayer = File(
           'lib/widgets/maplibre_new_view/maplibre_veil_layer.dart',
         ).readAsStringSync();
-        final painter = File(
-          'lib/widgets/maplibre_new_view/maplibre_overlay_painter.dart',
+        final radiusInit = File(
+          'lib/widgets/maplibre_new_view/maplibre_radius_layer_init.dart',
         ).readAsStringSync();
 
-        expect(veilLayer, contains('_usesFlutterLiveExitVeil'));
-        expect(veilLayer, contains('_syncFlutterLiveExitVeilMode'));
-        expect(veilLayer, contains('EXIT_FLUTTER_VEIL_MODE'));
+        expect(veilLayer, contains('_usesNativeLiveExitVeil'));
+        expect(veilLayer, contains('_syncNativeLiveExitVeilMode'));
+        expect(veilLayer, contains('_setNativeLiveExitVeilRadiusPaint'));
+        expect(veilLayer, contains('EXIT_NATIVE_VEIL_MODE'));
+        expect(veilLayer, contains('EXIT_NATIVE_VEIL_PAINT'));
         expect(
-          view,
-          contains('final liveExitVeilHoles ='),
+          radiusInit,
+          contains('veil-live-annulus'),
           reason:
-              'The build tree should feed live exit veil holes into the Flutter painter.',
+              'Live exit editing should use a native circle annulus layer, not a Flutter repaint overlay.',
         );
         expect(
           view,
-          contains('_LiveExitVeilOverlayPainter'),
+          isNot(contains('_LiveExitVeilOverlayPainter')),
           reason:
-              'Native circle mode needs a Flutter veil painter so fast swipes repaint on the UI frame.',
+              'The live exit veil should share the native paint path instead of running a separate Flutter painter.',
         );
-        expect(painter, contains('class _LiveExitVeilOverlayPainter'));
       },
     );
 
@@ -96,16 +97,69 @@ void main() {
       expect(end, greaterThan(start));
 
       final method = veilLayer.substring(start, end);
-      final flutterPath = method.indexOf('_syncFlutterLiveExitVeilMode');
+      final nativePath = method.indexOf('_syncNativeLiveExitVeilMode');
       final geoJsonPath = method.indexOf('_updateVeil');
 
-      expect(flutterPath, isNonNegative);
+      expect(nativePath, isNonNegative);
       expect(geoJsonPath, isNonNegative);
       expect(
-        flutterPath,
+        nativePath,
         lessThan(geoJsonPath),
         reason:
-            'Fast live exit radius changes must repaint the Flutter veil before any MapLibre GeoJSON fallback.',
+            'Fast live exit radius changes must update the native annulus paint before any MapLibre GeoJSON fallback.',
+      );
+    });
+
+    test('does not hold live exit radius updates near the center', () {
+      final lifecycle = File(
+        'lib/widgets/maplibre_new_view/maplibre_assign_lifecycle.dart',
+      ).readAsStringSync();
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      expect(
+        lifecycle,
+        isNot(contains('_shouldHoldExitRadiusAtCenter')),
+        reason:
+            'Exit radius edits must not pause for a center guard; that creates visible veil lag.',
+      );
+      expect(
+        lifecycle,
+        isNot(contains('EXIT_CENTER_GUARD')),
+        reason:
+            'The old center guard intentionally held the previous radius for hundreds of milliseconds.',
+      );
+      expect(
+        view,
+        isNot(contains('_shouldHoldExitRadiusAtCenter(')),
+        reason:
+            'Both long-press and overlay drags should feed every radius sample through the same live path.',
+      );
+    });
+
+    test('clears live exit veil mode before save rebuild flushes static veil', () {
+      final lifecycle = File(
+        'lib/widgets/maplibre_new_view/maplibre_assign_lifecycle.dart',
+      ).readAsStringSync();
+      final saveRebuild = lifecycle.indexOf("reason: 'save-rebuild'");
+      final clearBeforeSaveRebuild = lifecycle.lastIndexOf(
+        "_clearLiveExitAssignVeilBeforeNativeRestore(\n          'save-rebuild-pre-native'",
+        saveRebuild,
+      );
+
+      expect(saveRebuild, isNonNegative);
+      expect(
+        clearBeforeSaveRebuild,
+        isNonNegative,
+        reason:
+            'Saving a new exit alarm must restore native veil visibility before writing the static save-rebuild veil.',
+      );
+      expect(
+        clearBeforeSaveRebuild,
+        lessThan(saveRebuild),
+        reason:
+            'The live veil mode must be cleared before the static GeoJSON veil is flushed on save.',
       );
     });
 

@@ -55,9 +55,6 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _exitDebugLastInputRadiusM = null;
     _exitDebugLastInputRadiusPx = null;
     _exitDebugLastInputAt = null;
-    _exitDebugCenterGuardSince = null;
-    _exitDebugCenterGuardHeldRadiusM = null;
-    _exitDebugCenterGuardHeldRadiusPx = null;
     _exitDebugLastNativePaintRadiusM = null;
     _exitDebugLastOutlineRadiusM = null;
     _exitDebugLastMaskRadiusM = null;
@@ -137,70 +134,6 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       'veilDrain=${_veilSyncDrainFuture != null} '
       '${_assignDebugState()}',
     );
-  }
-
-  bool _shouldHoldExitRadiusAtCenter({
-    required String source,
-    required int frame,
-    required double distPx,
-    double? candidateRadiusM,
-    int? pointer,
-    int? eventDtMs,
-  }) {
-    if (!_isExitDebugTraceActive) return false;
-
-    final zoom = _controller?.camera?.zoom ?? _currentZoom;
-    final mpp = _vectorMetersPerPx(_assignLat, zoom);
-    if (!mpp.isFinite || mpp <= 0) return false;
-
-    final minRadiusPx = 100.0 / mpp;
-    final centerGuardPx = math.max(48.0, minRadiusPx * 1.8);
-    final candidateRadius = (candidateRadiusM ?? distPx * mpp)
-        .clamp(100.0, 5000.0)
-        .toDouble();
-    final candidatePx = candidateRadius / mpp;
-    final currentRadius = _assignRadius;
-    final currentPx = _radiusNotifier.value;
-    final shrinkingIntoCenter =
-        distPx <= centerGuardPx &&
-        candidatePx <= centerGuardPx &&
-        candidateRadius < currentRadius - 1.0;
-
-    if (!shrinkingIntoCenter) {
-      _exitDebugCenterGuardSince = null;
-      _exitDebugCenterGuardHeldRadiusM = null;
-      _exitDebugCenterGuardHeldRadiusPx = null;
-      return false;
-    }
-
-    final now = DateTime.now();
-    _exitDebugCenterGuardSince ??= now;
-    _exitDebugCenterGuardHeldRadiusM ??= currentRadius;
-    _exitDebugCenterGuardHeldRadiusPx ??= currentPx;
-    final dwellMs = now.difference(_exitDebugCenterGuardSince!).inMilliseconds;
-    final hold = dwellMs < 320;
-    if (!hold) return false;
-
-    final heldRadius = _exitDebugCenterGuardHeldRadiusM ?? currentRadius;
-    final heldPx = _exitDebugCenterGuardHeldRadiusPx ?? currentPx;
-    DebugConsole.log(
-      'EXIT_CENTER_GUARD: source=$source frame=$frame pointer=$pointer '
-      'dt=${eventDtMs ?? -1}ms dwell=${dwellMs}ms '
-      'heldR=${heldRadius.round()}m currentR=${currentRadius.round()}m '
-      'candidateR=${candidateRadius.round()}m '
-      'heldPx=${heldPx.toStringAsFixed(1)} '
-      'currentPx=${currentPx.toStringAsFixed(1)} '
-      'candidatePx=${candidatePx.toStringAsFixed(1)} '
-      'distPx=${distPx.toStringAsFixed(1)} '
-      'minPx=${minRadiusPx.toStringAsFixed(1)} '
-      'guardPx=${centerGuardPx.toStringAsFixed(1)} '
-      'dropM=${(currentRadius - candidateRadius).toStringAsFixed(1)} '
-      'dropPx=${(currentPx - candidatePx).toStringAsFixed(1)} '
-      'inputSeq=$_exitDebugInputSeq nativeSeq=$_exitDebugNativePaintSeq '
-      'outlineSeq=$_exitDebugOutlineSeq maskSeq=$_exitDebugMaskSeq '
-      '${_assignDebugState()}',
-    );
-    return true;
   }
 
   Future<void> _syncLiveExitNativeCircleSuppression(
@@ -753,12 +686,18 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
   Future<void> _clearLiveExitAssignVeilBeforeNativeRestore(
     String reason,
   ) async {
-    final needsFlush =
-        this._usesLiveAssignVeilHole() || _assignFlutterLiveVeilActive;
+    final liveHole = this._usesLiveAssignVeilHole();
+    final activeBefore = _assignNativeLiveVeilActive;
+    final needsFlush = liveHole || activeBefore;
+    DebugConsole.log(
+      'EXIT_NATIVE_VEIL_CLEAR: stage=start reason=$reason '
+      'needsFlush=$needsFlush liveHole=$liveHole nativeActive=$activeBefore '
+      'hasStyle=${_controller?.style != null} ${_assignDebugState()}',
+    );
     if (!needsFlush) return;
     final style = _controller?.style;
-    if (style != null && _assignFlutterLiveVeilActive) {
-      await this._syncFlutterLiveExitVeilMode(
+    if (style != null && activeBefore) {
+      await this._syncNativeLiveExitVeilMode(
         style,
         active: false,
         reason: reason,
@@ -768,6 +707,10 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       ignoreAssign: true,
       fullQuality: true,
       reason: reason,
+    );
+    DebugConsole.log(
+      'EXIT_NATIVE_VEIL_CLEAR: stage=done reason=$reason '
+      'nativeActive=$_assignNativeLiveVeilActive ${_assignDebugState()}',
     );
   }
 
@@ -803,7 +746,8 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignCardSyncPending = false;
     if (!keepPreview) {
       _assignFlutterPreviewActive = false;
-      _assignFlutterLiveVeilActive = false;
+      _assignNativeLiveVeilActive = false;
+      _nativeLiveExitVeilSourceKey = null;
       _assignPreviewCircleHidden = false;
       _assignPreviewVeilHidden = false;
       _assignPreviewLabelHidden = false;
@@ -852,7 +796,8 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           _closingAssignCircle = false;
           _closingAssignMarker = false;
           _assignFlutterPreviewActive = false;
-          _assignFlutterLiveVeilActive = false;
+          _assignNativeLiveVeilActive = false;
+          _nativeLiveExitVeilSourceKey = null;
           _assignScreenCenter = null;
           _assignMarkerPng = null;
           _assignMarkerKey = null;
@@ -912,7 +857,8 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignCardSyncTimer = null;
     _assignCardSyncPending = false;
     _assignFlutterPreviewActive = false;
-    _assignFlutterLiveVeilActive = false;
+    _assignNativeLiveVeilActive = false;
+    _nativeLiveExitVeilSourceKey = null;
     _assignPreviewCircleHidden = false;
     _assignPreviewVeilHidden = false;
     _assignPreviewLabelHidden = false;
@@ -1158,7 +1104,8 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
   }
 
   Future<void> _restoreNativeVeilOpacity(StyleController style) async {
-    _assignFlutterLiveVeilActive = false;
+    _assignNativeLiveVeilActive = false;
+    _nativeLiveExitVeilSourceKey = null;
     await this._setNativeLayerPaintProperty(
       style,
       layerId: 'veil-fill',
@@ -1177,13 +1124,38 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       property: 'line-opacity',
       value: 0.0,
     );
+    await this._setNativeLayerPaintProperty(
+      style,
+      layerId: 'veil-live-annulus',
+      property: 'circle-stroke-opacity',
+      value: 0.0,
+    );
+    await this._setNativeLayerPaintProperty(
+      style,
+      layerId: 'veil-live-annulus',
+      property: 'circle-radius',
+      value: 0.0,
+    );
+    await this._setNativeLayerPaintProperty(
+      style,
+      layerId: 'veil-live-annulus',
+      property: 'circle-stroke-width',
+      value: 0.0,
+    );
     await this._tryUpdateGeoJsonSource(
       style,
       id: 'veil-live-outline-src',
       data: _emptyGeoJson,
       reason: 'restore-native-veil',
     );
+    await this._tryUpdateGeoJsonSource(
+      style,
+      id: 'veil-live-annulus-src',
+      data: _emptyGeoJson,
+      reason: 'restore-native-veil',
+    );
     _lastVeilOutlineGeoJson = _emptyGeoJson;
+    _nativeLiveExitVeilSourceKey = null;
     _assignPreviewVeilHidden = false;
     _assignExitVeilOutlineRestoreTimer?.cancel();
     _assignExitVeilOutlineRestoreTimer = null;
@@ -1453,6 +1425,9 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           excludeEditing: false,
         );
         _radiusLayerVersion++;
+        await this._clearLiveExitAssignVeilBeforeNativeRestore(
+          'save-rebuild-pre-native',
+        );
         final singleCircle = !wasExisting
             ? this._circleForAlarmId(
                 alarmProv,

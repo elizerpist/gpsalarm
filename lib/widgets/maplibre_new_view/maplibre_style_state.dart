@@ -23,7 +23,8 @@ extension _MaplibreStyleState on _MaplibreNewViewState {
     _assignExitVeilOutlineActive = false;
     _assignExitVeilOutlineFastSuppressed = false;
     _assignExitVeilOutlineOpacity = 0.0;
-    _assignFlutterLiveVeilActive = false;
+    _assignNativeLiveVeilActive = false;
+    _nativeLiveExitVeilSourceKey = null;
     _radiusDebounce?.cancel();
     _veilSyncTimer?.cancel();
     _veilSyncTimer = null;
@@ -52,7 +53,10 @@ extension _MaplibreStyleState on _MaplibreNewViewState {
     required String data,
     String reason = 'direct',
   }) async {
-    final isVeilSource = id == 'veil-src' || id == 'veil-live-outline-src';
+    final isVeilSource =
+        id == 'veil-src' ||
+        id == 'veil-live-outline-src' ||
+        id == 'veil-live-annulus-src';
     final sw = Stopwatch()..start();
     if (isVeilSource) {
       final syncResult = _tryUpdateGeoJsonSourceSyncAndroid(id: id, data: data);
@@ -104,7 +108,11 @@ extension _MaplibreStyleState on _MaplibreNewViewState {
     required _GeoJsonSourceUpdateResult result,
     required int elapsedMs,
   }) {
-    if (id != 'veil-src' && id != 'veil-live-outline-src') return;
+    if (id != 'veil-src' &&
+        id != 'veil-live-outline-src' &&
+        id != 'veil-live-annulus-src') {
+      return;
+    }
     final shouldLog = _isAssigning || elapsedMs > 4 || !result.updated;
     if (!shouldLog) return;
     final viewId = result.viewId?.toString() ?? 'n/a';

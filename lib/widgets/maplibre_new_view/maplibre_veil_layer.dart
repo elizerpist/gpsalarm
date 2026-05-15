@@ -69,48 +69,40 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
         (_showAssignOverlay || _useNativeExistingAssignLayer);
   }
 
-  bool _usesFlutterLiveExitVeil({bool ignoreAssign = false}) {
+  bool _usesNativeLiveExitVeil({bool ignoreAssign = false}) {
     return _useNativeAssignCircle &&
         this._usesLiveAssignVeilHole(ignoreAssign: ignoreAssign);
   }
 
-  List<({Offset center, double radiusPx})>? _liveExitFlutterVeilHoles(
-    AlarmProvider alarmProv,
-  ) {
-    if (!this._usesFlutterLiveExitVeil()) return null;
-    final zoom = _controller?.camera?.zoom ?? _currentZoom;
-    final holes = <({Offset center, double radiusPx})>[];
-    for (final point in alarmProv.alarmPoints) {
-      if (!point.isActive || point.zoneTrigger != ZoneTrigger.onLeave) continue;
-      if (_assignExisting != null && point.id == _assignExisting!.id) continue;
-      final center = this._geoToScreen(point.latitude, point.longitude);
-      if (center == null) continue;
-      double radius = point.radiusMeters;
-      if (point.triggerType == TriggerType.time && point.timeTrigger != null) {
-        radius = math.max(
-          200.0,
-          (_speedKmh / 3.6) * point.timeTrigger!.inSeconds.toDouble(),
-        );
-      }
-      holes.add((
-        center: center,
-        radiusPx: radius / _vectorMetersPerPx(point.latitude, zoom),
-      ));
-    }
-    return holes;
+  double _nativeLiveExitVeilOuterRadiusPx() {
+    final center = _assignScreenCenter;
+    if (!mounted || center == null) return 2400.0;
+    final size = MediaQuery.sizeOf(context);
+    final farthestCorner = <double>[
+      center.distance,
+      (center - Offset(size.width, 0)).distance,
+      (center - Offset(0, size.height)).distance,
+      (center - Offset(size.width, size.height)).distance,
+    ].reduce(math.max);
+    return farthestCorner + 32.0;
   }
 
-  Future<void> _syncFlutterLiveExitVeilMode(
+  String _nativeLiveExitVeilSourceGeoJson() {
+    return _pointGeoJson(_assignLng, _assignLat);
+  }
+
+  Future<void> _syncNativeLiveExitVeilMode(
     StyleController style, {
     required bool active,
     required String reason,
   }) async {
-    if (_assignFlutterLiveVeilActive == active) return;
-    _assignFlutterLiveVeilActive = active;
+    if (_assignNativeLiveVeilActive == active) return;
+    _assignNativeLiveVeilActive = active;
     if (!active) {
       _assignExitVeilOutlineRestoreTimer?.cancel();
       _assignExitVeilOutlineRestoreTimer = null;
       _assignExitVeilOutlineFastSuppressed = false;
+      _nativeLiveExitVeilSourceKey = null;
     }
 
     final fillOpacity = active ? 0.0 : 0.15;
@@ -132,6 +124,44 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
       property: 'line-opacity',
       value: 0.0,
     );
+    await this._setNativeLayerPaintProperty(
+      style,
+      layerId: 'veil-live-annulus',
+      property: 'circle-stroke-opacity',
+      value: active ? 0.15 : 0.0,
+    );
+    if (!active) {
+      await this._setNativeLayerPaintProperty(
+        style,
+        layerId: 'veil-live-annulus',
+        property: 'circle-radius',
+        value: 0.0,
+      );
+      await this._setNativeLayerPaintProperty(
+        style,
+        layerId: 'veil-live-annulus',
+        property: 'circle-stroke-width',
+        value: 0.0,
+      );
+      await this._tryUpdateGeoJsonSource(
+        style,
+        id: 'veil-live-annulus-src',
+        data: _emptyGeoJson,
+        reason: 'native-live-exit-off:$reason',
+      );
+    } else {
+      final sourceKey =
+          '${_assignLng.toStringAsFixed(7)},${_assignLat.toStringAsFixed(7)}';
+      if (_nativeLiveExitVeilSourceKey != sourceKey) {
+        final updated = await this._tryUpdateGeoJsonSource(
+          style,
+          id: 'veil-live-annulus-src',
+          data: _nativeLiveExitVeilSourceGeoJson(),
+          reason: 'native-live-exit-on:$reason',
+        );
+        if (updated) _nativeLiveExitVeilSourceKey = sourceKey;
+      }
+    }
     final id = _assignNativeAlarmLayerId;
     if (id != null) {
       await this._setNativeLayerPaintProperty(
@@ -143,16 +173,71 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     }
     _assignExitVeilOutlineActive = active;
     _assignExitVeilOutlineOpacity = 0.0;
-    final staticHoles = mounted
-        ? (_liveExitFlutterVeilHoles(context.read<AlarmProvider>())?.length ??
-              0)
-        : 0;
     DebugConsole.log(
-      'EXIT_FLUTTER_VEIL_MODE: active=$active nativeFillHidden=$active '
-      'fillOpacity=$fillOpacity fillUpdated=$fillUpdated staticHoles=$staticHoles '
+      'EXIT_NATIVE_VEIL_MODE: active=$active nativeFillHidden=$active '
+      'fillOpacity=$fillOpacity fillUpdated=$fillUpdated annulusLayer=veil-live-annulus '
       'reason=$reason ${_assignDebugState()}',
     );
-    _markFlutterLiveVeilChanged();
+  }
+
+  Future<void> _setNativeLiveExitVeilRadiusPaint(
+    StyleController style,
+    _RadiusCircleData circle, {
+    required String reason,
+  }) async {
+    final sw = Stopwatch()..start();
+    final innerPx = this._radiusPxForCircle(circle);
+    final outerPx = math.max(
+      innerPx + 16.0,
+      _nativeLiveExitVeilOuterRadiusPx(),
+    );
+    final strokeWidthPx = outerPx - innerPx;
+    final annulusRadiusPx = innerPx + strokeWidthPx / 2.0;
+    final radiusUpdated = await this._setNativeLayerPaintProperty(
+      style,
+      layerId: 'veil-live-annulus',
+      property: 'circle-radius',
+      value: annulusRadiusPx,
+    );
+    final strokeUpdated = await this._setNativeLayerPaintProperty(
+      style,
+      layerId: 'veil-live-annulus',
+      property: 'circle-stroke-width',
+      value: strokeWidthPx,
+    );
+    final opacityUpdated = await this._setNativeLayerPaintProperty(
+      style,
+      layerId: 'veil-live-annulus',
+      property: 'circle-stroke-opacity',
+      value: 0.15,
+    );
+    sw.stop();
+    final previousMaskRadius = _exitDebugLastMaskRadiusM;
+    final maskDelta = previousMaskRadius == null
+        ? 0.0
+        : circle.radiusMeters - previousMaskRadius;
+    final maskSeq = ++_exitDebugMaskSeq;
+    _exitDebugLastMaskRadiusM = circle.radiusMeters;
+    if (this._shouldLogExitDebugTrace(
+      reason: reason,
+      elapsedMs: sw.elapsedMilliseconds,
+      radiusDeltaM: maskDelta,
+      force: !radiusUpdated || !strokeUpdated || !opacityUpdated,
+    )) {
+      DebugConsole.log(
+        'EXIT_NATIVE_VEIL_PAINT: mSeq=$maskSeq reason=$reason '
+        'r=${circle.radiusMeters.round()}m innerPx=${innerPx.toStringAsFixed(1)} '
+        'outerPx=${outerPx.toStringAsFixed(1)} annulusPx=${annulusRadiusPx.toStringAsFixed(1)} '
+        'strokePx=${strokeWidthPx.toStringAsFixed(1)} '
+        'radiusUpdated=$radiusUpdated strokeUpdated=$strokeUpdated opacityUpdated=$opacityUpdated '
+        'dMask=${_exitDebugDelta(previousMaskRadius, circle.radiusMeters)} '
+        'inputSeq=$_exitDebugInputSeq '
+        'inputDelta=${_exitDebugDelta(_exitDebugLastInputRadiusM, circle.radiusMeters)} '
+        'nativeSeq=$_exitDebugNativePaintSeq '
+        'nativeDelta=${_exitDebugDelta(_exitDebugLastNativePaintRadiusM, circle.radiusMeters)} '
+        'ms=${sw.elapsedMilliseconds} ${_assignDebugState()}',
+      );
+    }
   }
 
   Future<void> _syncAssignVeilWithRadiusPaint({
@@ -161,23 +246,32 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     required String debugReason,
   }) {
     final reason = 'assign-radius:immediate:$debugReason';
-    if (this._usesFlutterLiveExitVeil()) {
+    if (this._usesNativeLiveExitVeil()) {
       _veilSyncTimer?.cancel();
       _veilSyncTimer = null;
       _veilSyncRequested = false;
       _veilSyncRequestedIgnoreAssign = false;
       _veilSyncRequestedFullQuality = false;
       _veilSyncRequestedReason = null;
-      return this._syncFlutterLiveExitVeilMode(
-        style,
-        active: true,
-        reason: reason,
-      );
+      final circle = this._currentAssignNativeVisualCircle(alarmProv);
+      if (circle == null) return Future<void>.value();
+      return () async {
+        await this._syncNativeLiveExitVeilMode(
+          style,
+          active: true,
+          reason: reason,
+        );
+        await this._setNativeLiveExitVeilRadiusPaint(
+          style,
+          circle,
+          reason: reason,
+        );
+      }();
     }
 
     if (!this._usesLiveAssignVeilHole()) {
-      if (_assignFlutterLiveVeilActive) {
-        return this._syncFlutterLiveExitVeilMode(
+      if (_assignNativeLiveVeilActive) {
+        return this._syncNativeLiveExitVeilMode(
           style,
           active: false,
           reason: reason,
@@ -211,7 +305,7 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
   Future<void> _syncAssignVeilWithOverlay({required String debugReason}) {
     final reason = 'assign-overlay:$debugReason';
     final style = _controller?.style;
-    if (this._usesFlutterLiveExitVeil()) {
+    if (this._usesNativeLiveExitVeil()) {
       if (style == null) return Future<void>.value();
       _veilSyncTimer?.cancel();
       _veilSyncTimer = null;
@@ -219,16 +313,27 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
       _veilSyncRequestedIgnoreAssign = false;
       _veilSyncRequestedFullQuality = false;
       _veilSyncRequestedReason = null;
-      return this._syncFlutterLiveExitVeilMode(
-        style,
-        active: true,
-        reason: reason,
+      final circle = this._currentAssignNativeVisualCircle(
+        context.read<AlarmProvider>(),
       );
+      if (circle == null) return Future<void>.value();
+      return () async {
+        await this._syncNativeLiveExitVeilMode(
+          style,
+          active: true,
+          reason: reason,
+        );
+        await this._setNativeLiveExitVeilRadiusPaint(
+          style,
+          circle,
+          reason: reason,
+        );
+      }();
     }
 
-    if (_assignFlutterLiveVeilActive && style != null) {
+    if (_assignNativeLiveVeilActive && style != null) {
       return () async {
-        await this._syncFlutterLiveExitVeilMode(
+        await this._syncNativeLiveExitVeilMode(
           style,
           active: false,
           reason: reason,
@@ -593,7 +698,7 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     final sw = Stopwatch()..start();
     final seq = ++_veilUpdateSeq;
     final useLiveAssignHole =
-        !_assignFlutterLiveVeilActive &&
+        !_assignNativeLiveVeilActive &&
         this._usesLiveAssignVeilHole(ignoreAssign: ignoreAssign);
     final segments = _veilSegments(
       fullQuality: fullQuality,

@@ -110,7 +110,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   bool _assignPreviewCircleHidden = false;
   bool _assignPreviewVeilHidden = false;
   bool _assignPreviewLabelHidden = false;
-  bool _assignFlutterLiveVeilActive = false;
+  bool _assignNativeLiveVeilActive = false;
+  String? _nativeLiveExitVeilSourceKey;
   bool _assignExitVeilOutlineActive = false;
   bool _assignExitVeilOutlineFastSuppressed = false;
   double _assignExitVeilOutlineOpacity = -1.0;
@@ -603,9 +604,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   double? _exitDebugLastInputRadiusM;
   double? _exitDebugLastInputRadiusPx;
   DateTime? _exitDebugLastInputAt;
-  DateTime? _exitDebugCenterGuardSince;
-  double? _exitDebugCenterGuardHeldRadiusM;
-  double? _exitDebugCenterGuardHeldRadiusPx;
   double? _exitDebugLastNativePaintRadiusM;
   double? _exitDebugLastOutlineRadiusM;
   double? _exitDebugLastMaskRadiusM;
@@ -644,7 +642,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     return 'existing=${_assignExisting?.id} owner=${_assignVisualOwner.name} '
         'nativeHidden=$_assignNativeHidden '
         'overlay=$_showAssignOverlay nativeExisting=$_useNativeExistingAssignLayer '
-        'flutterVeil=$_assignFlutterLiveVeilActive '
+        'nativeVeil=$_assignNativeLiveVeilActive '
         'trigger=${_assignTriggerType.name} zone=${_assignZoneTrigger.name} '
         'active=$_assignActive r=${_assignRadius.round()}m '
         'px=${_radiusNotifier.value.toStringAsFixed(1)} '
@@ -672,10 +670,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       bearing: _is3D ? (_gpsFollow ? _lastBearing : _lastCameraBearing) : null,
       nativeDuration: const Duration(milliseconds: 450),
     );
-  }
-
-  void _markFlutterLiveVeilChanged() {
-    if (mounted) setState(() {});
   }
 
   Future<void> _jumpToUserPosition() async {
@@ -708,7 +702,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
 
     this._prepareVectorStyle(styleUrl);
     this._syncRadiusSource(alarmProv);
-    final liveExitVeilHoles = this._liveExitFlutterVeilHoles(alarmProv);
 
     return Stack(
       children: [
@@ -739,9 +732,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   _dragLogCounter = 0;
                   _radiusDragStartDistancePx = null;
                   _radiusDragStartRadiusM = null;
-                  _exitDebugCenterGuardSince = null;
-                  _exitDebugCenterGuardHeldRadiusM = null;
-                  _exitDebugCenterGuardHeldRadiusPx = null;
                   _lastOverlayMoveAt = DateTime.now();
                   if (geo != null) {
                     unawaited(
@@ -773,16 +763,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                     final nextRadius = (dist * mpp)
                         .clamp(100.0, 5000.0)
                         .toDouble();
-                    if (this._shouldHoldExitRadiusAtCenter(
-                      source: 'longpress',
-                      frame: _dragLogCounter,
-                      distPx: dist,
-                      candidateRadiusM: nextRadius,
-                      eventDtMs: deltaMs,
-                    )) {
-                      _radiusNotifier.value = this._currentRadiusPx;
-                      return;
-                    }
                     _assignRadius = nextRadius;
                   } else {
                     _assignTimeMinutes = (dist * 0.3).clamp(5.0, 120.0).round();
@@ -825,9 +805,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   _isDraggingRadius = false;
                   _radiusDragStartDistancePx = null;
                   _radiusDragStartRadiusM = null;
-                  _exitDebugCenterGuardSince = null;
-                  _exitDebugCenterGuardHeldRadiusM = null;
-                  _exitDebugCenterGuardHeldRadiusPx = null;
                   this._refreshAssignMarker();
                   unawaited(
                     this._flushAssignOverlaySync(
@@ -1088,9 +1065,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                       _radiusDragStartDistancePx = null;
                       _radiusDragStartRadiusM = null;
                     }
-                    _exitDebugCenterGuardSince = null;
-                    _exitDebugCenterGuardHeldRadiusM = null;
-                    _exitDebugCenterGuardHeldRadiusPx = null;
                     _lastOverlayMoveAt = DateTime.now();
                   }
                 },
@@ -1117,17 +1091,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                                 : dist * mpp)
                             .clamp(100.0, 5000.0)
                             .toDouble();
-                    if (this._shouldHoldExitRadiusAtCenter(
-                      source: 'overlay',
-                      frame: _dragLogCounter,
-                      distPx: dist,
-                      candidateRadiusM: nextRadius,
-                      pointer: e.pointer,
-                      eventDtMs: deltaMs,
-                    )) {
-                      _radiusNotifier.value = this._currentRadiusPx;
-                      return;
-                    }
                     _assignRadius = nextRadius;
                   } else {
                     _assignTimeMinutes = (dist * 0.3).clamp(5.0, 120.0).round();
@@ -1177,9 +1140,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                   _dragPointerId = null;
                   _radiusDragStartDistancePx = null;
                   _radiusDragStartRadiusM = null;
-                  _exitDebugCenterGuardSince = null;
-                  _exitDebugCenterGuardHeldRadiusM = null;
-                  _exitDebugCenterGuardHeldRadiusPx = null;
                   this._refreshAssignMarker();
                   unawaited(
                     this._flushAssignOverlaySync(
@@ -1191,18 +1151,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                 },
                 child: CustomPaint(
                   painter:
-                      _assignScreenCenter != null && liveExitVeilHoles != null
-                      ? _LiveExitVeilOverlayPainter(
-                          liveCenter: _assignScreenCenter!,
-                          liveRadiusNotifier: _radiusNotifier,
-                          staticHoles: liveExitVeilHoles,
-                        )
-                      : _assignScreenCenter != null &&
-                            (_assignFlutterPreviewActive ||
-                                !_useNativeAssignCircle) &&
-                            (_assignFlutterPreviewActive ||
-                                this._showAssignOverlay ||
-                                _closingAssignCircle)
+                      _assignScreenCenter != null &&
+                          (_assignFlutterPreviewActive ||
+                              !_useNativeAssignCircle) &&
+                          (_assignFlutterPreviewActive ||
+                              this._showAssignOverlay ||
+                              _closingAssignCircle)
                       ? _RadiusOverlayPainter(
                           center: _assignScreenCenter!,
                           radiusNotifier: _radiusNotifier,
