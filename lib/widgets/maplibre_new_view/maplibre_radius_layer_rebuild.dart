@@ -143,7 +143,11 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     ];
   }
 
-  bool _shouldHideLiveExitNativeCircle(_RadiusCircleData circle) => false;
+  bool _shouldHideLiveExitNativeCircle(_RadiusCircleData circle) {
+    return _assignExisting != null &&
+        this._usesLiveAssignVeilHole() &&
+        circle.id == _assignNativeAlarmLayerId;
+  }
 
   CircleStyleLayer _radiusCircleStyleLayer(
     _RadiusCircleData circle, {

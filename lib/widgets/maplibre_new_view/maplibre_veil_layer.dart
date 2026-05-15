@@ -129,7 +129,7 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
       _assignExitVeilOutlineFastSuppressed = false;
     }
 
-    const outlineOpacity = 0.0;
+    final outlineOpacity = active ? 1.0 : 0.0;
     if (_assignExitVeilOutlineActive == active &&
         (_assignExitVeilOutlineOpacity - outlineOpacity).abs() < 0.001) {
       return;
@@ -141,13 +141,13 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
       style,
       layerId: 'veil-outline',
       property: 'line-opacity',
-      value: 0.0,
+      value: outlineOpacity,
     );
     await this._setNativeLayerPaintProperty(
       style,
       layerId: 'veil-live-outline',
       property: 'line-opacity',
-      value: outlineOpacity,
+      value: 0.0,
     );
     final id = _assignNativeAlarmLayerId;
     if (id != null) {
@@ -155,12 +155,12 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
         style,
         layerId: 'radius-circle-$id',
         property: 'circle-stroke-opacity',
-        value: 1.0,
+        value: active ? 0.0 : 1.0,
       );
     }
     DebugConsole.log(
-      'EXIT_OUTLINE_MODE: active=$active liveOutline=$outlineOpacity '
-      'maskOutline=0.0 nativeStrokeHidden=false reason=$reason '
+      'EXIT_OUTLINE_MODE: active=$active liveOutline=0.0 '
+      'maskOutline=$outlineOpacity nativeStrokeHidden=$active reason=$reason '
       '${_assignDebugState()}',
     );
   }

@@ -219,7 +219,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
 
     final layerId = 'radius-circle-$id';
     const visibleOpacity = 1.0;
-    const strokeOpacity = 1.0;
+    final strokeOpacity = shouldSuppress ? 0.0 : 1.0;
     final circleVisible = await this._setNativeLayerPaintProperty(
       style,
       layerId: layerId,
