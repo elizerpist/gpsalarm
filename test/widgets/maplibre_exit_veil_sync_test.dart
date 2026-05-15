@@ -170,10 +170,32 @@ void main() {
       );
     });
 
-    test('keeps live exit annulus until native save render ack', () {
+    test('keeps live exit annulus until static save veil renders', () {
       final lifecycle = File(
         'lib/widgets/maplibre_new_view/maplibre_assign_lifecycle.dart',
       ).readAsStringSync();
+      final veilLayer = File(
+        'lib/widgets/maplibre_new_view/maplibre_veil_layer.dart',
+      ).readAsStringSync();
+
+      final revealStart = veilLayer.indexOf(
+        'Future<void> _revealStaticExitVeilBehindLiveAnnulus',
+      );
+      expect(revealStart, isNonNegative);
+      final revealEnd = veilLayer.indexOf(
+        'Future<void> _syncNativeLiveExitVeilMode',
+        revealStart < 0 ? 0 : revealStart,
+      );
+      expect(revealEnd, greaterThan(revealStart));
+      final revealMethod = veilLayer.substring(revealStart, revealEnd);
+      expect(revealMethod, contains("property: 'fill-opacity'"));
+      expect(revealMethod, contains('value: 0.15'));
+      expect(
+        revealMethod,
+        isNot(contains('veil-live-annulus-src')),
+        reason:
+            'The static fill reveal must not clear the live annulus in the same native render pass.',
+      );
 
       final prepareStart = lifecycle.indexOf(
         'Future<bool> _prepareLiveExitAssignVeilBeforeNativeRestore',
@@ -205,31 +227,71 @@ void main() {
       final inPlaceAck = lifecycle.indexOf(
         "_waitForNativeRenderAck(\n          reason: 'save-in-place-native-flush'",
       );
+      final inPlaceReveal = lifecycle.indexOf(
+        "_revealStaticExitVeilBehindLiveAnnulus(\n          liveStyle,\n          reason: 'save-in-place-veil-fill-ready'",
+      );
+      final inPlaceFillAck = lifecycle.indexOf(
+        "_waitForNativeRenderAck(\n          reason: 'save-in-place-veil-fill-ready'",
+      );
       final inPlaceClear = lifecycle.indexOf(
         "_clearLiveExitAssignVeilAfterNativeRestore(\n          'save-in-place-native-flush-post-native'",
       );
       expect(inPlaceAck, isNonNegative);
+      expect(inPlaceReveal, isNonNegative);
+      expect(inPlaceFillAck, isNonNegative);
       expect(inPlaceClear, isNonNegative);
       expect(
         inPlaceAck,
-        lessThan(inPlaceClear),
+        lessThan(inPlaceReveal),
         reason:
             'In-place saves must keep the live annulus visible until the native radius/source update has rendered.',
+      );
+      expect(
+        inPlaceReveal,
+        lessThan(inPlaceFillAck),
+        reason:
+            'The static fill must be requested before waiting for its own render pass.',
+      );
+      expect(
+        inPlaceFillAck,
+        lessThan(inPlaceClear),
+        reason:
+            'The live annulus must only be cleared after the static fill render pass is visible.',
       );
 
       final rebuildAck = lifecycle.indexOf(
         "_waitForNativeRenderAck(reason: 'save-native-flush')",
       );
+      final rebuildReveal = lifecycle.indexOf(
+        "_revealStaticExitVeilBehindLiveAnnulus(\n          liveStyle,\n          reason: 'save-veil-fill-ready'",
+      );
+      final rebuildFillAck = lifecycle.indexOf(
+        "_waitForNativeRenderAck(reason: 'save-veil-fill-ready')",
+      );
       final rebuildClear = lifecycle.indexOf(
         "_clearLiveExitAssignVeilAfterNativeRestore(\n          'save-native-flush-post-native'",
       );
       expect(rebuildAck, isNonNegative);
+      expect(rebuildReveal, isNonNegative);
+      expect(rebuildFillAck, isNonNegative);
       expect(rebuildClear, isNonNegative);
       expect(
         rebuildAck,
+        lessThan(rebuildReveal),
+        reason:
+            'New/rebuilt exit saves must keep the live annulus through the native save render.',
+      );
+      expect(
+        rebuildReveal,
+        lessThan(rebuildFillAck),
+        reason:
+            'New/rebuilt exit saves must reveal the static fill before waiting for that render pass.',
+      );
+      expect(
+        rebuildFillAck,
         lessThan(rebuildClear),
         reason:
-            'New/rebuilt exit saves must not disable the live annulus before the saved static veil has rendered.',
+            'New/rebuilt exit saves must not clear the live annulus until the static fill has rendered.',
       );
     });
 

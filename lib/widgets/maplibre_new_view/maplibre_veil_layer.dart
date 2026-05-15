@@ -91,6 +91,35 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     return _pointGeoJson(_assignLng, _assignLat);
   }
 
+  Future<void> _revealStaticExitVeilBehindLiveAnnulus(
+    StyleController style, {
+    required String reason,
+  }) async {
+    final fillUpdated = await this._setNativeLayerPaintProperty(
+      style,
+      layerId: 'veil-fill',
+      property: 'fill-opacity',
+      value: 0.15,
+    );
+    await this._setNativeLayerPaintProperty(
+      style,
+      layerId: 'veil-outline',
+      property: 'line-opacity',
+      value: 0.0,
+    );
+    await this._setNativeLayerPaintProperty(
+      style,
+      layerId: 'veil-live-outline',
+      property: 'line-opacity',
+      value: 0.0,
+    );
+    DebugConsole.log(
+      'EXIT_NATIVE_VEIL_STATIC_REVEAL: fillOpacity=0.15 '
+      'fillUpdated=$fillUpdated annulusActive=$_assignNativeLiveVeilActive '
+      'reason=$reason ${_assignDebugState()}',
+    );
+  }
+
   Future<void> _syncNativeLiveExitVeilMode(
     StyleController style, {
     required bool active,

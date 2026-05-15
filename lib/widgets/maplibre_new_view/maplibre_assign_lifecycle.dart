@@ -1410,6 +1410,13 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           reason: 'save-in-place-native-flush',
         );
         await nativeAck;
+        await this._revealStaticExitVeilBehindLiveAnnulus(
+          liveStyle,
+          reason: 'save-in-place-veil-fill-ready',
+        );
+        await this._waitForNativeRenderAck(
+          reason: 'save-in-place-veil-fill-ready',
+        );
         await this._clearLiveExitAssignVeilAfterNativeRestore(
           'save-in-place-native-flush-post-native',
         );
@@ -1495,6 +1502,11 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           );
         }
         await nativeAck;
+        await this._revealStaticExitVeilBehindLiveAnnulus(
+          liveStyle,
+          reason: 'save-veil-fill-ready',
+        );
+        await this._waitForNativeRenderAck(reason: 'save-veil-fill-ready');
         await this._clearLiveExitAssignVeilAfterNativeRestore(
           'save-native-flush-post-native',
         );
