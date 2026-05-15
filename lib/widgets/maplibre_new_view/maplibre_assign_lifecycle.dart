@@ -750,11 +750,21 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     } catch (_) {}
   }
 
-  Future<void> _clearLiveExitAssignVeilBeforeNativeRestore(String reason) {
-    if (!this._usesLiveAssignVeilHole()) {
-      return Future<void>.value();
+  Future<void> _clearLiveExitAssignVeilBeforeNativeRestore(
+    String reason,
+  ) async {
+    final needsFlush =
+        this._usesLiveAssignVeilHole() || _assignFlutterLiveVeilActive;
+    if (!needsFlush) return;
+    final style = _controller?.style;
+    if (style != null && _assignFlutterLiveVeilActive) {
+      await this._syncFlutterLiveExitVeilMode(
+        style,
+        active: false,
+        reason: reason,
+      );
     }
-    return this._flushVeilSync(
+    await this._flushVeilSync(
       ignoreAssign: true,
       fullQuality: true,
       reason: reason,
@@ -793,6 +803,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignCardSyncPending = false;
     if (!keepPreview) {
       _assignFlutterPreviewActive = false;
+      _assignFlutterLiveVeilActive = false;
       _assignPreviewCircleHidden = false;
       _assignPreviewVeilHidden = false;
       _assignPreviewLabelHidden = false;
@@ -841,6 +852,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           _closingAssignCircle = false;
           _closingAssignMarker = false;
           _assignFlutterPreviewActive = false;
+          _assignFlutterLiveVeilActive = false;
           _assignScreenCenter = null;
           _assignMarkerPng = null;
           _assignMarkerKey = null;
@@ -900,6 +912,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignCardSyncTimer = null;
     _assignCardSyncPending = false;
     _assignFlutterPreviewActive = false;
+    _assignFlutterLiveVeilActive = false;
     _assignPreviewCircleHidden = false;
     _assignPreviewVeilHidden = false;
     _assignPreviewLabelHidden = false;
@@ -1145,6 +1158,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
   }
 
   Future<void> _restoreNativeVeilOpacity(StyleController style) async {
+    _assignFlutterLiveVeilActive = false;
     await this._setNativeLayerPaintProperty(
       style,
       layerId: 'veil-fill',
@@ -1167,6 +1181,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       style,
       id: 'veil-live-outline-src',
       data: _emptyGeoJson,
+      reason: 'restore-native-veil',
     );
     _lastVeilOutlineGeoJson = _emptyGeoJson;
     _assignPreviewVeilHidden = false;

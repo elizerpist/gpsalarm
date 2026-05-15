@@ -51,7 +51,7 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
     }
     _radiusLayerReady = true;
     DebugConsole.log(
-      'VECTOR: radius layer system ready fix=single-native-outline-v9-sync-veil',
+      'VECTOR: radius layer system ready fix=single-native-outline-v10-flutter-exit-veil',
     );
   }
 

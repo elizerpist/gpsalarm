@@ -16,6 +16,18 @@ void main() {
         reason:
             'The exit veil mask must use MapLibre Android sync GeoJSON updates when available.',
       );
+      expect(
+        styleState,
+        contains('VEIL_SOURCE_UPDATE'),
+        reason:
+            'Exit veil debugging must show whether the sync or fallback source path was used.',
+      );
+      expect(
+        styleState,
+        contains('path=android-sync'),
+        reason:
+            'The source update log should make the Android sync path observable.',
+      );
 
       final syncCall = styleState.indexOf('_tryUpdateGeoJsonSourceSyncAndroid');
       final fallbackCall = styleState.indexOf('style.updateGeoJsonSource');
@@ -33,6 +45,67 @@ void main() {
         contains('for (var viewId = 63; viewId >= 0; viewId--)'),
         reason:
             'MapLibre keeps old maps in its registry, so the latest view id should be checked first.',
+      );
+    });
+
+    test(
+      'uses Flutter overlay for live exit veil while native radius stays live',
+      () {
+        final view = File(
+          'lib/widgets/maplibre_new_view.dart',
+        ).readAsStringSync();
+        final veilLayer = File(
+          'lib/widgets/maplibre_new_view/maplibre_veil_layer.dart',
+        ).readAsStringSync();
+        final painter = File(
+          'lib/widgets/maplibre_new_view/maplibre_overlay_painter.dart',
+        ).readAsStringSync();
+
+        expect(veilLayer, contains('_usesFlutterLiveExitVeil'));
+        expect(veilLayer, contains('_syncFlutterLiveExitVeilMode'));
+        expect(veilLayer, contains('EXIT_FLUTTER_VEIL_MODE'));
+        expect(
+          view,
+          contains('final liveExitVeilHoles ='),
+          reason:
+              'The build tree should feed live exit veil holes into the Flutter painter.',
+        );
+        expect(
+          view,
+          contains('_LiveExitVeilOverlayPainter'),
+          reason:
+              'Native circle mode needs a Flutter veil painter so fast swipes repaint on the UI frame.',
+        );
+        expect(painter, contains('class _LiveExitVeilOverlayPainter'));
+      },
+    );
+
+    test('bypasses GeoJSON veil writes during live exit radius drags', () {
+      final veilLayer = File(
+        'lib/widgets/maplibre_new_view/maplibre_veil_layer.dart',
+      ).readAsStringSync();
+
+      final start = veilLayer.indexOf(
+        'Future<void> _syncAssignVeilWithRadiusPaint',
+      );
+      final end = veilLayer.indexOf(
+        'Future<void> _syncAssignVeilWithOverlay',
+        start,
+      );
+      expect(start, isNonNegative);
+      expect(end, greaterThan(start));
+
+      final method = veilLayer.substring(start, end);
+      final flutterPath = method.indexOf('_syncFlutterLiveExitVeilMode');
+      final geoJsonPath = method.indexOf('_updateVeil');
+
+      expect(flutterPath, isNonNegative);
+      expect(geoJsonPath, isNonNegative);
+      expect(
+        flutterPath,
+        lessThan(geoJsonPath),
+        reason:
+            'Fast live exit radius changes must repaint the Flutter veil before any MapLibre GeoJSON fallback.',
       );
     });
 

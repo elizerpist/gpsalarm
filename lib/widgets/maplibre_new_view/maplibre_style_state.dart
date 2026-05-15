@@ -1,5 +1,12 @@
 part of '../maplibre_new_view.dart';
 
+typedef _GeoJsonSourceUpdateResult = ({
+  bool updated,
+  String path,
+  int? viewId,
+  Object? error,
+});
+
 extension _MaplibreStyleState on _MaplibreNewViewState {
   void _prepareVectorStyle(String styleUrl) {
     if (_activeStyleUrl == styleUrl) return;
@@ -16,6 +23,7 @@ extension _MaplibreStyleState on _MaplibreNewViewState {
     _assignExitVeilOutlineActive = false;
     _assignExitVeilOutlineFastSuppressed = false;
     _assignExitVeilOutlineOpacity = 0.0;
+    _assignFlutterLiveVeilActive = false;
     _radiusDebounce?.cancel();
     _veilSyncTimer?.cancel();
     _veilSyncTimer = null;
@@ -42,27 +50,87 @@ extension _MaplibreStyleState on _MaplibreNewViewState {
     StyleController style, {
     required String id,
     required String data,
+    String reason = 'direct',
   }) async {
     final isVeilSource = id == 'veil-src' || id == 'veil-live-outline-src';
-    if (isVeilSource &&
-        _tryUpdateGeoJsonSourceSyncAndroid(id: id, data: data)) {
-      return true;
+    final sw = Stopwatch()..start();
+    if (isVeilSource) {
+      final syncResult = _tryUpdateGeoJsonSourceSyncAndroid(id: id, data: data);
+      if (syncResult.updated) {
+        sw.stop();
+        _logGeoJsonSourceUpdate(
+          id: id,
+          dataLength: data.length,
+          reason: reason,
+          result: syncResult,
+          elapsedMs: sw.elapsedMilliseconds,
+        );
+        return true;
+      }
     }
 
+    late final _GeoJsonSourceUpdateResult result;
     try {
       await style.updateGeoJsonSource(id: id, data: data);
-      return true;
-    } catch (_) {
-      return false;
+      result = (
+        updated: true,
+        path: isVeilSource ? 'fallback-async' : 'maplibre-async',
+        viewId: null,
+        error: null,
+      );
+    } catch (error) {
+      result = (
+        updated: false,
+        path: isVeilSource ? 'fallback-error' : 'maplibre-error',
+        viewId: null,
+        error: error,
+      );
     }
+    sw.stop();
+    _logGeoJsonSourceUpdate(
+      id: id,
+      dataLength: data.length,
+      reason: reason,
+      result: result,
+      elapsedMs: sw.elapsedMilliseconds,
+    );
+    return result.updated;
   }
 
-  bool _tryUpdateGeoJsonSourceSyncAndroid({
+  void _logGeoJsonSourceUpdate({
+    required String id,
+    required int dataLength,
+    required String reason,
+    required _GeoJsonSourceUpdateResult result,
+    required int elapsedMs,
+  }) {
+    if (id != 'veil-src' && id != 'veil-live-outline-src') return;
+    final shouldLog = _isAssigning || elapsedMs > 4 || !result.updated;
+    if (!shouldLog) return;
+    final viewId = result.viewId?.toString() ?? 'n/a';
+    final error = result.error == null ? 'none' : result.error.runtimeType;
+    DebugConsole.log(
+      'VEIL_SOURCE_UPDATE: id=$id path=${result.path} '
+      'path=android-sync/${result.path.startsWith("android-sync")} '
+      'updated=${result.updated} viewId=$viewId bytes=$dataLength '
+      'ms=$elapsedMs reason=$reason error=$error ${_assignDebugState()}',
+    );
+  }
+
+  _GeoJsonSourceUpdateResult _syncMiss(String path) {
+    return (updated: false, path: path, viewId: null, error: null);
+  }
+
+  _GeoJsonSourceUpdateResult _syncHit(String path, int viewId) {
+    return (updated: true, path: path, viewId: viewId, error: null);
+  }
+
+  _GeoJsonSourceUpdateResult _tryUpdateGeoJsonSourceSyncAndroid({
     required String id,
     required String data,
   }) {
     if (foundation.defaultTargetPlatform != foundation.TargetPlatform.android) {
-      return false;
+      return _syncMiss('not-android');
     }
 
     final cachedViewId = _androidGeoJsonSyncViewId;
@@ -72,7 +140,7 @@ extension _MaplibreStyleState on _MaplibreNewViewState {
           id: id,
           data: data,
         )) {
-      return true;
+      return _syncHit('android-sync-cached', cachedViewId);
     }
 
     for (var viewId = 63; viewId >= 0; viewId--) {
@@ -83,12 +151,12 @@ extension _MaplibreStyleState on _MaplibreNewViewState {
         data: data,
       )) {
         _androidGeoJsonSyncViewId = viewId;
-        return true;
+        return _syncHit('android-sync-scan', viewId);
       }
     }
 
     _androidGeoJsonSyncViewId = null;
-    return false;
+    return _syncMiss('android-sync-miss');
   }
 
   bool _tryUpdateGeoJsonSourceSyncAndroidView({

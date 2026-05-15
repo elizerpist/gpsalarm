@@ -110,6 +110,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   bool _assignPreviewCircleHidden = false;
   bool _assignPreviewVeilHidden = false;
   bool _assignPreviewLabelHidden = false;
+  bool _assignFlutterLiveVeilActive = false;
   bool _assignExitVeilOutlineActive = false;
   bool _assignExitVeilOutlineFastSuppressed = false;
   double _assignExitVeilOutlineOpacity = -1.0;
@@ -643,6 +644,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     return 'existing=${_assignExisting?.id} owner=${_assignVisualOwner.name} '
         'nativeHidden=$_assignNativeHidden '
         'overlay=$_showAssignOverlay nativeExisting=$_useNativeExistingAssignLayer '
+        'flutterVeil=$_assignFlutterLiveVeilActive '
         'trigger=${_assignTriggerType.name} zone=${_assignZoneTrigger.name} '
         'active=$_assignActive r=${_assignRadius.round()}m '
         'px=${_radiusNotifier.value.toStringAsFixed(1)} '
@@ -670,6 +672,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       bearing: _is3D ? (_gpsFollow ? _lastBearing : _lastCameraBearing) : null,
       nativeDuration: const Duration(milliseconds: 450),
     );
+  }
+
+  void _markFlutterLiveVeilChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _jumpToUserPosition() async {
@@ -702,6 +708,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
 
     this._prepareVectorStyle(styleUrl);
     this._syncRadiusSource(alarmProv);
+    final liveExitVeilHoles = this._liveExitFlutterVeilHoles(alarmProv);
 
     return Stack(
       children: [
@@ -1184,12 +1191,18 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
                 },
                 child: CustomPaint(
                   painter:
-                      _assignScreenCenter != null &&
-                          (_assignFlutterPreviewActive ||
-                              !_useNativeAssignCircle) &&
-                          (_assignFlutterPreviewActive ||
-                              this._showAssignOverlay ||
-                              _closingAssignCircle)
+                      _assignScreenCenter != null && liveExitVeilHoles != null
+                      ? _LiveExitVeilOverlayPainter(
+                          liveCenter: _assignScreenCenter!,
+                          liveRadiusNotifier: _radiusNotifier,
+                          staticHoles: liveExitVeilHoles,
+                        )
+                      : _assignScreenCenter != null &&
+                            (_assignFlutterPreviewActive ||
+                                !_useNativeAssignCircle) &&
+                            (_assignFlutterPreviewActive ||
+                                this._showAssignOverlay ||
+                                _closingAssignCircle)
                       ? _RadiusOverlayPainter(
                           center: _assignScreenCenter!,
                           radiusNotifier: _radiusNotifier,

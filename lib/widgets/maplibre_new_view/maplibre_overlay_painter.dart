@@ -59,3 +59,51 @@ class _RadiusOverlayPainter extends CustomPainter {
   @override
   bool shouldRepaint(_RadiusOverlayPainter oldDelegate) => true;
 }
+
+class _LiveExitVeilOverlayPainter extends CustomPainter {
+  final Offset liveCenter;
+  final ValueNotifier<double> liveRadiusNotifier;
+  final List<({Offset center, double radiusPx})> staticHoles;
+  final double holePaddingPx = 2.5;
+
+  _LiveExitVeilOverlayPainter({
+    required this.liveCenter,
+    required this.liveRadiusNotifier,
+    required this.staticHoles,
+  }) : super(repaint: liveRadiusNotifier);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final veilPath = Path()
+      ..fillType = PathFillType.evenOdd
+      ..addRect(Offset.zero & size);
+    for (final hole in staticHoles) {
+      if (hole.radiusPx <= 0) continue;
+      veilPath.addOval(
+        Rect.fromCircle(
+          center: hole.center,
+          radius: hole.radiusPx + holePaddingPx,
+        ),
+      );
+    }
+
+    final liveRadiusPx = liveRadiusNotifier.value;
+    if (liveRadiusPx > 0) {
+      veilPath.addOval(
+        Rect.fromCircle(
+          center: liveCenter,
+          radius: liveRadiusPx + holePaddingPx,
+        ),
+      );
+    }
+
+    canvas.drawPath(veilPath, Paint()..color = const Color(0x26FF0000));
+  }
+
+  @override
+  bool shouldRepaint(_LiveExitVeilOverlayPainter oldDelegate) {
+    return liveCenter != oldDelegate.liveCenter ||
+        liveRadiusNotifier != oldDelegate.liveRadiusNotifier ||
+        staticHoles != oldDelegate.staticHoles;
+  }
+}
