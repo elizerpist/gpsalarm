@@ -5,7 +5,7 @@
 The best known exit-trigger live-drag state is:
 
 ```text
-ab3c87b Sync native circle before zone visual restore
+9075288 Use native circle for exit edit border
 ```
 
 This commit was pushed after:
@@ -20,7 +20,7 @@ The earlier useful baseline was:
 3d9d0aa Keep exit outline native during fast drags
 ```
 
-`3d9d0aa` was important because it moved the exit outline away from the Flutter fallback border and back onto the native/live MapLibre path. It still had fade-out. `40f78db` removed the fade-out and cleaned up save/restore. `aea0748` kept that behavior and addressed the remaining fast-drag ghost. `2b0fdfe` kept the same flow but made the live edit border full opacity. `ec41947` keeps the fast drag flow, but matches the live edit outline back to the saved native stroke strength after screenshots showed the edit border was too strong and visually thicker. `36f0f04` keeps the existing native circle layer present and suppresses only the native exit stroke, not the full circle opacity, so exit-to-enter switches do not fade the enter fill back in. `7041cd2` removes the attempted MapLibre transition paint properties because the Android plugin rejects nested transition maps during style initialization. `7cd7492` refreshes the native circle source once when entering live exit mode so a draft/edited enter circle cannot leave its native fill under the exit veil hole. `ab3c87b` applies the same source-first rule before restoring enter visuals, so exit-to-enter does not expose the native circle before `isLeave=false` has reached the circle source.
+`3d9d0aa` was important because it moved the exit outline away from the Flutter fallback border and back onto the native/live MapLibre path. It still had fade-out. `40f78db` removed the fade-out and cleaned up save/restore. `aea0748` kept that behavior and addressed the remaining fast-drag ghost. `2b0fdfe` kept the same flow but made the live edit border full opacity. `ec41947` keeps the fast drag flow, but matches the live edit outline back to the saved native stroke strength after screenshots showed the edit border was too strong and visually thicker. `36f0f04` keeps the existing native circle layer present and suppresses only the native exit stroke, not the full circle opacity, so exit-to-enter switches do not fade the enter fill back in. `7041cd2` removes the attempted MapLibre transition paint properties because the Android plugin rejects nested transition maps during style initialization. `7cd7492` refreshes the native circle source once when entering live exit mode so a draft/edited enter circle cannot leave its native fill under the exit veil hole. `ab3c87b` applies the same source-first rule before restoring enter visuals, so exit-to-enter does not expose the native circle before `isLeave=false` has reached the circle source. `9075288` makes exit edit use the same native `radius-circle-*` border as enter edit; the veil remains responsible only for the exit mask.
 
 ## User-Visible Target
 
@@ -37,12 +37,12 @@ The expected debug shape during drag is:
 ```text
 EXIT_INPUT_TRACE ... owner=nativeLive nativeHidden=false overlay=false nativeExisting=true trigger=distance zone=onLeave
 ASSIGN_SYNC_SKIP ... path=live-exit-immediate radiusOnly=true marker=false
-EXIT_NATIVE_TRACE ... updated=false nativeSkipped=true veil=true
+EXIT_NATIVE_TRACE ... updated=true nativeSkipped=false veil=true
 VEIL_MASK_SYNC ... reason=assign-radius:immediate:overlay#...
 VEIL_OUTLINE_SYNC ... reason=assign-radius:immediate:overlay#...
 ```
 
-`nativeSkipped=true` is intentional. The native radius circle must not be driven on every pointer frame in this path.
+`nativeSkipped=false` is intentional in the current path. The native radius circle border is the shared enter/exit edit circle; the veil still updates only the exit mask.
 
 ## Live Drag Data Flow
 
@@ -52,21 +52,20 @@ Fast exit radius drag follows this path:
 overlay pointer move
   -> _applyAssignRadiusPaint(debugReason: overlay#N)
   -> liveExitVeil == true
-  -> _syncLiveExitNativeCircleSuppression(...)
+  -> _setCircleLayerRadiusPaint(...) on radius-circle-*
+  -> _syncLiveExitNativeCircleSuppression(...) keeps native circle visible
   -> _syncAssignVeilWithRadiusPaint(...)
   -> _updateVeil(...)
   -> update veil-src mask
-  -> update veil-live-outline-src outline
-  -> keep scheduled radius-only native sync skipped
+  -> leave veil-live-outline hidden
+  -> keep scheduled radius-only source sync skipped
 ```
 
-The visible drag circle is owned by the veil path:
+The visible drag border is owned by the native circle path:
 
+- `radius-circle-*` is the single red circle border for enter and exit edit.
 - `veil-src` carries the red translucent mask with the live hole.
-- `veil-live-outline-src` carries the live red outline ring.
-- `veil-live-outline` is the only intended visible red border during fast drag.
-
-The persisted alarm circle layer may exist in the style graph, but it must not be visible while the live exit veil owns the drag visual.
+- `veil-live-outline-src` may still be updated by the veil machinery, but `veil-live-outline` stays at opacity 0 and is not the visible border.
 
 ## Why The Ghost Happened
 
@@ -81,25 +80,13 @@ The logs showed `nativeSkipped=true` during drag while `EXIT_NATIVE_CIRCLE_SUPPR
 
 ## Current Fix
 
-`aea0748` fixed the remaining ghost without changing the hot pointer data flow. `2b0fdfe` tried a full-opacity live edit outline, but screenshots showed that was stronger than the saved circle. `ec41947` is the border visual match point. `36f0f04` is the switch visual match point because it removes the enter fill fade. `7041cd2` is the initialization-safe state because it removes unsupported `*-transition` paint maps. `ab3c87b` is the current zone-switch visual state because it updates the native circle source before restoring whichever visual surface is becoming visible.
+`aea0748` fixed the remaining ghost without changing the hot pointer data flow. `2b0fdfe` tried a full-opacity live edit outline, but screenshots showed that was stronger than the saved circle. `ec41947` is the border visual match point. `36f0f04` is the switch visual match point because it removes the enter fill fade. `7041cd2` is the initialization-safe state because it removes unsupported `*-transition` paint maps. `9075288` is the current zone-switch visual state because it uses the native `radius-circle-*` as the only visible edit border for both enter and exit, while keeping the veil mask path unchanged.
 
-In `maplibre_radius_layer_rebuild.dart`, existing live exit edits hide the native circle at layer creation:
+In `maplibre_radius_layer_rebuild.dart`, existing live exit edits no longer hide the native circle at layer creation. Exit circles already have transparent native fill through the shared circle color expression, so their native stroke can stay visible without changing the veil mask.
 
-```dart
-final hideLiveExitNativeCircle =
-    _assignExisting != null &&
-    this._usesLiveAssignVeilHole() &&
-    circle.id == _assignNativeAlarmLayerId;
+In `maplibre_assign_lifecycle.dart`, `_applyAssignRadiusPaint` now calls `_setCircleLayerRadiusPaint(...)` before the exit-specific veil mask sync. This is the same native radius paint path used by enter edit, so exit edit no longer has a separate live border owner. Existing exit edit startup also keeps the native circle visible instead of hiding the stroke.
 
-if (hideLiveExitNativeCircle) 'circle-opacity': 0.0,
-if (hideLiveExitNativeCircle) 'circle-stroke-opacity': 0.0,
-```
-
-When the native circle is hidden at creation, `_assignExitNativeCircleSuppressed` is also set so later exit-to-enter restores do not early-return as if there were nothing to restore.
-
-In `maplibre_assign_lifecycle.dart`, `_hideExistingNativeAlarm` now hides only the existing native stroke with `circle-stroke-opacity: 0.0` instead of setting full `circle-opacity: 0.0` or immediately removing `radius-circle-alarm-N`. Exit circles already have transparent native fill, so hiding the full circle is unnecessary and causes the enter fill to fade in when switching from exit to enter.
-
-On non-radius-only zone switches, `_syncAssignNativeBaseCircle` updates the draft/existing native circle source before the newly visible surface is restored. On enter-to-exit this makes `isLeave=true` reach the circle expression before the veil takes ownership. On exit-to-enter this makes `isLeave=false` reach the circle expression before native stroke/fill visibility is restored. Radius-only drag still bypasses this pre-sync, preserving the hot paint-only path.
+In `maplibre_veil_layer.dart`, `_syncAssignExitVeilOutlineMode` keeps `veil-live-outline` at opacity 0 and keeps `radius-circle-*` stroke opacity at 1.0. This does not change the veil mask; it only stops the old live-outline border from competing with the native circle border.
 
 In `maplibre_radius_layer_init.dart`, the veil fill no longer draws an anti-aliased hole edge:
 
@@ -107,19 +94,9 @@ In `maplibre_radius_layer_init.dart`, the veil fill no longer draws an anti-alia
 'fill-antialias': false,
 ```
 
-The live edit outline matches the saved native stroke strength:
-
-```dart
-'line-color': 'rgba(255,0,0,0.6)',
-```
-
-```dart
-final outlineOpacity = active ? 1.0 : 0.0;
-```
-
 Do not add MapLibre `*-transition` paint maps here: the Android plugin rejected `{duration: 0, delay: 0}` with `Unsupported property type: _Map<String, int>` and prevented radius/veil layer initialization.
 
-This keeps the red border always visible through `veil-live-outline`, prevents a stale native circle or fill-edge border from doubling it, and makes the edit border visually consistent with the saved native radius circle.
+This keeps the red border always visible through `radius-circle-*`, prevents live-outline/native border duplication, and makes exit edit visually consistent with enter edit and saved native radius circles.
 
 ## Constraints For Future Changes
 
@@ -128,7 +105,8 @@ Do not reintroduce these into the live exit drag path:
 - Flutter fallback borders for the radius circle.
 - Opacity fade transitions on radius circle restore.
 - Per-frame forced native circle suppression writes.
-- Scheduled native radius-only sync during live exit drag.
-- Polygon radius rendering for the actual saved radius circle.
+- Scheduled full native source sync during live exit drag.
+- Visible `veil-live-outline` as the normal edit border.
+- Polygon radius rendering for the actual saved or edited radius circle.
 
-If this area needs another change, preserve the split between saved radius rendering and live exit drag rendering. Saved alarms can use native `CircleStyleLayer` radius expressions. Fast exit drag should keep the live veil mask and live outline path as the visual owner.
+If this area needs another change, preserve the single-circle rule: enter and exit edit borders use `radius-circle-*`; exit-specific behavior belongs to the veil mask only.
