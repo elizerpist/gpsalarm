@@ -94,12 +94,85 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
   Future<void> _handoffLiveExitVeilToStatic(
     StyleController style, {
     required String reason,
+    bool smooth = false,
   }) async {
     if (_assignNativeLiveVeilActive) {
       _assignNativeLiveVeilActive = false;
       _assignExitVeilOutlineRestoreTimer?.cancel();
       _assignExitVeilOutlineRestoreTimer = null;
       _assignExitVeilOutlineFastSuppressed = false;
+    }
+
+    if (smooth) {
+      final firstBlend = await Future.wait<bool>([
+        this._setNativeLayerPaintProperty(
+          style,
+          layerId: 'veil-fill',
+          property: 'fill-opacity',
+          value: 0.05,
+        ),
+        this._setNativeLayerPaintProperty(
+          style,
+          layerId: 'veil-outline',
+          property: 'line-opacity',
+          value: 0.0,
+        ),
+        this._setNativeLayerPaintProperty(
+          style,
+          layerId: 'veil-live-outline',
+          property: 'line-opacity',
+          value: 0.0,
+        ),
+        this._setNativeLayerPaintProperty(
+          style,
+          layerId: 'veil-live-annulus',
+          property: 'circle-stroke-opacity',
+          value: 0.10,
+        ),
+      ]);
+      DebugConsole.log(
+        'EXIT_NATIVE_VEIL_HANDOFF_STEP: fillOpacity=0.05 '
+        'fillUpdated=${firstBlend[0]} annulusOpacity=0.10 '
+        'annulusUpdated=${firstBlend[3]} reason=$reason-blend-1 '
+        '${_assignDebugState()}',
+      );
+      await this._waitForNativeRenderAck(reason: '$reason-blend-1');
+      if (!mounted) return;
+
+      final secondBlend = await Future.wait<bool>([
+        this._setNativeLayerPaintProperty(
+          style,
+          layerId: 'veil-fill',
+          property: 'fill-opacity',
+          value: 0.10,
+        ),
+        this._setNativeLayerPaintProperty(
+          style,
+          layerId: 'veil-outline',
+          property: 'line-opacity',
+          value: 0.0,
+        ),
+        this._setNativeLayerPaintProperty(
+          style,
+          layerId: 'veil-live-outline',
+          property: 'line-opacity',
+          value: 0.0,
+        ),
+        this._setNativeLayerPaintProperty(
+          style,
+          layerId: 'veil-live-annulus',
+          property: 'circle-stroke-opacity',
+          value: 0.05,
+        ),
+      ]);
+      DebugConsole.log(
+        'EXIT_NATIVE_VEIL_HANDOFF_STEP: fillOpacity=0.10 '
+        'fillUpdated=${secondBlend[0]} annulusOpacity=0.05 '
+        'annulusUpdated=${secondBlend[3]} reason=$reason-blend-2 '
+        '${_assignDebugState()}',
+      );
+      await this._waitForNativeRenderAck(reason: '$reason-blend-2');
+      if (!mounted) return;
     }
 
     final updates = await Future.wait<bool>([
@@ -195,7 +268,11 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
       _liveExitVeilHandoffTimer = null;
       unawaited(() async {
         if (!mounted || _isAssigning) return;
-        await this._handoffLiveExitVeilToStatic(style, reason: reason);
+        await this._handoffLiveExitVeilToStatic(
+          style,
+          reason: reason,
+          smooth: true,
+        );
         await this._waitForNativeRenderAck(reason: reason);
         if (!mounted || _isAssigning) return;
         await this._clearHiddenLiveExitVeilAfterStaticHandoff(

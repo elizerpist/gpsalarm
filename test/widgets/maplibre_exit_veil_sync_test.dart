@@ -301,6 +301,52 @@ void main() {
       );
     });
 
+    test(
+      'smooths delayed save veil handoff with native opacity blend frames',
+      () {
+        final veilLayer = File(
+          'lib/widgets/maplibre_new_view/maplibre_veil_layer.dart',
+        ).readAsStringSync();
+
+        final handoffStart = veilLayer.indexOf(
+          'Future<void> _handoffLiveExitVeilToStatic',
+        );
+        final handoffEnd = veilLayer.indexOf(
+          'Future<void> _clearHiddenLiveExitVeilAfterStaticHandoff',
+          handoffStart < 0 ? 0 : handoffStart,
+        );
+        expect(handoffStart, isNonNegative);
+        expect(handoffEnd, greaterThan(handoffStart));
+        final handoffMethod = veilLayer.substring(handoffStart, handoffEnd);
+
+        expect(handoffMethod, contains('bool smooth = false'));
+        expect(handoffMethod, contains('if (smooth)'));
+        expect(handoffMethod, contains('fillOpacity=0.05'));
+        expect(handoffMethod, contains('annulusOpacity=0.10'));
+        expect(handoffMethod, contains("reason: '\$reason-blend-1'"));
+        expect(handoffMethod, contains('fillOpacity=0.10'));
+        expect(handoffMethod, contains('annulusOpacity=0.05'));
+        expect(handoffMethod, contains("reason: '\$reason-blend-2'"));
+
+        final scheduleStart = veilLayer.indexOf(
+          'void _scheduleLiveExitVeilStaticHandoffAfterClose',
+        );
+        final scheduleEnd = veilLayer.indexOf(
+          'Future<void> _syncNativeLiveExitVeilMode',
+          scheduleStart < 0 ? 0 : scheduleStart,
+        );
+        expect(scheduleStart, isNonNegative);
+        expect(scheduleEnd, greaterThan(scheduleStart));
+        final scheduleMethod = veilLayer.substring(scheduleStart, scheduleEnd);
+        expect(
+          scheduleMethod,
+          contains('smooth: true'),
+          reason:
+              'Only the delayed save-close handoff should use blend frames; direct zone switches stay immediate.',
+        );
+      },
+    );
+
     test('keeps promoted draft marker visible until native pin settles', () {
       final lifecycle = File(
         'lib/widgets/maplibre_new_view/maplibre_assign_lifecycle.dart',
