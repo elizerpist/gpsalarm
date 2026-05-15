@@ -219,7 +219,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
 
     final layerId = 'radius-circle-$id';
     const visibleOpacity = 1.0;
-    final strokeOpacity = shouldSuppress ? 0.0 : 1.0;
+    const strokeOpacity = 1.0;
     final circleVisible = await this._setNativeLayerPaintProperty(
       style,
       layerId: layerId,
@@ -756,9 +756,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     } catch (_) {}
   }
 
-  Future<void> _clearLiveExitAssignVeilBeforeNativeRestore(
-    String reason,
-  ) {
+  Future<void> _clearLiveExitAssignVeilBeforeNativeRestore(String reason) {
     if (!this._usesLiveAssignVeilHole()) {
       return Future<void>.value();
     }
@@ -967,10 +965,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           _assignTriggerType == TriggerType.distance &&
           _assignZoneTrigger == ZoneTrigger.onLeave;
       if (liveExitExisting) {
-        await this._updateExistingNativeAssignLayer(
-          style,
-          alarmProv,
-        );
+        await this._updateExistingNativeAssignLayer(style, alarmProv);
         DebugConsole.log(
           'ASSIGN_START: keeping native exit circle during live edit',
         );

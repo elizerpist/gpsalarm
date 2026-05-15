@@ -129,7 +129,7 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
       _assignExitVeilOutlineFastSuppressed = false;
     }
 
-    final outlineOpacity = active ? 1.0 : 0.0;
+    const outlineOpacity = 0.0;
     if (_assignExitVeilOutlineActive == active &&
         (_assignExitVeilOutlineOpacity - outlineOpacity).abs() < 0.001) {
       return;
@@ -155,12 +155,12 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
         style,
         layerId: 'radius-circle-$id',
         property: 'circle-stroke-opacity',
-        value: active ? 0.0 : 1.0,
+        value: 1.0,
       );
     }
     DebugConsole.log(
       'EXIT_OUTLINE_MODE: active=$active liveOutline=0.0 '
-      'maskOutline=$outlineOpacity nativeStrokeHidden=$active reason=$reason '
+      'maskOutline=$outlineOpacity nativeStrokeHidden=false reason=$reason '
       '${_assignDebugState()}',
     );
   }
