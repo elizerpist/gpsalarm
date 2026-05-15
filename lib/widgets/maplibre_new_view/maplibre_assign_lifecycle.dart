@@ -1516,13 +1516,16 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
       if (promotedCircle != null && style != null) {
         this._scheduleCircleLayerRadiusExpressionRestore(style, promotedCircle);
       }
+      final keepPromotedMarker = promotedCircle != null;
       _beginClosingAssignVisual(
         keepCircle: false,
         keepPreview: false,
-        keepMarker: false,
+        keepMarker: keepPromotedMarker,
       );
       _finishClosingAssignCircle();
-      _scheduleAssignVisualClear(Duration.zero);
+      _scheduleAssignVisualClear(
+        keepPromotedMarker ? const Duration(milliseconds: 260) : Duration.zero,
+      );
     } finally {
       _suppressRadiusSync = false;
     }

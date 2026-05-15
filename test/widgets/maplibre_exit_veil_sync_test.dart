@@ -301,6 +301,48 @@ void main() {
       );
     });
 
+    test('keeps promoted draft marker visible until native pin settles', () {
+      final lifecycle = File(
+        'lib/widgets/maplibre_new_view/maplibre_assign_lifecycle.dart',
+      ).readAsStringSync();
+
+      final promotedMarker = lifecycle.indexOf(
+        'final keepPromotedMarker = promotedCircle != null;',
+      );
+      expect(
+        promotedMarker,
+        isNonNegative,
+        reason:
+            'New alarm saves promote a draft native circle, but the pin layer is created only during promotion. The Flutter draft pin must remain visible briefly after close.',
+      );
+
+      final closeStart = lifecycle.indexOf(
+        '_beginClosingAssignVisual(',
+        promotedMarker,
+      );
+      final closeEnd = lifecycle.indexOf(
+        '_scheduleAssignVisualClear(',
+        closeStart,
+      );
+      expect(closeStart, isNonNegative);
+      expect(closeEnd, greaterThan(closeStart));
+
+      final closeBlock = lifecycle.substring(closeStart, closeEnd);
+      expect(closeBlock, contains('keepMarker: keepPromotedMarker'));
+
+      final clearEnd = lifecycle.indexOf(');', closeEnd);
+      expect(clearEnd, greaterThan(closeEnd));
+      final clearCall = lifecycle.substring(closeEnd, clearEnd);
+      expect(clearCall, contains('keepPromotedMarker'));
+      expect(clearCall, contains('const Duration(milliseconds: 260)'));
+      expect(
+        clearCall,
+        contains('Duration.zero'),
+        reason:
+            'Existing alarm saves should keep the current immediate cleanup path; only draft promotion needs marker overlap.',
+      );
+    });
+
     test('updates native radius paint during live exit annulus drags', () {
       final lifecycle = File(
         'lib/widgets/maplibre_new_view/maplibre_assign_lifecycle.dart',
