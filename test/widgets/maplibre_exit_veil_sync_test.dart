@@ -170,7 +170,7 @@ void main() {
       );
     });
 
-    test('hands off live exit annulus to static veil without overlap', () {
+    test('defers live exit annulus handoff until after save close', () {
       final lifecycle = File(
         'lib/widgets/maplibre_new_view/maplibre_assign_lifecycle.dart',
       ).readAsStringSync();
@@ -183,6 +183,12 @@ void main() {
         isNot(contains('_revealStaticExitVeilBehindLiveAnnulus')),
         reason:
             'The save handoff must not keep a full static veil and the live annulus visible for a separate render pass.',
+      );
+      expect(
+        veilLayer,
+        contains('void _scheduleLiveExitVeilStaticHandoffAfterClose'),
+        reason:
+            'Save must schedule the native veil handoff after the assignment UI has closed instead of doing it in the save render path.',
       );
 
       final handoffStart = veilLayer.indexOf(
@@ -245,42 +251,54 @@ void main() {
       final inPlaceAck = lifecycle.indexOf(
         "_waitForNativeRenderAck(\n          reason: 'save-in-place-native-flush'",
       );
-      final inPlaceHandoff = lifecycle.indexOf(
-        "_handoffLiveExitVeilToStatic(\n          liveStyle,\n          reason: 'save-in-place-veil-handoff'",
-      );
-      final inPlaceHandoffAck = lifecycle.indexOf(
-        "_waitForNativeRenderAck(\n          reason: 'save-in-place-veil-handoff'",
-      );
-      final inPlaceClear = lifecycle.indexOf(
-        "_clearHiddenLiveExitVeilAfterStaticHandoff(\n          liveStyle,\n          reason: 'save-in-place-native-flush-post-native'",
+      final inPlaceSchedule = lifecycle.indexOf(
+        "reason: 'save-in-place-veil-handoff'",
+        inPlaceAck,
       );
       expect(inPlaceAck, isNonNegative);
-      expect(inPlaceHandoff, isNonNegative);
-      expect(inPlaceHandoffAck, isNonNegative);
-      expect(inPlaceClear, isNonNegative);
-      expect(inPlaceAck, lessThan(inPlaceHandoff));
-      expect(inPlaceHandoff, lessThan(inPlaceHandoffAck));
-      expect(inPlaceHandoffAck, lessThan(inPlaceClear));
+      expect(inPlaceSchedule, isNonNegative);
+      expect(inPlaceAck, lessThan(inPlaceSchedule));
+
+      final inPlaceCriticalPath = lifecycle.substring(
+        inPlaceAck,
+        inPlaceSchedule,
+      );
+      expect(
+        inPlaceCriticalPath,
+        isNot(contains('_handoffLiveExitVeilToStatic')),
+        reason:
+            'The native save flush window must not hide the live annulus or reveal static fill directly.',
+      );
+      expect(
+        inPlaceCriticalPath,
+        isNot(contains('_clearHiddenLiveExitVeilAfterStaticHandoff')),
+        reason:
+            'Clearing live annulus geometry in the save flush window can produce a visible empty frame.',
+      );
 
       final rebuildAck = lifecycle.indexOf(
         "_waitForNativeRenderAck(reason: 'save-native-flush')",
       );
-      final rebuildHandoff = lifecycle.indexOf(
-        "_handoffLiveExitVeilToStatic(\n          liveStyle,\n          reason: 'save-veil-handoff'",
-      );
-      final rebuildHandoffAck = lifecycle.indexOf(
-        "_waitForNativeRenderAck(reason: 'save-veil-handoff')",
-      );
-      final rebuildClear = lifecycle.indexOf(
-        "_clearHiddenLiveExitVeilAfterStaticHandoff(\n          liveStyle,\n          reason: 'save-native-flush-post-native'",
+      final rebuildSchedule = lifecycle.indexOf(
+        "reason: 'save-veil-handoff'",
+        rebuildAck,
       );
       expect(rebuildAck, isNonNegative);
-      expect(rebuildHandoff, isNonNegative);
-      expect(rebuildHandoffAck, isNonNegative);
-      expect(rebuildClear, isNonNegative);
-      expect(rebuildAck, lessThan(rebuildHandoff));
-      expect(rebuildHandoff, lessThan(rebuildHandoffAck));
-      expect(rebuildHandoffAck, lessThan(rebuildClear));
+      expect(rebuildSchedule, isNonNegative);
+      expect(rebuildAck, lessThan(rebuildSchedule));
+
+      final rebuildCriticalPath = lifecycle.substring(
+        rebuildAck,
+        rebuildSchedule,
+      );
+      expect(
+        rebuildCriticalPath,
+        isNot(contains('_handoffLiveExitVeilToStatic')),
+      );
+      expect(
+        rebuildCriticalPath,
+        isNot(contains('_clearHiddenLiveExitVeilAfterStaticHandoff')),
+      );
     });
 
     test('updates native radius paint during live exit annulus drags', () {

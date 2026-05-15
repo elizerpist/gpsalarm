@@ -1377,9 +1377,10 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           effectiveAlarm.id,
           circles: circles,
         );
-        await this._prepareLiveExitAssignVeilBeforeNativeRestore(
-          'save-in-place-pre-native',
-        );
+        final preparedLiveExitVeil = await this
+            ._prepareLiveExitAssignVeilBeforeNativeRestore(
+              'save-in-place-pre-native',
+            );
         if (circle != null) {
           await this._updateRadiusCircleSources(
             liveStyle,
@@ -1410,17 +1411,12 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           reason: 'save-in-place-native-flush',
         );
         await nativeAck;
-        await this._handoffLiveExitVeilToStatic(
-          liveStyle,
-          reason: 'save-in-place-veil-handoff',
-        );
-        await this._waitForNativeRenderAck(
-          reason: 'save-in-place-veil-handoff',
-        );
-        await this._clearHiddenLiveExitVeilAfterStaticHandoff(
-          liveStyle,
-          reason: 'save-in-place-native-flush-post-native',
-        );
+        if (preparedLiveExitVeil) {
+          this._scheduleLiveExitVeilStaticHandoffAfterClose(
+            liveStyle,
+            reason: 'save-in-place-veil-handoff',
+          );
+        }
         await this._completeFlutterPreviewNativeHandoff(
           style: liveStyle,
           keepPreview: keepPreview,
@@ -1458,9 +1454,10 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           excludeEditing: false,
         );
         _radiusLayerVersion++;
-        await this._prepareLiveExitAssignVeilBeforeNativeRestore(
-          'save-rebuild-pre-native',
-        );
+        final preparedLiveExitVeil = await this
+            ._prepareLiveExitAssignVeilBeforeNativeRestore(
+              'save-rebuild-pre-native',
+            );
         final singleCircle = !wasExisting
             ? this._circleForAlarmId(
                 alarmProv,
@@ -1503,15 +1500,12 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           );
         }
         await nativeAck;
-        await this._handoffLiveExitVeilToStatic(
-          liveStyle,
-          reason: 'save-veil-handoff',
-        );
-        await this._waitForNativeRenderAck(reason: 'save-veil-handoff');
-        await this._clearHiddenLiveExitVeilAfterStaticHandoff(
-          liveStyle,
-          reason: 'save-native-flush-post-native',
-        );
+        if (preparedLiveExitVeil) {
+          this._scheduleLiveExitVeilStaticHandoffAfterClose(
+            liveStyle,
+            reason: 'save-veil-handoff',
+          );
+        }
       }
       await this._completeFlutterPreviewNativeHandoff(
         style: style,

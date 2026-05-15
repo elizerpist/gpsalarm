@@ -185,6 +185,31 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     );
   }
 
+  void _scheduleLiveExitVeilStaticHandoffAfterClose(
+    StyleController style, {
+    required String reason,
+    Duration delay = const Duration(milliseconds: 220),
+  }) {
+    _liveExitVeilHandoffTimer?.cancel();
+    _liveExitVeilHandoffTimer = Timer(delay, () {
+      _liveExitVeilHandoffTimer = null;
+      unawaited(() async {
+        if (!mounted || _isAssigning) return;
+        await this._handoffLiveExitVeilToStatic(style, reason: reason);
+        await this._waitForNativeRenderAck(reason: reason);
+        if (!mounted || _isAssigning) return;
+        await this._clearHiddenLiveExitVeilAfterStaticHandoff(
+          style,
+          reason: '$reason-post-native',
+        );
+      }());
+    });
+    DebugConsole.log(
+      'EXIT_NATIVE_VEIL_HANDOFF_DEFER: reason=$reason '
+      'delayMs=${delay.inMilliseconds} ${_assignDebugState()}',
+    );
+  }
+
   Future<void> _syncNativeLiveExitVeilMode(
     StyleController style, {
     required bool active,
