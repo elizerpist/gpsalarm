@@ -49,7 +49,7 @@ void main() {
     });
 
     test(
-      'uses native annulus paint for live exit veil while stale radius circle is muted',
+      'uses native annulus paint for live exit veil while native radius circle stays live',
       () {
         final view = File(
           'lib/widgets/maplibre_new_view.dart',
@@ -195,7 +195,7 @@ void main() {
       );
     });
 
-    test('skips stale native circle radius paint during live exit annulus drags', () {
+    test('updates native radius paint during live exit annulus drags', () {
       final lifecycle = File(
         'lib/widgets/maplibre_new_view/maplibre_assign_lifecycle.dart',
       ).readAsStringSync();
@@ -211,22 +211,24 @@ void main() {
       expect(end, greaterThan(start));
 
       final method = lifecycle.substring(start, end);
+      final nativePaint = method.indexOf('_setCircleLayerRadiusPaint');
+      final veilPaint = method.indexOf('_syncAssignVeilWithRadiusPaint');
+
+      expect(nativePaint, isNonNegative);
+      expect(veilPaint, isNonNegative);
       expect(
-        method,
-        matches(
-          RegExp(
-            r'if \(liveExitVeil\) \{[\s\S]*?_syncAssignVeilWithRadiusPaint[\s\S]*?\} else \{[\s\S]*?_setCircleLayerRadiusPaint',
-          ),
-        ),
+        nativePaint,
+        lessThan(veilPaint),
         reason:
-            'Fast exit swipes should paint the annulus veil directly and keep the old radius circle out of the live path.',
+            'Fast exit swipes must move the native radius circle before syncing the annulus veil to the same radius.',
       );
       expect(
         method,
-        contains('nativeSkipped=\$liveExitVeil'),
+        contains('nativeSkipped=false'),
         reason:
-            'Exit debug logs must show that the native circle paint was intentionally skipped.',
+            'Exit debug logs should prove live drag samples update the native circle instead of skipping it.',
       );
+      expect(method, isNot(contains('nativeSkipped=\$liveExitVeil')));
     });
   });
 }

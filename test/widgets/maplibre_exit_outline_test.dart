@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('MapLibre exit trigger live outline', () {
-    test('hides the stale native radius circle while annulus veil is live', () {
+    test('keeps native radius circle live while annulus veil is live', () {
       final veilLayer = File(
         'lib/widgets/maplibre_new_view/maplibre_veil_layer.dart',
       ).readAsStringSync();
@@ -22,15 +22,15 @@ void main() {
       );
       expect(
         veilLayer,
-        contains('final nativeCircleOpacity = active ? 0.0 : 1.0;'),
+        contains('const nativeCircleOpacity = 1.0;'),
         reason:
-            'When the native annulus draws the live exit veil, the old radius circle must be hidden so it cannot trail fast swipes.',
+            'The live native radius circle must stay visible during exit drags so it can move with the veil.',
       );
       expect(
         assignLifecycle,
-        contains('final opacity = shouldSuppress ? 0.0 : 1.0;'),
+        contains('const visibleOpacity = 1.0;'),
         reason:
-            'Live exit suppression must actually hide the stale native circle instead of just marking it suppressed.',
+            'Live exit suppression should keep the active native radius circle visible; ghost prevention belongs to stale paths.',
       );
       expect(
         radiusRebuild,
@@ -40,7 +40,7 @@ void main() {
           ),
         ),
         reason:
-            'Static circles can stay normal; live annulus mode handles the temporary hide explicitly.',
+            'Static circles can stay normal; live annulus mode must not reintroduce a separate hidden rebuild path.',
       );
     });
   });

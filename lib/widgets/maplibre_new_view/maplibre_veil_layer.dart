@@ -162,7 +162,7 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
         if (updated) _nativeLiveExitVeilSourceKey = sourceKey;
       }
     }
-    final nativeCircleOpacity = active ? 0.0 : 1.0;
+    const nativeCircleOpacity = 1.0;
     final id = _assignNativeAlarmLayerId;
     if (id != null) {
       await _setNativeLayerPaintProperty(

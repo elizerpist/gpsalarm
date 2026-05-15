@@ -151,23 +151,25 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     if (shouldSuppress && !force && _assignExitNativeCircleSuppressed) return;
 
     final layerId = 'radius-circle-$id';
-    final opacity = shouldSuppress ? 0.0 : 1.0;
+    const visibleOpacity = 1.0;
+    const strokeOpacity = 1.0;
     final circleUpdated = await this._setNativeLayerPaintProperty(
       style,
       layerId: layerId,
       property: 'circle-opacity',
-      value: opacity,
+      value: visibleOpacity,
     );
     final strokeUpdated = await this._setNativeLayerPaintProperty(
       style,
       layerId: layerId,
       property: 'circle-stroke-opacity',
-      value: opacity,
+      value: strokeOpacity,
     );
     _assignExitNativeCircleSuppressed = shouldSuppress;
     DebugConsole.log(
       'EXIT_NATIVE_CIRCLE_SUPPRESS: active=$shouldSuppress reason=$reason '
-      'layer=$layerId opacity=$opacity circle=$circleUpdated stroke=$strokeUpdated '
+      'layer=$layerId circleOpacity=$visibleOpacity '
+      'strokeOpacity=$strokeOpacity circle=$circleUpdated stroke=$strokeUpdated '
       '${_assignDebugState()}',
     );
   }
@@ -219,35 +221,27 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     final sw = Stopwatch()..start();
     final radiusPx = this._radiusPxForCircle(circle);
     final liveExitVeil = circle.isLeave && this._usesLiveAssignVeilHole();
-    var updated = false;
-    var syncsLiveExitVeil = false;
     if (liveExitVeil) {
       await this._syncLiveExitNativeCircleSuppression(
         style,
         reason: 'immediate:$debugReason',
       );
+    }
+    final updated = await this._setCircleLayerRadiusPaint(
+      style,
+      layerId: 'radius-circle-${circle.id}',
+      visualId: circle.id,
+      radiusPx: radiusPx,
+      debugReason: 'immediate:$debugReason',
+    );
+    final syncsLiveExitVeil =
+        liveExitVeil || (updated && this._usesLiveAssignVeilHole());
+    if (syncsLiveExitVeil) {
       await this._syncAssignVeilWithRadiusPaint(
         style: style,
         alarmProv: alarmProv,
         debugReason: debugReason,
       );
-      syncsLiveExitVeil = true;
-    } else {
-      updated = await this._setCircleLayerRadiusPaint(
-        style,
-        layerId: 'radius-circle-${circle.id}',
-        visualId: circle.id,
-        radiusPx: radiusPx,
-        debugReason: 'immediate:$debugReason',
-      );
-      syncsLiveExitVeil = updated && this._usesLiveAssignVeilHole();
-      if (syncsLiveExitVeil) {
-        await this._syncAssignVeilWithRadiusPaint(
-          style: style,
-          alarmProv: alarmProv,
-          debugReason: debugReason,
-        );
-      }
     }
     sw.stop();
     if (circle.isLeave && _assignTriggerType == TriggerType.distance) {
@@ -261,11 +255,11 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         reason: debugReason,
         elapsedMs: sw.elapsedMilliseconds,
         radiusDeltaM: nativeDelta,
-        force: !updated && !liveExitVeil,
+        force: !updated,
       )) {
         DebugConsole.log(
           'EXIT_NATIVE_TRACE: nSeq=$nativeSeq reason=$debugReason '
-          'updated=$updated nativeSkipped=$liveExitVeil veil=$syncsLiveExitVeil '
+          'updated=$updated nativeSkipped=false veil=$syncsLiveExitVeil '
           'r=${circle.radiusMeters.round()}m px=${radiusPx.toStringAsFixed(1)} '
           'dNative=${_exitDebugDelta(previousNativeRadius, circle.radiusMeters)} '
           'inputSeq=$_exitDebugInputSeq '
@@ -283,10 +277,10 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     if (circle.isLeave &&
         (this._shouldLogAssignDebugReason(debugReason) ||
             sw.elapsedMilliseconds > 8 ||
-            (!updated && !liveExitVeil))) {
+            !updated)) {
       DebugConsole.log(
         'ASSIGN_RADIUS_IMMEDIATE: reason=$debugReason updated=$updated '
-        'nativeSkipped=$liveExitVeil veil=$syncsLiveExitVeil id=${circle.id} '
+        'nativeSkipped=false veil=$syncsLiveExitVeil id=${circle.id} '
         'r=${circle.radiusMeters.round()}m px=${radiusPx.toStringAsFixed(1)} '
         'ms=${sw.elapsedMilliseconds} nativePaint=$_nativeCircleRadiusPaintAvailable '
         '${_assignDebugState()}',
