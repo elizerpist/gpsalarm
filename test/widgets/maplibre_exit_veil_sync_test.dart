@@ -170,28 +170,29 @@ void main() {
       );
     });
 
-    test('clears live exit veil mode before save rebuild flushes static veil', () {
+    test('flushes static veil before disabling live exit annulus on save', () {
       final lifecycle = File(
         'lib/widgets/maplibre_new_view/maplibre_assign_lifecycle.dart',
       ).readAsStringSync();
-      final saveRebuild = lifecycle.indexOf("reason: 'save-rebuild'");
-      final clearBeforeSaveRebuild = lifecycle.lastIndexOf(
-        "_clearLiveExitAssignVeilBeforeNativeRestore(\n          'save-rebuild-pre-native'",
-        saveRebuild,
-      );
 
-      expect(saveRebuild, isNonNegative);
-      expect(
-        clearBeforeSaveRebuild,
-        isNonNegative,
-        reason:
-            'Saving a new exit alarm must restore native veil visibility before writing the static save-rebuild veil.',
+      final start = lifecycle.indexOf(
+        'Future<void> _clearLiveExitAssignVeilBeforeNativeRestore',
       );
+      final end = lifecycle.indexOf('void _beginClosingAssignVisual', start);
+      expect(start, isNonNegative);
+      expect(end, greaterThan(start));
+
+      final method = lifecycle.substring(start, end);
+      final staticFlush = method.indexOf('_flushVeilSync');
+      final liveModeOff = method.indexOf('_syncNativeLiveExitVeilMode');
+
+      expect(staticFlush, isNonNegative);
+      expect(liveModeOff, isNonNegative);
       expect(
-        clearBeforeSaveRebuild,
-        lessThan(saveRebuild),
+        staticFlush,
+        lessThan(liveModeOff),
         reason:
-            'The live veil mode must be cleared before the static GeoJSON veil is flushed on save.',
+            'Saving an exit alarm must prepare the static veil source while the live annulus still covers the map, then reveal the static fill to avoid a save-time flash.',
       );
     });
 

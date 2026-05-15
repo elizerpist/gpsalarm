@@ -697,6 +697,11 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     );
     if (!needsFlush) return;
     final style = _controller?.style;
+    await this._flushVeilSync(
+      ignoreAssign: true,
+      fullQuality: true,
+      reason: reason,
+    );
     if (style != null && activeBefore) {
       await this._syncNativeLiveExitVeilMode(
         style,
@@ -704,11 +709,6 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         reason: reason,
       );
     }
-    await this._flushVeilSync(
-      ignoreAssign: true,
-      fullQuality: true,
-      reason: reason,
-    );
     DebugConsole.log(
       'EXIT_NATIVE_VEIL_CLEAR: stage=done reason=$reason '
       'nativeActive=$_assignNativeLiveVeilActive ${_assignDebugState()}',
