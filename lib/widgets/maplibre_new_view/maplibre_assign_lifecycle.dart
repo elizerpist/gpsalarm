@@ -219,15 +219,13 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
 
     final layerId = 'radius-circle-$id';
     const visibleOpacity = 1.0;
-    final strokeOpacity = shouldSuppress ? 0.0 : visibleOpacity;
-    final circleVisible = shouldSuppress
-        ? true
-        : await this._setNativeLayerPaintProperty(
-            style,
-            layerId: layerId,
-            property: 'circle-opacity',
-            value: visibleOpacity,
-          );
+    const strokeOpacity = 1.0;
+    final circleVisible = await this._setNativeLayerPaintProperty(
+      style,
+      layerId: layerId,
+      property: 'circle-opacity',
+      value: visibleOpacity,
+    );
     final strokeHidden = await this._setNativeLayerPaintProperty(
       style,
       layerId: layerId,
@@ -289,7 +287,13 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     final sw = Stopwatch()..start();
     final radiusPx = this._radiusPxForCircle(circle);
     final liveExitVeil = circle.isLeave && this._usesLiveAssignVeilHole();
-    var updated = false;
+    final updated = await this._setCircleLayerRadiusPaint(
+      style,
+      layerId: 'radius-circle-${circle.id}',
+      visualId: circle.id,
+      radiusPx: radiusPx,
+      debugReason: 'immediate:$debugReason',
+    );
     if (liveExitVeil) {
       await this._syncLiveExitNativeCircleSuppression(
         style,
@@ -299,14 +303,6 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         style: style,
         alarmProv: alarmProv,
         debugReason: debugReason,
-      );
-    } else {
-      updated = await this._setCircleLayerRadiusPaint(
-        style,
-        layerId: 'radius-circle-${circle.id}',
-        visualId: circle.id,
-        radiusPx: radiusPx,
-        debugReason: 'immediate:$debugReason',
       );
     }
     final syncsLiveExitVeil =
@@ -330,11 +326,11 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         reason: debugReason,
         elapsedMs: sw.elapsedMilliseconds,
         radiusDeltaM: nativeDelta,
-        force: !updated && !liveExitVeil,
+        force: !updated,
       )) {
         DebugConsole.log(
           'EXIT_NATIVE_TRACE: nSeq=$nativeSeq reason=$debugReason '
-          'updated=$updated nativeSkipped=$liveExitVeil veil=$syncsLiveExitVeil '
+          'updated=$updated nativeSkipped=false veil=$syncsLiveExitVeil '
           'r=${circle.radiusMeters.round()}m px=${radiusPx.toStringAsFixed(1)} '
           'dNative=${_exitDebugDelta(previousNativeRadius, circle.radiusMeters)} '
           'inputSeq=$_exitDebugInputSeq '
@@ -355,7 +351,7 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
             (!updated && !liveExitVeil))) {
       DebugConsole.log(
         'ASSIGN_RADIUS_IMMEDIATE: reason=$debugReason updated=$updated '
-        'nativeSkipped=$liveExitVeil veil=$syncsLiveExitVeil id=${circle.id} '
+        'nativeSkipped=false veil=$syncsLiveExitVeil id=${circle.id} '
         'r=${circle.radiusMeters.round()}m px=${radiusPx.toStringAsFixed(1)} '
         'ms=${sw.elapsedMilliseconds} nativePaint=$_nativeCircleRadiusPaintAvailable '
         '${_assignDebugState()}',
@@ -970,9 +966,12 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           _assignTriggerType == TriggerType.distance &&
           _assignZoneTrigger == ZoneTrigger.onLeave;
       if (liveExitExisting) {
-        await this._hideExistingNativeAlarm(existing);
+        await this._updateExistingNativeAssignLayer(
+          style,
+          alarmProv,
+        );
         DebugConsole.log(
-          'ASSIGN_START: hid native exit stroke for live edit',
+          'ASSIGN_START: keeping native exit circle during live edit',
         );
         await this._flushVeilSync(
           fullQuality: true,
