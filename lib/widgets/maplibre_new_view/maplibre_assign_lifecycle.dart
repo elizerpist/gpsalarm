@@ -287,14 +287,8 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     final sw = Stopwatch()..start();
     final radiusPx = this._radiusPxForCircle(circle);
     final liveExitVeil = circle.isLeave && this._usesLiveAssignVeilHole();
-    final updated = await this._setCircleLayerRadiusPaint(
-      style,
-      layerId: 'radius-circle-${circle.id}',
-      visualId: circle.id,
-      radiusPx: radiusPx,
-      debugReason: 'immediate:$debugReason',
-    );
     if (liveExitVeil) {
+      // Keep the inverse fill from lagging behind the shared native border.
       await this._syncLiveExitNativeCircleSuppression(
         style,
         reason: 'immediate:$debugReason',
@@ -305,6 +299,13 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         debugReason: debugReason,
       );
     }
+    final updated = await this._setCircleLayerRadiusPaint(
+      style,
+      layerId: 'radius-circle-${circle.id}',
+      visualId: circle.id,
+      radiusPx: radiusPx,
+      debugReason: 'immediate:$debugReason',
+    );
     final syncsLiveExitVeil =
         liveExitVeil || updated && this._usesLiveAssignVeilHole();
     if (!liveExitVeil && syncsLiveExitVeil) {
