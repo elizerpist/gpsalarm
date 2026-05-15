@@ -192,7 +192,10 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
       _nativeLiveExitVeilOuterRadiusPx(),
     );
     final strokeWidthPx = outerPx - innerPx;
-    final annulusRadiusPx = innerPx + strokeWidthPx / 2.0;
+    // Android MapLibre expands circle stroke outward from circle-radius.
+    final annulusRadiusPx = innerPx;
+    final innerEdgePx = annulusRadiusPx;
+    final outerEdgePx = annulusRadiusPx + strokeWidthPx;
     final radiusUpdated = await this._setNativeLayerPaintProperty(
       style,
       layerId: 'veil-live-annulus',
@@ -227,7 +230,10 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
       DebugConsole.log(
         'EXIT_NATIVE_VEIL_PAINT: mSeq=$maskSeq reason=$reason '
         'r=${circle.radiusMeters.round()}m innerPx=${innerPx.toStringAsFixed(1)} '
-        'outerPx=${outerPx.toStringAsFixed(1)} annulusPx=${annulusRadiusPx.toStringAsFixed(1)} '
+        'outerPx=${outerPx.toStringAsFixed(1)} '
+        'innerEdgePx=${innerEdgePx.toStringAsFixed(1)} '
+        'outerEdgePx=${outerEdgePx.toStringAsFixed(1)} '
+        'circleRadiusPx=${annulusRadiusPx.toStringAsFixed(1)} '
         'strokePx=${strokeWidthPx.toStringAsFixed(1)} '
         'radiusUpdated=$radiusUpdated strokeUpdated=$strokeUpdated opacityUpdated=$opacityUpdated '
         'dMask=${_exitDebugDelta(previousMaskRadius, circle.radiusMeters)} '

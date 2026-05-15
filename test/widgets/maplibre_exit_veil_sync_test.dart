@@ -81,6 +81,38 @@ void main() {
       },
     );
 
+    test('aligns native annulus inner edge with live radius paint', () {
+      final veilLayer = File(
+        'lib/widgets/maplibre_new_view/maplibre_veil_layer.dart',
+      ).readAsStringSync();
+
+      final start = veilLayer.indexOf(
+        'Future<void> _setNativeLiveExitVeilRadiusPaint',
+      );
+      final end = veilLayer.indexOf(
+        'Future<void> _syncAssignVeilWithRadiusPaint',
+        start,
+      );
+      expect(start, isNonNegative);
+      expect(end, greaterThan(start));
+
+      final method = veilLayer.substring(start, end);
+      expect(
+        method,
+        contains('final annulusRadiusPx = innerPx;'),
+        reason:
+            'Android MapLibre draws circle stroke outward, so circle-radius must be the desired inner edge.',
+      );
+      expect(
+        method,
+        isNot(contains('innerPx + strokeWidthPx / 2.0')),
+        reason:
+            'Centering the stroke makes the transparent inner hole much larger than the native radius circle.',
+      );
+      expect(method, contains('innerEdgePx='));
+      expect(method, contains('outerEdgePx='));
+    });
+
     test('bypasses GeoJSON veil writes during live exit radius drags', () {
       final veilLayer = File(
         'lib/widgets/maplibre_new_view/maplibre_veil_layer.dart',
