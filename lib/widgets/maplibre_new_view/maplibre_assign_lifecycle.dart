@@ -1410,15 +1410,16 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           reason: 'save-in-place-native-flush',
         );
         await nativeAck;
-        await this._revealStaticExitVeilBehindLiveAnnulus(
+        await this._handoffLiveExitVeilToStatic(
           liveStyle,
-          reason: 'save-in-place-veil-fill-ready',
+          reason: 'save-in-place-veil-handoff',
         );
         await this._waitForNativeRenderAck(
-          reason: 'save-in-place-veil-fill-ready',
+          reason: 'save-in-place-veil-handoff',
         );
-        await this._clearLiveExitAssignVeilAfterNativeRestore(
-          'save-in-place-native-flush-post-native',
+        await this._clearHiddenLiveExitVeilAfterStaticHandoff(
+          liveStyle,
+          reason: 'save-in-place-native-flush-post-native',
         );
         await this._completeFlutterPreviewNativeHandoff(
           style: liveStyle,
@@ -1502,13 +1503,14 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           );
         }
         await nativeAck;
-        await this._revealStaticExitVeilBehindLiveAnnulus(
+        await this._handoffLiveExitVeilToStatic(
           liveStyle,
-          reason: 'save-veil-fill-ready',
+          reason: 'save-veil-handoff',
         );
-        await this._waitForNativeRenderAck(reason: 'save-veil-fill-ready');
-        await this._clearLiveExitAssignVeilAfterNativeRestore(
-          'save-native-flush-post-native',
+        await this._waitForNativeRenderAck(reason: 'save-veil-handoff');
+        await this._clearHiddenLiveExitVeilAfterStaticHandoff(
+          liveStyle,
+          reason: 'save-native-flush-post-native',
         );
       }
       await this._completeFlutterPreviewNativeHandoff(

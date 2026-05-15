@@ -91,31 +91,96 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     return _pointGeoJson(_assignLng, _assignLat);
   }
 
-  Future<void> _revealStaticExitVeilBehindLiveAnnulus(
+  Future<void> _handoffLiveExitVeilToStatic(
     StyleController style, {
     required String reason,
   }) async {
-    final fillUpdated = await this._setNativeLayerPaintProperty(
-      style,
-      layerId: 'veil-fill',
-      property: 'fill-opacity',
-      value: 0.15,
+    if (_assignNativeLiveVeilActive) {
+      _assignNativeLiveVeilActive = false;
+      _assignExitVeilOutlineRestoreTimer?.cancel();
+      _assignExitVeilOutlineRestoreTimer = null;
+      _assignExitVeilOutlineFastSuppressed = false;
+    }
+
+    final updates = await Future.wait<bool>([
+      this._setNativeLayerPaintProperty(
+        style,
+        layerId: 'veil-fill',
+        property: 'fill-opacity',
+        value: 0.15,
+      ),
+      this._setNativeLayerPaintProperty(
+        style,
+        layerId: 'veil-outline',
+        property: 'line-opacity',
+        value: 0.0,
+      ),
+      this._setNativeLayerPaintProperty(
+        style,
+        layerId: 'veil-live-outline',
+        property: 'line-opacity',
+        value: 0.0,
+      ),
+      this._setNativeLayerPaintProperty(
+        style,
+        layerId: 'veil-live-annulus',
+        property: 'circle-stroke-opacity',
+        value: 0.0,
+      ),
+    ]);
+
+    const nativeCircleOpacity = 1.0;
+    final id = _assignNativeAlarmLayerId;
+    if (id != null) {
+      await _setNativeLayerPaintProperty(
+        style,
+        layerId: 'radius-circle-$id',
+        property: 'circle-opacity',
+        value: nativeCircleOpacity,
+      );
+      await _setNativeLayerPaintProperty(
+        style,
+        layerId: 'radius-circle-$id',
+        property: 'circle-stroke-opacity',
+        value: nativeCircleOpacity,
+      );
+    }
+    _assignExitVeilOutlineActive = false;
+    _assignExitVeilOutlineOpacity = 0.0;
+    DebugConsole.log(
+      'EXIT_NATIVE_VEIL_HANDOFF: fillOpacity=0.15 '
+      'fillUpdated=${updates[0]} annulusOpacity=0.0 '
+      'annulusUpdated=${updates[3]} nativeCircleOpacity=$nativeCircleOpacity '
+      'reason=$reason ${_assignDebugState()}',
     );
-    await this._setNativeLayerPaintProperty(
+  }
+
+  Future<void> _clearHiddenLiveExitVeilAfterStaticHandoff(
+    StyleController style, {
+    required String reason,
+  }) async {
+    _nativeLiveExitVeilSourceKey = null;
+    final radiusCleared = await this._setNativeLayerPaintProperty(
       style,
-      layerId: 'veil-outline',
-      property: 'line-opacity',
+      layerId: 'veil-live-annulus',
+      property: 'circle-radius',
       value: 0.0,
     );
-    await this._setNativeLayerPaintProperty(
+    final strokeCleared = await this._setNativeLayerPaintProperty(
       style,
-      layerId: 'veil-live-outline',
-      property: 'line-opacity',
+      layerId: 'veil-live-annulus',
+      property: 'circle-stroke-width',
       value: 0.0,
+    );
+    final sourceCleared = await this._tryUpdateGeoJsonSource(
+      style,
+      id: 'veil-live-annulus-src',
+      data: _emptyGeoJson,
+      reason: 'native-live-exit-off:$reason',
     );
     DebugConsole.log(
-      'EXIT_NATIVE_VEIL_STATIC_REVEAL: fillOpacity=0.15 '
-      'fillUpdated=$fillUpdated annulusActive=$_assignNativeLiveVeilActive '
+      'EXIT_NATIVE_VEIL_HIDDEN_CLEAR: radiusCleared=$radiusCleared '
+      'strokeCleared=$strokeCleared sourceCleared=$sourceCleared '
       'reason=$reason ${_assignDebugState()}',
     );
   }
@@ -125,21 +190,24 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
     required bool active,
     required String reason,
   }) async {
-    if (_assignNativeLiveVeilActive == active) return;
-    _assignNativeLiveVeilActive = active;
     if (!active) {
-      _assignExitVeilOutlineRestoreTimer?.cancel();
-      _assignExitVeilOutlineRestoreTimer = null;
-      _assignExitVeilOutlineFastSuppressed = false;
-      _nativeLiveExitVeilSourceKey = null;
+      if (!_assignNativeLiveVeilActive) return;
+      await this._handoffLiveExitVeilToStatic(style, reason: reason);
+      await this._clearHiddenLiveExitVeilAfterStaticHandoff(
+        style,
+        reason: reason,
+      );
+      return;
     }
 
-    final fillOpacity = active ? 0.0 : 0.15;
+    if (_assignNativeLiveVeilActive) return;
+    _assignNativeLiveVeilActive = true;
+
     final fillUpdated = await this._setNativeLayerPaintProperty(
       style,
       layerId: 'veil-fill',
       property: 'fill-opacity',
-      value: fillOpacity,
+      value: 0.0,
     );
     await this._setNativeLayerPaintProperty(
       style,
@@ -157,39 +225,18 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
       style,
       layerId: 'veil-live-annulus',
       property: 'circle-stroke-opacity',
-      value: active ? 0.15 : 0.0,
+      value: 0.15,
     );
-    if (!active) {
-      await this._setNativeLayerPaintProperty(
-        style,
-        layerId: 'veil-live-annulus',
-        property: 'circle-radius',
-        value: 0.0,
-      );
-      await this._setNativeLayerPaintProperty(
-        style,
-        layerId: 'veil-live-annulus',
-        property: 'circle-stroke-width',
-        value: 0.0,
-      );
-      await this._tryUpdateGeoJsonSource(
+    final sourceKey =
+        '${_assignLng.toStringAsFixed(7)},${_assignLat.toStringAsFixed(7)}';
+    if (_nativeLiveExitVeilSourceKey != sourceKey) {
+      final updated = await this._tryUpdateGeoJsonSource(
         style,
         id: 'veil-live-annulus-src',
-        data: _emptyGeoJson,
-        reason: 'native-live-exit-off:$reason',
+        data: _nativeLiveExitVeilSourceGeoJson(),
+        reason: 'native-live-exit-on:$reason',
       );
-    } else {
-      final sourceKey =
-          '${_assignLng.toStringAsFixed(7)},${_assignLat.toStringAsFixed(7)}';
-      if (_nativeLiveExitVeilSourceKey != sourceKey) {
-        final updated = await this._tryUpdateGeoJsonSource(
-          style,
-          id: 'veil-live-annulus-src',
-          data: _nativeLiveExitVeilSourceGeoJson(),
-          reason: 'native-live-exit-on:$reason',
-        );
-        if (updated) _nativeLiveExitVeilSourceKey = sourceKey;
-      }
+      if (updated) _nativeLiveExitVeilSourceKey = sourceKey;
     }
     const nativeCircleOpacity = 1.0;
     final id = _assignNativeAlarmLayerId;
@@ -207,11 +254,11 @@ extension _MaplibreVeilLayer on _MaplibreNewViewState {
         value: nativeCircleOpacity,
       );
     }
-    _assignExitVeilOutlineActive = active;
+    _assignExitVeilOutlineActive = true;
     _assignExitVeilOutlineOpacity = 0.0;
     DebugConsole.log(
-      'EXIT_NATIVE_VEIL_MODE: active=$active nativeFillHidden=$active '
-      'fillOpacity=$fillOpacity fillUpdated=$fillUpdated annulusLayer=veil-live-annulus '
+      'EXIT_NATIVE_VEIL_MODE: active=true nativeFillHidden=true '
+      'fillOpacity=0.0 fillUpdated=$fillUpdated annulusLayer=veil-live-annulus '
       'nativeCircleOpacity=$nativeCircleOpacity '
       'reason=$reason ${_assignDebugState()}',
     );
