@@ -74,8 +74,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   static const int _compassRenderStallMs = 50;
   static const double _compassSmoothingGain = 0.72;
   static const double _compassFastTurnGain = 1.0;
-  static const double _compassFastTurnDelta = 6.0;
-  static const double _compassFastTurnRateDegPerSec = 120.0;
+  static const double _compassFastTurnDelta = 8.0;
+  static const double _compassFastTurnRateDegPerSec = 220.0;
   static const double _compassRenderSlowGain = 0.55;
   static const double _compassRenderMediumGain = 0.72;
   static const double _compassRenderFastGain = 0.92;
@@ -91,7 +91,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   static const double _compassTiltTraceRateDegPerSec = 250.0;
   static const double _compassTiltHoldDelta = 30.0;
   static const double _compassTiltHoldReleaseDelta = 8.0;
-  static const Duration _compassTiltHoldDuration = Duration(milliseconds: 650);
+  static const Duration _compassTiltHoldDuration = Duration(milliseconds: 140);
+  static const double _compassRateOnlyJitterDelta = 8.0;
+  static const double _compassRateOnlyJitterGain = 0.35;
   bool _is3D = false;
   bool _gpsFollow = false;
   double _lastBearing = 0;
@@ -103,6 +105,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   DateTime? _lastCompassEventAt;
   double? _lastCompassUsedDelta;
   DateTime _compassTiltHoldUntil = DateTime.fromMillisecondsSinceEpoch(0);
+  bool _compassTiltHoldArmed = true;
   DateTime _compassFpsWindowStart = DateTime.fromMillisecondsSinceEpoch(0);
   int _compassFpsWindowEvents = 0;
   int _compassFpsWindowRenders = 0;
@@ -592,6 +595,47 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
             cameraLagBefore.abs() >= _compassTiltHoldDelta);
   }
 
+  bool _isCompassRateOnlyJitter({
+    required double rawDelta,
+    required bool deltaOk,
+    required bool rateOk,
+    required bool lagOk,
+  }) {
+    return !deltaOk && rateOk && rawDelta.abs() >= _compassRateOnlyJitterDelta;
+  }
+
+  double _dampenCompassRateOnlyJitter({
+    required double heading,
+    required double rawDelta,
+    required double turnRateDegPerSec,
+    required bool deltaOk,
+    required bool rateOk,
+    required bool lagOk,
+    required int? eventDt,
+    required int seq,
+  }) {
+    final shouldDampen = _isCompassRateOnlyJitter(
+      rawDelta: rawDelta,
+      deltaOk: deltaOk,
+      rateOk: rateOk,
+      lagOk: lagOk,
+    );
+    if (!shouldDampen) return heading;
+
+    final dampedDelta = rawDelta * _compassRateOnlyJitterGain;
+    final dampedHeading = _normalizeBearing(_lastBearing + dampedDelta);
+    DebugConsole.log(
+      'COMPASS_RATE_JITTER: seq=$seq eventDt=${eventDt ?? -1}ms '
+      'reason=rate-only-jitter '
+      'raw=${heading.toStringAsFixed(1)} '
+      'rawDelta=${rawDelta.toStringAsFixed(1)} '
+      'turnRate=${turnRateDegPerSec.toStringAsFixed(1)} '
+      'usedDelta=${dampedDelta.toStringAsFixed(1)} '
+      'heading=${dampedHeading.toStringAsFixed(1)}',
+    );
+    return dampedHeading;
+  }
+
   double _stabilizeCompassHeading({
     required double heading,
     required double rawDelta,
@@ -613,18 +657,34 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         eventDt != null && eventDt > 0 && deltaOk && (rateOk || lagOk);
     final holdActive = _isCompassTiltHoldActive(now);
     final holdReleaseOk = rawLagBefore.abs() <= _compassTiltHoldReleaseDelta;
-    final shouldHold = _shouldHoldCompassTilt(
-      shouldClamp: shouldClamp,
-      rawLagBefore: rawLagBefore,
-      cameraLagBefore: cameraLagBefore,
-    );
+    if (holdReleaseOk) {
+      _compassTiltHoldArmed = true;
+    }
+    final holdArmed = _compassTiltHoldArmed;
+    final shouldHold =
+        !holdActive &&
+        holdArmed &&
+        _shouldHoldCompassTilt(
+          shouldClamp: shouldClamp,
+          rawLagBefore: rawLagBefore,
+          cameraLagBefore: cameraLagBefore,
+        );
     final shouldKeepHolding = holdActive && !holdReleaseOk;
+    final rateOnlyJitter = _isCompassRateOnlyJitter(
+      rawDelta: rawDelta,
+      deltaOk: deltaOk,
+      rateOk: rateOk,
+      lagOk: lagOk,
+    );
     final traceReason = _compassTiltTraceReason(
       eventDt: eventDt,
       deltaOk: deltaOk,
       rateOk: rateOk,
       lagOk: lagOk,
     );
+    final traceReasonField = rateOnlyJitter
+        ? 'reason=rate-only-jitter'
+        : 'reason=$traceReason';
 
     if (_shouldLogCompassTiltTrace(
       rawDelta: rawDelta,
@@ -639,7 +699,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       DebugConsole.log(
         'COMPASS_TILT_TRACE: seq=$seq eventDt=${eventDt ?? -1}ms '
         'action=$traceAction '
-        'reason=$traceReason '
+        '$traceReasonField '
         'raw=${heading.toStringAsFixed(1)} '
         'targetBefore=${_lastBearing.toStringAsFixed(1)} '
         'camera=${_lastCameraBearing.toStringAsFixed(1)} '
@@ -651,6 +711,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         'rateOk=$rateOk '
         'lagOk=$lagOk '
         'holdActive=$holdActive '
+        'holdArmed=$holdArmed '
         'holdReleaseOk=$holdReleaseOk '
         'rawLagBefore=${rawLagBefore.toStringAsFixed(1)} '
         'cameraLagBefore=${cameraLagBefore.toStringAsFixed(1)} '
@@ -660,6 +721,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
 
     if (shouldHold || shouldKeepHolding) {
       if (shouldHold) {
+        _compassTiltHoldArmed = false;
         _compassTiltHoldUntil = now.add(_compassTiltHoldDuration);
       }
       final holdReason = shouldHold
@@ -678,6 +740,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         'rawDelta=${rawDelta.toStringAsFixed(1)} '
         'turnRate=${turnRateDegPerSec.toStringAsFixed(1)} '
         'holdActive=$holdActive '
+        'holdArmed=$holdArmed '
         'holdReleaseOk=$holdReleaseOk '
         'rawLagBefore=${rawLagBefore.toStringAsFixed(1)} '
         'cameraLagBefore=${cameraLagBefore.toStringAsFixed(1)} '
@@ -686,7 +749,17 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       return _lastBearing;
     }
 
-    if (!shouldClamp) return heading;
+    final dampedHeading = _dampenCompassRateOnlyJitter(
+      heading: heading,
+      rawDelta: rawDelta,
+      turnRateDegPerSec: turnRateDegPerSec,
+      deltaOk: deltaOk,
+      rateOk: rateOk,
+      lagOk: lagOk,
+      eventDt: eventDt,
+      seq: seq,
+    );
+    if (!shouldClamp) return dampedHeading;
 
     final clampedDelta = rawDelta.sign * _compassSpikeClampStep;
     final stabilizedHeading = _normalizeBearing(_lastBearing + clampedDelta);
@@ -876,6 +949,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     _lastRawCompassHeading = null;
     _lastCompassUsedDelta = null;
     _compassTiltHoldUntil = DateTime.fromMillisecondsSinceEpoch(0);
+    _compassTiltHoldArmed = true;
     _compassEventSeq = 0;
     _compassCameraSeq = 0;
     _compassRenderSeq = 0;
@@ -915,7 +989,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       'tiltTraceRate=$_compassTiltTraceRateDegPerSec '
       'tiltHoldDelta=$_compassTiltHoldDelta '
       'tiltHoldRelease=$_compassTiltHoldReleaseDelta '
-      'tiltHoldMs=${_compassTiltHoldDuration.inMilliseconds}',
+      'tiltHoldMs=${_compassTiltHoldDuration.inMilliseconds} '
+      'rateOnlyJitterDelta=$_compassRateOnlyJitterDelta '
+      'rateOnlyJitterGain=$_compassRateOnlyJitterGain',
     );
   }
 

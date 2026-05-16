@@ -271,7 +271,8 @@ void main() {
 
       double constant(String name) {
         final match = RegExp(
-          'static const double ' + name + r'\s*=\s*([0-9.]+);',
+          'static const double $name'
+          r'\s*=\s*([0-9.]+);',
           multiLine: true,
         ).firstMatch(view);
         expect(match, isNotNull, reason: '$name should be declared');
@@ -356,6 +357,65 @@ void main() {
       expect(stabilizer, contains('holdActive='));
       expect(stabilizer, contains('holdReleaseOk='));
       expect(stabilizer, contains('reason=hold-window'));
+    });
+
+    test('keeps tilt hold short and rate-only jitter damped', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      double durationMillis(String name) {
+        final match = RegExp(
+          'static const Duration $name'
+          r'\s*=\s*Duration\(milliseconds:\s*([0-9]+)\);',
+          multiLine: true,
+        ).firstMatch(view);
+        expect(match, isNotNull, reason: '$name should be declared');
+        return double.parse(match!.group(1)!);
+      }
+
+      double constant(String name) {
+        final match = RegExp(
+          'static const double $name'
+          r'\s*=\s*([0-9.]+);',
+          multiLine: true,
+        ).firstMatch(view);
+        expect(match, isNotNull, reason: '$name should be declared');
+        return double.parse(match!.group(1)!);
+      }
+
+      expect(
+        durationMillis('_compassTiltHoldDuration'),
+        lessThanOrEqualTo(180),
+        reason:
+            'A 650ms hold repeatedly restarted during tilt and blocked intentional rotation for several seconds.',
+      );
+      expect(
+        constant('_compassRateOnlyJitterDelta'),
+        greaterThanOrEqualTo(8.0),
+        reason:
+            'The logs show 9-11 degree delta-below-clamp samples passing through at high rate and causing side tremble.',
+      );
+      expect(view, contains('_compassRateOnlyJitterGain'));
+      expect(view, contains('_dampenCompassRateOnlyJitter'));
+
+      final stabilizerStart = view.indexOf('double _stabilizeCompassHeading({');
+      final recordStart = view.indexOf(
+        'void _recordCompassEventDt',
+        stabilizerStart,
+      );
+      expect(stabilizerStart, isNonNegative);
+      expect(recordStart, greaterThan(stabilizerStart));
+      final stabilizer = view.substring(stabilizerStart, recordStart);
+
+      expect(
+        stabilizer,
+        contains('!holdActive'),
+        reason:
+            'Severe tilt samples must not keep extending the hold window while the user is intentionally rotating.',
+      );
+      expect(stabilizer, contains('_dampenCompassRateOnlyJitter('));
+      expect(stabilizer, contains('reason=rate-only-jitter'));
     });
   });
 }
