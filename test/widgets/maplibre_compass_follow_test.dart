@@ -397,7 +397,7 @@ void main() {
             'The logs show 9-11 degree delta-below-clamp samples passing through at high rate and causing side tremble.',
       );
       expect(view, contains('_compassRateOnlyJitterGain'));
-      expect(view, contains('_dampenCompassRateOnlyJitter'));
+      expect(view, contains('_dampenCompassTiltJitter'));
 
       final stabilizerStart = view.indexOf('double _stabilizeCompassHeading({');
       final recordStart = view.indexOf(
@@ -414,8 +414,68 @@ void main() {
         reason:
             'Severe tilt samples must not keep extending the hold window while the user is intentionally rotating.',
       );
-      expect(stabilizer, contains('_dampenCompassRateOnlyJitter('));
+      expect(stabilizer, contains('_dampenCompassTiltJitter('));
       expect(stabilizer, contains('reason=rate-only-jitter'));
+    });
+
+    test('dampens tilt stall pass-through instead of snapping target', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      double constant(String name) {
+        final match = RegExp(
+          'static const double $name'
+          r'\s*=\s*([0-9.]+);',
+          multiLine: true,
+        ).firstMatch(view);
+        expect(match, isNotNull, reason: '$name should be declared');
+        return double.parse(match!.group(1)!);
+      }
+
+      int intConstant(String name) {
+        final match = RegExp(
+          'static const int $name'
+          r'\s*=\s*([0-9]+);',
+          multiLine: true,
+        ).firstMatch(view);
+        expect(match, isNotNull, reason: '$name should be declared');
+        return int.parse(match!.group(1)!);
+      }
+
+      expect(
+        constant('_compassSpikeClampStep'),
+        lessThanOrEqualTo(4.0),
+        reason:
+            'Tilt+rotation bursts were still advancing the camera by repeated 6 degree clamp steps.',
+      );
+      expect(
+        intConstant('_compassTiltJitterStallEventMs'),
+        lessThanOrEqualTo(100),
+        reason:
+            'The logs show 97-154ms stalled samples passing through as 10-12 degree target jumps.',
+      );
+      expect(view, contains('_compassTiltJitterMaxStep'));
+      expect(view, contains('_isCompassTiltStallJitter'));
+      expect(view, contains('_dampenCompassTiltJitter'));
+
+      final stabilizerStart = view.indexOf('double _stabilizeCompassHeading({');
+      final recordStart = view.indexOf(
+        'void _recordCompassEventDt',
+        stabilizerStart,
+      );
+      expect(stabilizerStart, isNonNegative);
+      expect(recordStart, greaterThan(stabilizerStart));
+      final stabilizer = view.substring(stabilizerStart, recordStart);
+
+      expect(stabilizer, contains('reason=tilt-stall-jitter'));
+      expect(stabilizer, contains('eventDt >= _compassTiltJitterStallEventMs'));
+      expect(
+        stabilizer,
+        contains('if (tiltJitter) return dampedHeading;'),
+        reason:
+            'Stalled tilt jitter must be damped even when the old clamp predicate is true.',
+      );
     });
   });
 }
