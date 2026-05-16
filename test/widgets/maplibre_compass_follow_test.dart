@@ -226,5 +226,42 @@ void main() {
             'Tilt-induced sensor spikes should be clamped before the target bearing is advanced.',
       );
     });
+
+    test('logs tilt spike decisions with clamp reasons', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      expect(view, contains('_compassTiltTraceDelta'));
+      expect(view, contains('_compassTiltTraceRateDegPerSec'));
+      expect(view, contains('_shouldLogCompassTiltTrace'));
+      expect(view, contains('_compassTiltTraceReason'));
+      expect(view, contains('COMPASS_TILT_TRACE'));
+      expect(view, contains('tiltTraceDelta='));
+      expect(view, contains('tiltTraceRate='));
+
+      final stabilizerStart = view.indexOf('double _stabilizeCompassHeading({');
+      final recordStart = view.indexOf(
+        'void _recordCompassEventDt',
+        stabilizerStart,
+      );
+      expect(stabilizerStart, isNonNegative);
+      expect(recordStart, greaterThan(stabilizerStart));
+      final stabilizer = view.substring(stabilizerStart, recordStart);
+
+      for (final field in [
+        'action=',
+        'reason=',
+        'targetBefore=',
+        'camera=',
+        'fromSettled=',
+        'deltaOk=',
+        'rateOk=',
+        'rawLagBefore=',
+        'cameraLagBefore=',
+      ]) {
+        expect(stabilizer, contains(field));
+      }
+    });
   });
 }

@@ -86,6 +86,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   static const double _compassSpikeClampRateDegPerSec = 420.0;
   static const double _compassSpikeClampStep = 10.0;
   static const double _compassSpikePreviousDeltaMax = 12.0;
+  static const double _compassTiltTraceDelta = 12.0;
+  static const double _compassTiltTraceRateDegPerSec = 350.0;
   bool _is3D = false;
   bool _gpsFollow = false;
   double _lastBearing = 0;
@@ -546,6 +548,30 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     return _compassRenderSlowGain;
   }
 
+  bool _shouldLogCompassTiltTrace({
+    required double rawDelta,
+    required double turnRateDegPerSec,
+    required double cameraLagBefore,
+  }) {
+    return rawDelta.abs() >= _compassTiltTraceDelta ||
+        turnRateDegPerSec.abs() >= _compassTiltTraceRateDegPerSec ||
+        cameraLagBefore.abs() >= _compassSpikeClampDelta;
+  }
+
+  String _compassTiltTraceReason({
+    required int? eventDt,
+    required bool fromSettledMotion,
+    required bool deltaOk,
+    required bool rateOk,
+  }) {
+    if (eventDt == null || eventDt <= 0) return 'event-dt';
+    if (!fromSettledMotion) return 'prev-delta-chain';
+    if (!deltaOk && !rateOk) return 'below-threshold';
+    if (!deltaOk) return 'delta-below-clamp';
+    if (!rateOk) return 'rate-below-clamp';
+    return 'clamp';
+  }
+
   double _stabilizeCompassHeading({
     required double heading,
     required double rawDelta,
@@ -557,12 +583,47 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     final fromSettledMotion =
         previousDelta == null ||
         previousDelta.abs() <= _compassSpikePreviousDeltaMax;
+    final deltaOk = rawDelta.abs() >= _compassSpikeClampDelta;
+    final rateOk = turnRateDegPerSec.abs() >= _compassSpikeClampRateDegPerSec;
     final shouldClamp =
         eventDt != null &&
         eventDt > 0 &&
         fromSettledMotion &&
-        rawDelta.abs() >= _compassSpikeClampDelta &&
-        turnRateDegPerSec.abs() >= _compassSpikeClampRateDegPerSec;
+        deltaOk &&
+        rateOk;
+    final rawLagBefore = _bearingDelta(_lastBearing, heading);
+    final cameraLagBefore = _bearingDelta(_lastCameraBearing, heading);
+    final traceReason = _compassTiltTraceReason(
+      eventDt: eventDt,
+      fromSettledMotion: fromSettledMotion,
+      deltaOk: deltaOk,
+      rateOk: rateOk,
+    );
+
+    if (_shouldLogCompassTiltTrace(
+      rawDelta: rawDelta,
+      turnRateDegPerSec: turnRateDegPerSec,
+      cameraLagBefore: cameraLagBefore,
+    )) {
+      final traceAction = shouldClamp ? 'clamp' : 'pass';
+      DebugConsole.log(
+        'COMPASS_TILT_TRACE: seq=$seq eventDt=${eventDt ?? -1}ms '
+        'action=$traceAction '
+        'reason=$traceReason '
+        'raw=${heading.toStringAsFixed(1)} '
+        'targetBefore=${_lastBearing.toStringAsFixed(1)} '
+        'camera=${_lastCameraBearing.toStringAsFixed(1)} '
+        'rawDelta=${rawDelta.toStringAsFixed(1)} '
+        'turnRate=${turnRateDegPerSec.toStringAsFixed(1)} '
+        'prevDelta=${previousDelta == null ? 'n/a' : _formatCompassStat(previousDelta)} '
+        'fromSettled=$fromSettledMotion '
+        'deltaOk=$deltaOk '
+        'rateOk=$rateOk '
+        'rawLagBefore=${rawLagBefore.toStringAsFixed(1)} '
+        'cameraLagBefore=${cameraLagBefore.toStringAsFixed(1)} '
+        'clampStep=$_compassSpikeClampStep',
+      );
+    }
 
     if (!shouldClamp) return heading;
 
@@ -783,7 +844,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       'fastDelta=$_compassFastTurnDelta '
       'fastRate=$_compassFastTurnRateDegPerSec '
       'renderGains=$_compassRenderSlowGain/$_compassRenderMediumGain/$_compassRenderFastGain '
-      'minDelta=$_compassMinCameraDelta',
+      'minDelta=$_compassMinCameraDelta '
+      'tiltTraceDelta=$_compassTiltTraceDelta '
+      'tiltTraceRate=$_compassTiltTraceRateDegPerSec',
     );
   }
 
