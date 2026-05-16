@@ -76,6 +76,17 @@ basePx = 2 * radiusMeters / (156543.03392 * cos(latitude))
 
 This works because the expensive math is done before the expression is sent to MapLibre. MapLibre only receives literal stop values, so native zoom interpolation remains smooth.
 
+## Current confirmed Android result
+
+The currently confirmed working save/close behavior is documented in `docs/2026-05-16-maplibre-exit-veil-handoff.md`. In short:
+
+- New alarm saves promote the draft native visual in place.
+- The Flutter draft marker overlay remains for 260ms only when a new alarm draft is promoted, preventing pin flash.
+- Exit veil save/close prepares the static `veil-src` first, defers the live-annulus handoff until after close, then uses two explicit native opacity blend frames before clearing hidden live annulus geometry.
+- Direct zone toggles stay immediate; only the delayed save handoff is smoothed.
+
+Do not replace this with MapLibre transition paint maps or a full rebuild. Both were tried and caused Android-specific failures or flicker.
+
 ## Flicker fix
 
 The save flow now avoids switching visual ownership.

@@ -34,6 +34,8 @@ extension _MaplibreStyleState on _MaplibreNewViewState {
     _veilSyncRequestedReason = null;
     _assignRadiusPaintSyncPending = false;
     _assignRadiusPaintSyncReason = null;
+    _assignLiveMarkerChipKey = null;
+    _assignLiveMarkerChipVersion++;
     _radiusLayerVersion++;
     _styleGeneration++;
     _registeredMarkerImageKeys.clear();

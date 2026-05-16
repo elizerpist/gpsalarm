@@ -243,6 +243,11 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
         debugReason: debugReason,
       );
     }
+    _syncAssignNativeMarkerChipForLiveRadius(
+      style,
+      circle,
+      reason: debugReason,
+    );
     sw.stop();
     if (circle.isLeave && _assignTriggerType == TriggerType.distance) {
       final previousNativeRadius = _exitDebugLastNativePaintRadiusM;
@@ -752,6 +757,8 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignOverlayPendingReason = null;
     _assignRadiusPaintSyncPending = false;
     _assignRadiusPaintSyncReason = null;
+    _assignLiveMarkerChipKey = null;
+    _assignLiveMarkerChipVersion++;
     _radiusDragStartDistancePx = null;
     _radiusDragStartRadiusM = null;
     _veilSyncTimer?.cancel();
@@ -822,6 +829,8 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
           _assignScreenCenter = null;
           _assignMarkerPng = null;
           _assignMarkerKey = null;
+          _assignLiveMarkerChipKey = null;
+          _assignLiveMarkerChipVersion++;
           if (!shouldRestoreNativePreview) {
             _assignPreviewCircleHidden = false;
             _assignPreviewVeilHidden = false;
@@ -866,6 +875,8 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignOverlayPendingReason = null;
     _assignRadiusPaintSyncPending = false;
     _assignRadiusPaintSyncReason = null;
+    _assignLiveMarkerChipKey = null;
+    _assignLiveMarkerChipVersion++;
     _radiusDragStartDistancePx = null;
     _radiusDragStartRadiusM = null;
     _veilSyncTimer?.cancel();
@@ -907,6 +918,8 @@ extension _MaplibreAssignLifecycle on _MaplibreNewViewState {
     _assignActive = existing?.isActive ?? true;
     _assignMarkerPng = null;
     _assignMarkerKey = null;
+    _assignLiveMarkerChipKey = null;
+    _assignLiveMarkerChipVersion++;
     final alarmProv = context.read<AlarmProvider>();
     _assignNativeAlarmLayerId = existing == null
         ? 'alarm-${alarmProv.alarmPoints.length}'

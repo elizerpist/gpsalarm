@@ -424,5 +424,54 @@ void main() {
       );
       expect(method, isNot(contains('nativeSkipped=\$liveExitVeil')));
     });
+
+    test('refreshes native marker chip while editing radius live', () {
+      final lifecycle = File(
+        'lib/widgets/maplibre_new_view/maplibre_assign_lifecycle.dart',
+      ).readAsStringSync();
+      final marker = File(
+        'lib/widgets/maplibre_new_view/maplibre_assign_marker.dart',
+      ).readAsStringSync();
+
+      expect(marker, contains('_syncAssignNativeMarkerChipForLiveRadius'));
+      expect(marker, contains('_assignLiveMarkerChipKey'));
+      expect(marker, contains('_ensureRadiusMarkerImage('));
+      expect(
+        marker,
+        contains('_radiusPointImageIds[circle.id] = registeredImageId'),
+      );
+      expect(
+        marker,
+        contains("id: 'radius-pt-\${circle.id}'"),
+        reason:
+            'The native pin/chip is driven by the radius point source, so live radius edits must refresh that source when the label changes.',
+      );
+      expect(marker, contains('ASSIGN_MARKER_CHIP_SYNC'));
+
+      final start = lifecycle.indexOf(
+        'Future<void> _applyAssignRadiusPaint({required String debugReason})',
+      );
+      final end = lifecycle.indexOf(
+        'void _syncAssignRadiusPaintImmediate',
+        start,
+      );
+      expect(start, isNonNegative);
+      expect(end, greaterThan(start));
+
+      final method = lifecycle.substring(start, end);
+      final nativePaint = method.indexOf('_setCircleLayerRadiusPaint');
+      final chipSync = method.indexOf(
+        '_syncAssignNativeMarkerChipForLiveRadius',
+      );
+
+      expect(nativePaint, isNonNegative);
+      expect(chipSync, isNonNegative);
+      expect(
+        nativePaint,
+        lessThan(chipSync),
+        reason:
+            'The live circle should move first, then the lower-priority distance chip source can be refreshed without blocking the immediate visual radius.',
+      );
+    });
   });
 }

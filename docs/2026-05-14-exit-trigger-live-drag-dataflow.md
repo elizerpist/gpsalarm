@@ -2,17 +2,22 @@
 
 ## Current Best State
 
-The best known exit-trigger live-drag state is:
+The best known user-confirmed exit-trigger save/edit state is documented in:
 
 ```text
+docs/2026-05-16-maplibre-exit-veil-handoff.md
+```
+
+The current working commits are:
+
+```text
+bbb7ddc Smooth save veil handoff
+fbe50cd Keep draft marker through new alarm save
+748ae18 Defer exit veil handoff after save
 9075288 Use native circle for exit edit border
 ```
 
-This commit was pushed after:
-
-```text
-40f78db Fix exit radius edit ghost layers
-```
+`9075288` is still the live-drag border baseline. `748ae18`, `fbe50cd`, and `bbb7ddc` are the save/close handoff fixes that made the new alarm pin stable and reduced the remaining veil flash.
 
 The earlier useful baseline was:
 
@@ -95,6 +100,8 @@ In `maplibre_radius_layer_init.dart`, the veil fill no longer draws an anti-alia
 ```
 
 Do not add MapLibre `*-transition` paint maps here: the Android plugin rejected `{duration: 0, delay: 0}` with `Unsupported property type: _Map<String, int>` and prevented radius/veil layer initialization.
+
+For save/close flicker details, keep the 2026-05-16 handoff doc authoritative. The important final pieces are: prepare `veil-src` while `veil-live-annulus` still covers the map, defer the handoff until after close, keep the draft marker overlay for promoted new alarms, and smooth only the delayed save handoff with explicit opacity blend frames.
 
 This keeps the red border always visible through `radius-circle-*`, prevents live-outline/native border duplication, and makes exit edit visually consistent with enter edit and saved native radius circles.
 

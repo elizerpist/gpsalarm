@@ -74,6 +74,56 @@ extension _MaplibreAssignMarker on _MaplibreNewViewState {
     return key;
   }
 
+  void _syncAssignNativeMarkerChipForLiveRadius(
+    StyleController style,
+    _RadiusCircleData circle, {
+    required String reason,
+  }) {
+    if (!_useNativeExistingAssignLayer) return;
+    if (!_radiusVisualIds.contains(circle.id) &&
+        !_radiusCircleLayerKeys.containsKey(circle.id)) {
+      return;
+    }
+
+    final label = _markerLabelForCircle(circle);
+    final color = _markerColorForCircle(circle);
+    final imageId = _markerImageIdForCircle(circle, label, color);
+    final key = '${circle.id}|$imageId';
+    if (_assignLiveMarkerChipKey == key) return;
+    _assignLiveMarkerChipKey = key;
+    final version = ++_assignLiveMarkerChipVersion;
+
+    unawaited(() async {
+      try {
+        final registeredImageId = await _ensureRadiusMarkerImage(style, circle);
+        if (!mounted ||
+            !_isAssigning ||
+            version != _assignLiveMarkerChipVersion ||
+            _assignLiveMarkerChipKey != key) {
+          return;
+        }
+        _radiusPointImageIds[circle.id] = registeredImageId;
+        await style.updateGeoJsonSource(
+          id: 'radius-pt-${circle.id}',
+          data: _radiusPointSourceGeoJson(circle),
+        );
+        if (_shouldLogAssignDebugReason(reason)) {
+          DebugConsole.log(
+            'ASSIGN_MARKER_CHIP_SYNC: id=${circle.id} label=$label '
+            'reason=$reason r=${circle.radiusMeters.round()}m '
+            '${_assignDebugState()}',
+          );
+        }
+      } catch (error) {
+        if (_assignLiveMarkerChipKey == key) _assignLiveMarkerChipKey = null;
+        DebugConsole.log(
+          'ASSIGN_MARKER_CHIP_SYNC: id=${circle.id} label=$label '
+          'reason=$reason error=$error ${_assignDebugState()}',
+        );
+      }
+    }());
+  }
+
   double get _currentRadiusPx {
     final isTime = _assignTriggerType == TriggerType.time;
     double radius = _assignRadius;
