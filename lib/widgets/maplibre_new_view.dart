@@ -82,12 +82,13 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   static const double _compassRenderMediumDelta = 3.0;
   static const double _compassRenderFastDelta = 12.0;
   static const double _compassMinCameraDelta = 0.15;
-  static const double _compassSpikeClampDelta = 18.0;
-  static const double _compassSpikeClampRateDegPerSec = 420.0;
-  static const double _compassSpikeClampStep = 10.0;
+  static const double _compassSpikeClampDelta = 12.0;
+  static const double _compassSpikeClampRateDegPerSec = 250.0;
+  static const double _compassSpikeClampStep = 6.0;
+  static const double _compassSpikeClampLagDelta = 12.0;
   static const double _compassSpikePreviousDeltaMax = 12.0;
   static const double _compassTiltTraceDelta = 12.0;
-  static const double _compassTiltTraceRateDegPerSec = 350.0;
+  static const double _compassTiltTraceRateDegPerSec = 250.0;
   bool _is3D = false;
   bool _gpsFollow = false;
   double _lastBearing = 0;
@@ -555,20 +556,21 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   }) {
     return rawDelta.abs() >= _compassTiltTraceDelta ||
         turnRateDegPerSec.abs() >= _compassTiltTraceRateDegPerSec ||
-        cameraLagBefore.abs() >= _compassSpikeClampDelta;
+        cameraLagBefore.abs() >= _compassSpikeClampLagDelta;
   }
 
   String _compassTiltTraceReason({
     required int? eventDt,
-    required bool fromSettledMotion,
     required bool deltaOk,
     required bool rateOk,
+    required bool lagOk,
   }) {
     if (eventDt == null || eventDt <= 0) return 'event-dt';
-    if (!fromSettledMotion) return 'prev-delta-chain';
-    if (!deltaOk && !rateOk) return 'below-threshold';
+    if (!deltaOk && !rateOk && !lagOk) return 'below-threshold';
     if (!deltaOk) return 'delta-below-clamp';
-    if (!rateOk) return 'rate-below-clamp';
+    if (!rateOk && !lagOk) return 'rate-lag-below-clamp';
+    if (!rateOk) return 'lag-clamp';
+    if (!lagOk) return 'rate-clamp';
     return 'clamp';
   }
 
@@ -583,21 +585,18 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     final fromSettledMotion =
         previousDelta == null ||
         previousDelta.abs() <= _compassSpikePreviousDeltaMax;
-    final deltaOk = rawDelta.abs() >= _compassSpikeClampDelta;
-    final rateOk = turnRateDegPerSec.abs() >= _compassSpikeClampRateDegPerSec;
-    final shouldClamp =
-        eventDt != null &&
-        eventDt > 0 &&
-        fromSettledMotion &&
-        deltaOk &&
-        rateOk;
     final rawLagBefore = _bearingDelta(_lastBearing, heading);
     final cameraLagBefore = _bearingDelta(_lastCameraBearing, heading);
+    final deltaOk = rawDelta.abs() >= _compassSpikeClampDelta;
+    final rateOk = turnRateDegPerSec.abs() >= _compassSpikeClampRateDegPerSec;
+    final lagOk = cameraLagBefore.abs() >= _compassSpikeClampLagDelta;
+    final shouldClamp =
+        eventDt != null && eventDt > 0 && deltaOk && (rateOk || lagOk);
     final traceReason = _compassTiltTraceReason(
       eventDt: eventDt,
-      fromSettledMotion: fromSettledMotion,
       deltaOk: deltaOk,
       rateOk: rateOk,
+      lagOk: lagOk,
     );
 
     if (_shouldLogCompassTiltTrace(
@@ -619,6 +618,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         'fromSettled=$fromSettledMotion '
         'deltaOk=$deltaOk '
         'rateOk=$rateOk '
+        'lagOk=$lagOk '
         'rawLagBefore=${rawLagBefore.toStringAsFixed(1)} '
         'cameraLagBefore=${cameraLagBefore.toStringAsFixed(1)} '
         'clampStep=$_compassSpikeClampStep',
@@ -845,6 +845,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       'fastRate=$_compassFastTurnRateDegPerSec '
       'renderGains=$_compassRenderSlowGain/$_compassRenderMediumGain/$_compassRenderFastGain '
       'minDelta=$_compassMinCameraDelta '
+      'clampDelta=$_compassSpikeClampDelta '
+      'clampRate=$_compassSpikeClampRateDegPerSec '
+      'clampStep=$_compassSpikeClampStep '
+      'clampLag=$_compassSpikeClampLagDelta '
       'tiltTraceDelta=$_compassTiltTraceDelta '
       'tiltTraceRate=$_compassTiltTraceRateDegPerSec',
     );

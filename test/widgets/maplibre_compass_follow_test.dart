@@ -263,5 +263,65 @@ void main() {
         expect(stabilizer, contains(field));
       }
     });
+
+    test('clamps medium tilt spikes instead of passing them through', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      double constant(String name) {
+        final match = RegExp(
+          'static const double ' + name + r'\s*=\s*([0-9.]+);',
+          multiLine: true,
+        ).firstMatch(view);
+        expect(match, isNotNull, reason: '$name should be declared');
+        return double.parse(match!.group(1)!);
+      }
+
+      expect(
+        constant('_compassSpikeClampDelta'),
+        lessThanOrEqualTo(12.0),
+        reason:
+            'The latest tilt logs show 12-17 degree sensor jumps passing through as below-threshold and visibly snapping the map.',
+      );
+      expect(
+        constant('_compassSpikeClampRateDegPerSec'),
+        lessThanOrEqualTo(250.0),
+        reason:
+            'Tilt jumps around 280-410 deg/s must be treated as spikes, not normal compass movement.',
+      );
+      expect(
+        constant('_compassSpikeClampStep'),
+        lessThanOrEqualTo(6.0),
+        reason:
+            'Even clamped tilt bursts should not move the camera by 10 degrees per sensor sample.',
+      );
+      expect(view, contains('_compassSpikeClampLagDelta'));
+
+      final stabilizerStart = view.indexOf('double _stabilizeCompassHeading({');
+      final recordStart = view.indexOf(
+        'void _recordCompassEventDt',
+        stabilizerStart,
+      );
+      expect(stabilizerStart, isNonNegative);
+      expect(recordStart, greaterThan(stabilizerStart));
+      final stabilizer = view.substring(stabilizerStart, recordStart);
+
+      expect(stabilizer, contains('lagOk='));
+      expect(stabilizer, contains('deltaOk &&'));
+      expect(stabilizer, contains('(rateOk || lagOk)'));
+      expect(
+        stabilizer,
+        isNot(contains('fromSettledMotion &&')),
+        reason:
+            'The prev-delta-chain path was letting 20+ degree tilt spikes pass through after a previous medium spike.',
+      );
+      expect(
+        view,
+        isNot(contains("return 'prev-delta-chain';")),
+        reason:
+            'Previous-delta state should remain diagnostic only; it must not be a pass-through reason for tilt spikes.',
+      );
+    });
   });
 }
