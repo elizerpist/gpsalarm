@@ -83,7 +83,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   static const double _compassRenderFastDelta = 12.0;
   static const int _compassRenderFallbackStallMs = 80;
   static const double _compassRenderFallbackDelta = 1.5;
-  static const double _compassRenderMaxStep = 8.0;
+  static const double _compassRenderMaxStep = 4.0;
   static const double _compassMinCameraDelta = 0.15;
   static const double _compassSpikeClampDelta = 12.0;
   static const double _compassSpikeClampRateDegPerSec = 250.0;
@@ -109,9 +109,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   static const double _compassTiltRecoveryMaxStep = 1.5;
   static const double _compassRotationIntentDelta = 18.0;
   static const double _compassRotationIntentRateDegPerSec = 650.0;
-  static const int _compassRotationIntentSamples = 3;
+  static const int _compassRotationIntentSamples = 2;
   static const double _compassRotationFollowGain = 0.58;
-  static const double _compassRotationFollowMaxRateDegPerSec = 420.0;
+  static const double _compassRotationFollowMaxRateDegPerSec = 260.0;
   static const double _compassRotationFollowSnapDelta = 4.0;
   static const Duration _compassRotationIntentGraceDuration = Duration(
     milliseconds: 260,

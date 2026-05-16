@@ -687,5 +687,50 @@ void main() {
             'Tilt jitter should drift subtly until sustained same-direction yaw is confirmed.',
       );
     });
+
+    test('keeps smooth rotation below visible jump steps', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      double doubleConstant(String name) {
+        final match = RegExp(
+          'static const double $name'
+          r'\s*=\s*([0-9.]+);',
+          multiLine: true,
+        ).firstMatch(view);
+        expect(match, isNotNull, reason: '$name should be declared');
+        return double.parse(match!.group(1)!);
+      }
+
+      int intConstant(String name) {
+        final match = RegExp(
+          'static const int $name'
+          r'\s*=\s*([0-9]+);',
+          multiLine: true,
+        ).firstMatch(view);
+        expect(match, isNotNull, reason: '$name should be declared');
+        return int.parse(match!.group(1)!);
+      }
+
+      expect(
+        intConstant('_compassRotationIntentSamples'),
+        lessThanOrEqualTo(2),
+        reason:
+            'Waiting for three high-rate samples lets target lag build up, then releases it as a visible jump.',
+      );
+      expect(
+        doubleConstant('_compassRotationFollowMaxRateDegPerSec'),
+        lessThanOrEqualTo(280.0),
+        reason:
+            'Confirmed rotation follow was producing 16-19 degree target jumps per compass sample.',
+      );
+      expect(
+        doubleConstant('_compassRenderMaxStep'),
+        lessThanOrEqualTo(4.0),
+        reason:
+            'The camera should not catch up in 8 degree frame chunks during plain rotation.',
+      );
+    });
   });
 }
