@@ -81,6 +81,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   static const double _compassRenderFastGain = 0.92;
   static const double _compassRenderMediumDelta = 3.0;
   static const double _compassRenderFastDelta = 12.0;
+  static const int _compassRenderFallbackStallMs = 80;
+  static const double _compassRenderFallbackDelta = 1.5;
+  static const double _compassRenderMaxStep = 8.0;
   static const double _compassMinCameraDelta = 0.15;
   static const double _compassSpikeClampDelta = 12.0;
   static const double _compassSpikeClampRateDegPerSec = 250.0;
@@ -97,8 +100,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   static const int _compassTiltJitterStallEventMs = 80;
   static const double _compassTiltJitterMaxStep = 4.0;
   static const double _compassVisibleTiltJitterDelta = 6.0;
-  static const double _compassVisibleTiltJitterGain = 0.22;
-  static const double _compassVisibleTiltJitterMaxStep = 2.0;
+  static const double _compassVisibleTiltJitterGain = 0.14;
+  static const double _compassVisibleTiltJitterMaxStep = 1.2;
   static const Duration _compassTiltRecoveryDuration = Duration(
     milliseconds: 650,
   );
@@ -106,7 +109,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   static const double _compassTiltRecoveryMaxStep = 1.5;
   static const double _compassRotationIntentDelta = 18.0;
   static const double _compassRotationIntentRateDegPerSec = 650.0;
-  static const int _compassRotationIntentSamples = 2;
+  static const int _compassRotationIntentSamples = 3;
+  static const double _compassRotationFollowGain = 0.58;
+  static const double _compassRotationFollowMaxRateDegPerSec = 420.0;
+  static const double _compassRotationFollowSnapDelta = 4.0;
   static const Duration _compassRotationIntentGraceDuration = Duration(
     milliseconds: 260,
   );
@@ -576,6 +582,26 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     return _compassRenderSlowGain;
   }
 
+  double _clampCompassRenderStep(double cameraDelta, double renderGain) {
+    final desiredStep = cameraDelta * renderGain;
+    return desiredStep
+        .clamp(-_compassRenderMaxStep, _compassRenderMaxStep)
+        .toDouble();
+  }
+
+  bool _shouldUseCompassSensorFallback(DateTime now, double targetDelta) {
+    final lastRenderTick = _lastCompassRenderTickAt;
+    final renderStallMs = lastRenderTick == null
+        ? _compassRenderFallbackStallMs
+        : now.difference(lastRenderTick).inMilliseconds;
+    final cameraIntervalMs = now
+        .difference(_lastCompassCameraUpdate)
+        .inMilliseconds;
+    return targetDelta.abs() >= _compassRenderFallbackDelta &&
+        renderStallMs >= _compassRenderFallbackStallMs &&
+        cameraIntervalMs >= _minCompassCameraInterval.inMilliseconds;
+  }
+
   bool _shouldLogCompassTiltTrace({
     required double rawDelta,
     required double turnRateDegPerSec,
@@ -818,6 +844,39 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     return dampedHeading;
   }
 
+  double _followCompassRotationIntent({
+    required double heading,
+    required double rawDelta,
+    required double turnRateDegPerSec,
+    required int? eventDt,
+    required int seq,
+  }) {
+    if (rawDelta.abs() <= _compassRotationFollowSnapDelta) {
+      return heading;
+    }
+    final dtSeconds = eventDt != null && eventDt > 0
+        ? eventDt / 1000.0
+        : _minCompassCameraInterval.inMilliseconds / 1000.0;
+    final maxStep = math.max(
+      _compassSpikeClampStep,
+      _compassRotationFollowMaxRateDegPerSec * dtSeconds,
+    );
+    final followedDelta = (rawDelta * _compassRotationFollowGain)
+        .clamp(-maxStep, maxStep)
+        .toDouble();
+    final followedHeading = _normalizeBearing(_lastBearing + followedDelta);
+    DebugConsole.log(
+      'COMPASS_ROTATION_FOLLOW: seq=$seq eventDt=${eventDt ?? -1}ms '
+      'raw=${heading.toStringAsFixed(1)} '
+      'rawDelta=${rawDelta.toStringAsFixed(1)} '
+      'turnRate=${turnRateDegPerSec.toStringAsFixed(1)} '
+      'usedDelta=${followedDelta.toStringAsFixed(1)} '
+      'heading=${followedHeading.toStringAsFixed(1)} '
+      'maxStep=${maxStep.toStringAsFixed(1)}',
+    );
+    return followedHeading;
+  }
+
   double _stabilizeCompassHeading({
     required double heading,
     required double rawDelta,
@@ -873,6 +932,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     }
     final holdArmed = _compassTiltHoldArmed;
     final shouldHold =
+        !rotationIntent &&
         !rotationIntentConfirmed &&
         !holdActive &&
         holdArmed &&
@@ -1009,6 +1069,16 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         'holdMs=$remainingHoldMs',
       );
       return _lastBearing;
+    }
+
+    if (rotationIntentConfirmed) {
+      return _followCompassRotationIntent(
+        heading: heading,
+        rawDelta: rawDelta,
+        turnRateDegPerSec: turnRateDegPerSec,
+        eventDt: eventDt,
+        seq: seq,
+      );
     }
 
     final dampedHeading = _dampenCompassTiltJitter(
@@ -1245,6 +1315,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       'camera=${_lastCameraBearing.toStringAsFixed(1)} '
       'eventMinInterval=${_minCompassCameraInterval.inMilliseconds}ms '
       'renderInterval=${_compassRenderInterval.inMilliseconds}ms '
+      'renderFallbackStallMs=$_compassRenderFallbackStallMs '
+      'renderFallbackDelta=$_compassRenderFallbackDelta '
+      'renderMaxStep=$_compassRenderMaxStep '
       'renderPump=ticker path=ticker-pump '
       'targetGain=$_compassSmoothingGain fastTargetGain=$_compassFastTurnGain '
       'fastDelta=$_compassFastTurnDelta '
@@ -1273,6 +1346,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       'rotationIntentDelta=$_compassRotationIntentDelta '
       'rotationIntentRate=$_compassRotationIntentRateDegPerSec '
       'rotationIntentSamples=$_compassRotationIntentSamples '
+      'rotationFollowGain=$_compassRotationFollowGain '
+      'rotationFollowMaxRate=$_compassRotationFollowMaxRateDegPerSec '
+      'rotationFollowSnapDelta=$_compassRotationFollowSnapDelta '
       'rotationIntentGraceMs=${_compassRotationIntentGraceDuration.inMilliseconds}',
     );
   }
@@ -1356,6 +1432,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     final rawLag = _bearingDelta(_lastBearing, sensorHeading);
     final cameraLag = _bearingDelta(_lastCameraBearing, sensorHeading);
     final targetDelta = _bearingDelta(_lastCameraBearing, _lastBearing);
+    final sensorFallback = _shouldUseCompassSensorFallback(now, targetDelta);
     _recordCompassLag(rawLag: rawLag, cameraLag: cameraLag);
 
     final shouldLog = _shouldLogCompassFrame(seq);
@@ -1374,8 +1451,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         'targetDelta=${targetDelta.toStringAsFixed(1)} '
         'rawLag=${rawLag.toStringAsFixed(1)} '
         'cameraLag=${cameraLag.toStringAsFixed(1)} '
-        'gain=$gain',
+        'gain=$gain '
+        'sensorFallback=$sensorFallback',
       );
+    }
+    if (sensorFallback) {
+      _pumpCompassCamera(path: 'sensor-fallback');
     }
     _logCompassStatsIfNeeded(seq);
     _logCompassFpsIfNeeded(now);
@@ -1384,10 +1465,13 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   void _pumpCompassCamera({String path = 'ticker-pump'}) {
     if (!_is3D || !_gpsFollow) return;
     final now = DateTime.now();
+    final sensorFallback = path == 'sensor-fallback';
     final renderInterval = _lastCompassRenderTickAt == null
         ? null
         : now.difference(_lastCompassRenderTickAt!);
-    _lastCompassRenderTickAt = now;
+    if (!sensorFallback) {
+      _lastCompassRenderTickAt = now;
+    }
     final renderSeq = ++_compassRenderSeq;
     _recordCompassFpsRenderTick(renderInterval);
     if (_compassEventSeq == 0) {
@@ -1419,8 +1503,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     final previousCameraBearing = _lastCameraBearing;
     final firstCameraUpdate = _compassCameraSeq == 0;
     final renderGain = _compassRenderGainFor(cameraDelta);
+    final renderStep = _clampCompassRenderStep(cameraDelta, renderGain);
     final nextCameraBearing = _normalizeBearing(
-      _lastCameraBearing + cameraDelta * renderGain,
+      _lastCameraBearing + renderStep,
     );
     _lastCameraBearing = nextCameraBearing;
     _lastCompassCameraUpdate = now;
@@ -1447,6 +1532,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         'prevCamera=${previousCameraBearing.toStringAsFixed(1)} '
         'sent=${nextCameraBearing.toStringAsFixed(1)} '
         'dCamera=${cameraDelta.toStringAsFixed(1)} '
+        'renderStep=${renderStep.toStringAsFixed(1)} '
         'targetLag=${targetLag.toStringAsFixed(1)} '
         'rawCameraLag=${_formatCompassStat(rawCameraLag)} '
         'renderGain=$renderGain',

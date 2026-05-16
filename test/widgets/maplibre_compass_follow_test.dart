@@ -585,5 +585,107 @@ void main() {
             'The fast-rotation confidence state must reset when motion settles or compass follow restarts.',
       );
     });
+
+    test('uses sensor fallback when the compass render pump stalls', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      expect(view, contains('_compassRenderFallbackStallMs'));
+      expect(view, contains('_compassRenderFallbackDelta'));
+      expect(view, contains('_shouldUseCompassSensorFallback'));
+      expect(view, contains("path: 'sensor-fallback'"));
+      expect(view, contains('sensorFallback='));
+
+      final handlerStart = view.indexOf(
+        'void _handleCompassEvent(CompassEvent event)',
+      );
+      final pumpStart = view.indexOf('void _pumpCompassCamera', handlerStart);
+      final modeStart = view.indexOf('void _set3DMode', pumpStart);
+      expect(handlerStart, isNonNegative);
+      expect(pumpStart, greaterThan(handlerStart));
+      expect(modeStart, greaterThan(pumpStart));
+
+      final handler = view.substring(handlerStart, pumpStart);
+      final pump = view.substring(pumpStart, modeStart);
+
+      expect(handler, contains('_shouldUseCompassSensorFallback('));
+      expect(handler, contains("_pumpCompassCamera(path: 'sensor-fallback')"));
+      expect(
+        pump,
+        contains('_clampCompassRenderStep('),
+        reason:
+            'A stalled render pump must catch up through bounded camera steps, not one large delayed jump.',
+      );
+    });
+
+    test(
+      'tracks confirmed rotation through smooth follow instead of spike clamp',
+      () {
+        final view = File(
+          'lib/widgets/maplibre_new_view.dart',
+        ).readAsStringSync();
+
+        expect(view, contains('_compassRotationFollowGain'));
+        expect(view, contains('_compassRotationFollowMaxRateDegPerSec'));
+        expect(view, contains('_followCompassRotationIntent'));
+        expect(view, contains('COMPASS_ROTATION_FOLLOW'));
+
+        final stabilizerStart = view.indexOf(
+          'double _stabilizeCompassHeading({',
+        );
+        final recordStart = view.indexOf(
+          'void _recordCompassEventDt',
+          stabilizerStart,
+        );
+        expect(stabilizerStart, isNonNegative);
+        expect(recordStart, greaterThan(stabilizerStart));
+        final stabilizer = view.substring(stabilizerStart, recordStart);
+
+        final rotationFollowStart = stabilizer.indexOf(
+          '_followCompassRotationIntent(',
+        );
+        final jitterStart = stabilizer.indexOf('_dampenCompassTiltJitter(');
+        final clampStart = stabilizer.indexOf('final clampedDelta');
+        expect(rotationFollowStart, isNonNegative);
+        expect(jitterStart, greaterThan(rotationFollowStart));
+        expect(clampStart, greaterThan(rotationFollowStart));
+        expect(
+          stabilizer,
+          contains('!rotationIntent &&'),
+          reason:
+              'The first high-confidence rotation sample should not start a tilt hold that freezes the camera before confirmation.',
+        );
+      },
+    );
+
+    test('keeps unconfirmed tilt jitter subtle', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      double constant(String name) {
+        final match = RegExp(
+          'static const double $name'
+          r'\s*=\s*([0-9.]+);',
+          multiLine: true,
+        ).firstMatch(view);
+        expect(match, isNotNull, reason: '$name should be declared');
+        return double.parse(match!.group(1)!);
+      }
+
+      expect(
+        constant('_compassVisibleTiltJitterGain'),
+        lessThanOrEqualTo(0.16),
+        reason:
+            'Unconfirmed tilt+rotation bursts still moved 2 degrees per sensor sample and looked too sensitive.',
+      );
+      expect(
+        constant('_compassVisibleTiltJitterMaxStep'),
+        lessThanOrEqualTo(1.4),
+        reason:
+            'Tilt jitter should drift subtly until sustained same-direction yaw is confirmed.',
+      );
+    });
   });
 }
