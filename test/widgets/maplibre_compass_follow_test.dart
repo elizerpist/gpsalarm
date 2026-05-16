@@ -323,5 +323,39 @@ void main() {
             'Previous-delta state should remain diagnostic only; it must not be a pass-through reason for tilt spikes.',
       );
     });
+
+    test('holds severe tilt bursts instead of integrating clamp steps', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      expect(view, contains('_compassTiltHoldDelta'));
+      expect(view, contains('_compassTiltHoldReleaseDelta'));
+      expect(view, contains('_compassTiltHoldDuration'));
+      expect(view, contains('_compassTiltHoldUntil'));
+      expect(view, contains('_isCompassTiltHoldActive'));
+      expect(view, contains('_shouldHoldCompassTilt'));
+      expect(view, contains('COMPASS_TILT_HOLD'));
+
+      final stabilizerStart = view.indexOf('double _stabilizeCompassHeading({');
+      final recordStart = view.indexOf(
+        'void _recordCompassEventDt',
+        stabilizerStart,
+      );
+      expect(stabilizerStart, isNonNegative);
+      expect(recordStart, greaterThan(stabilizerStart));
+      final stabilizer = view.substring(stabilizerStart, recordStart);
+      final holdStart = stabilizer.indexOf('COMPASS_TILT_HOLD');
+      final clampStart = stabilizer.indexOf('final clampedDelta');
+
+      expect(holdStart, isNonNegative);
+      expect(clampStart, greaterThan(holdStart));
+      expect(stabilizer, contains('_compassTiltHoldUntil ='));
+      expect(stabilizer, contains('now.add(_compassTiltHoldDuration)'));
+      expect(stabilizer, contains('return _lastBearing;'));
+      expect(stabilizer, contains('holdActive='));
+      expect(stabilizer, contains('holdReleaseOk='));
+      expect(stabilizer, contains('reason=hold-window'));
+    });
   });
 }
