@@ -69,6 +69,42 @@ void main() {
       expect(method, contains('gain='));
     });
 
+    test('reports compass pipeline fps and jitter diagnostics', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      expect(view, contains('_compassFpsReportInterval'));
+      expect(view, contains('_recordCompassFpsRenderTick'));
+      expect(view, contains('_recordCompassFpsCamera'));
+      expect(view, contains('_logCompassFpsIfNeeded'));
+      expect(view, contains('COMPASS_FPS'));
+      expect(view, contains('eventHz='));
+      expect(view, contains('renderHz='));
+      expect(view, contains('cameraHz='));
+      expect(view, contains('renderJank='));
+      expect(view, contains('renderStall='));
+      expect(view, contains('cameraDuty='));
+      expect(view, contains('targetLagAvg='));
+      expect(view, contains('targetLagMax='));
+
+      final handlerStart = view.indexOf(
+        'void _handleCompassEvent(CompassEvent event)',
+      );
+      final pumpStart = view.indexOf('void _pumpCompassCamera', handlerStart);
+      final modeStart = view.indexOf('void _set3DMode', pumpStart);
+      expect(handlerStart, isNonNegative);
+      expect(pumpStart, greaterThan(handlerStart));
+      expect(modeStart, greaterThan(pumpStart));
+
+      final handler = view.substring(handlerStart, pumpStart);
+      final pump = view.substring(pumpStart, modeStart);
+
+      expect(handler, contains('_compassFpsWindowEvents++'));
+      expect(pump, contains('_recordCompassFpsRenderTick('));
+      expect(pump, contains('_recordCompassFpsCamera('));
+      expect(pump, contains('_logCompassFpsIfNeeded(now'));
+    });
     test('coalesces compass samples through a frame-paced render pump', () {
       final view = File(
         'lib/widgets/maplibre_new_view.dart',

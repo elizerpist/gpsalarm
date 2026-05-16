@@ -68,6 +68,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   // 3D view + GPS follow + compass
   static const Duration _minCompassCameraInterval = Duration(milliseconds: 32);
   static const Duration _compassRenderInterval = Duration(milliseconds: 24);
+  static const Duration _compassFpsReportInterval = Duration(seconds: 1);
+  static const int _compassRenderJankMs = 34;
+  static const int _compassRenderStallMs = 80;
   static const double _compassSmoothingGain = 0.72;
   static const double _compassFastTurnGain = 1.0;
   static const double _compassFastTurnDelta = 6.0;
@@ -84,8 +87,27 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   double _lastCameraBearing = 0;
   double? _lastRawCompassHeading;
   DateTime _lastCompassCameraUpdate = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime? _lastCompassRenderTickAt;
   Timer? _compassRenderTimer;
   DateTime? _lastCompassEventAt;
+  DateTime _compassFpsWindowStart = DateTime.fromMillisecondsSinceEpoch(0);
+  int _compassFpsWindowEvents = 0;
+  int _compassFpsWindowRenders = 0;
+  int _compassFpsWindowCameras = 0;
+  int _compassFpsWindowSkips = 0;
+  double _compassFpsWindowRenderIntervalMs = 0;
+  int _compassFpsWindowRenderIntervals = 0;
+  double _compassFpsWindowMaxRenderIntervalMs = 0;
+  int _compassFpsWindowRenderJank = 0;
+  int _compassFpsWindowRenderStall = 0;
+  double _compassFpsWindowCameraIntervalMs = 0;
+  int _compassFpsWindowCameraIntervals = 0;
+  double _compassFpsWindowMaxCameraIntervalMs = 0;
+  int _compassFpsWindowCameraJank = 0;
+  int _compassFpsWindowCameraStall = 0;
+  double _compassFpsWindowTargetLagSum = 0;
+  int _compassFpsWindowTargetLagSamples = 0;
+  double _compassFpsWindowTargetLagMax = 0;
   int _compassEventSeq = 0;
   int _compassCameraSeq = 0;
   int _compassRenderSeq = 0;
@@ -536,6 +558,117 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     _compassMaxCameraLag = math.max(_compassMaxCameraLag, cameraLag.abs());
   }
 
+  void _resetCompassFpsWindow(DateTime now) {
+    _compassFpsWindowStart = now;
+    _compassFpsWindowEvents = 0;
+    _compassFpsWindowRenders = 0;
+    _compassFpsWindowCameras = 0;
+    _compassFpsWindowSkips = 0;
+    _compassFpsWindowRenderIntervalMs = 0;
+    _compassFpsWindowRenderIntervals = 0;
+    _compassFpsWindowMaxRenderIntervalMs = 0;
+    _compassFpsWindowRenderJank = 0;
+    _compassFpsWindowRenderStall = 0;
+    _compassFpsWindowCameraIntervalMs = 0;
+    _compassFpsWindowCameraIntervals = 0;
+    _compassFpsWindowMaxCameraIntervalMs = 0;
+    _compassFpsWindowCameraJank = 0;
+    _compassFpsWindowCameraStall = 0;
+    _compassFpsWindowTargetLagSum = 0;
+    _compassFpsWindowTargetLagSamples = 0;
+    _compassFpsWindowTargetLagMax = 0;
+  }
+
+  void _recordCompassFpsRenderTick(Duration? interval) {
+    _compassFpsWindowRenders++;
+    if (interval == null) return;
+    final ms = interval.inMilliseconds;
+    if (ms < 0) return;
+    _compassFpsWindowRenderIntervalMs += ms;
+    _compassFpsWindowRenderIntervals++;
+    _compassFpsWindowMaxRenderIntervalMs = math.max(
+      _compassFpsWindowMaxRenderIntervalMs,
+      ms.toDouble(),
+    );
+    if (ms >= _compassRenderJankMs) _compassFpsWindowRenderJank++;
+    if (ms >= _compassRenderStallMs) _compassFpsWindowRenderStall++;
+  }
+
+  void _recordCompassFpsCamera(Duration interval, double targetLag) {
+    _compassFpsWindowCameras++;
+    final ms = interval.inMilliseconds;
+    if (ms >= 0) {
+      _compassFpsWindowCameraIntervalMs += ms;
+      _compassFpsWindowCameraIntervals++;
+      _compassFpsWindowMaxCameraIntervalMs = math.max(
+        _compassFpsWindowMaxCameraIntervalMs,
+        ms.toDouble(),
+      );
+      if (ms >= _compassRenderJankMs) _compassFpsWindowCameraJank++;
+      if (ms >= _compassRenderStallMs) _compassFpsWindowCameraStall++;
+    }
+    final lag = targetLag.abs();
+    _compassFpsWindowTargetLagSum += lag;
+    _compassFpsWindowTargetLagSamples++;
+    _compassFpsWindowTargetLagMax = math.max(
+      _compassFpsWindowTargetLagMax,
+      lag,
+    );
+  }
+
+  void _recordCompassFpsSkip() {
+    _compassFpsWindowSkips++;
+  }
+
+  void _logCompassFpsIfNeeded(DateTime now, {bool force = false}) {
+    final elapsedMs = now.difference(_compassFpsWindowStart).inMilliseconds;
+    if (elapsedMs <= 0) return;
+    if (!force && elapsedMs < _compassFpsReportInterval.inMilliseconds) return;
+
+    final seconds = elapsedMs / 1000.0;
+    final eventHz = _compassFpsWindowEvents / seconds;
+    final renderHz = _compassFpsWindowRenders / seconds;
+    final cameraHz = _compassFpsWindowCameras / seconds;
+    final skipHz = _compassFpsWindowSkips / seconds;
+    final renderAvgMs = _compassFpsWindowRenderIntervals == 0
+        ? double.nan
+        : _compassFpsWindowRenderIntervalMs / _compassFpsWindowRenderIntervals;
+    final cameraAvgMs = _compassFpsWindowCameraIntervals == 0
+        ? double.nan
+        : _compassFpsWindowCameraIntervalMs / _compassFpsWindowCameraIntervals;
+    final cameraDuty = _compassFpsWindowRenders == 0
+        ? 0.0
+        : _compassFpsWindowCameras * 100.0 / _compassFpsWindowRenders;
+    final skipPct = _compassFpsWindowRenders == 0
+        ? 0.0
+        : _compassFpsWindowSkips * 100.0 / _compassFpsWindowRenders;
+    final targetLagAvg = _compassFpsWindowTargetLagSamples == 0
+        ? double.nan
+        : _compassFpsWindowTargetLagSum / _compassFpsWindowTargetLagSamples;
+
+    DebugConsole.log(
+      'COMPASS_FPS: windowMs=$elapsedMs '
+      'eventHz=${eventHz.toStringAsFixed(1)} '
+      'renderHz=${renderHz.toStringAsFixed(1)} '
+      'cameraHz=${cameraHz.toStringAsFixed(1)} '
+      'skipHz=${skipHz.toStringAsFixed(1)} '
+      'cameraDuty=${cameraDuty.toStringAsFixed(0)}% '
+      'skipPct=${skipPct.toStringAsFixed(0)}% '
+      'renderAvgMs=${_formatCompassStat(renderAvgMs)} '
+      'renderMaxMs=${_compassFpsWindowMaxRenderIntervalMs.toStringAsFixed(0)} '
+      'renderJank=$_compassFpsWindowRenderJank '
+      'renderStall=$_compassFpsWindowRenderStall '
+      'cameraAvgMs=${_formatCompassStat(cameraAvgMs)} '
+      'cameraMaxMs=${_compassFpsWindowMaxCameraIntervalMs.toStringAsFixed(0)} '
+      'cameraJank=$_compassFpsWindowCameraJank '
+      'cameraStall=$_compassFpsWindowCameraStall '
+      'targetLagAvg=${_formatCompassStat(targetLagAvg)} '
+      'targetLagMax=${_compassFpsWindowTargetLagMax.toStringAsFixed(1)} '
+      'desiredRenderMs=${_compassRenderInterval.inMilliseconds}',
+    );
+    _resetCompassFpsWindow(now);
+  }
+
   String _formatCompassStat(double value) {
     if (!value.isFinite) return 'n/a';
     return value.toStringAsFixed(1);
@@ -587,6 +720,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     _compassEventDtCount = 0;
     _compassCameraIntervalSumMs = 0;
     _compassCameraIntervalCount = 0;
+    _lastCompassRenderTickAt = null;
+    _resetCompassFpsWindow(DateTime.now());
     _compassMaxRawLag = 0;
     _compassMaxCameraLag = 0;
     final events = FlutterCompass.events;
@@ -629,6 +764,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     _compassSub = null;
     _stopCompassRenderPump();
     if (wasActive) {
+      _logCompassFpsIfNeeded(DateTime.now(), force: true);
       DebugConsole.log(
         'COMPASS_STOP: events=$_compassEventSeq cameras=$_compassCameraSeq '
         'renders=$_compassRenderSeq skips=$_compassSkipSeq '
@@ -648,11 +784,13 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         : now.difference(_lastCompassEventAt!).inMilliseconds;
     _lastCompassEventAt = now;
     final seq = ++_compassEventSeq;
+    _compassFpsWindowEvents++;
     _recordCompassEventDt(eventDt);
 
     final rawHeading = event.heading;
     if (rawHeading == null) {
       _compassSkipSeq++;
+      _recordCompassFpsSkip();
       if (_shouldLogCompassFrame(seq)) {
         DebugConsole.log(
           'COMPASS_SKIP: seq=$seq reason=null-heading path=sensor '
@@ -660,6 +798,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         );
       }
       _logCompassStatsIfNeeded(seq);
+      _logCompassFpsIfNeeded(now);
       return;
     }
 
@@ -696,19 +835,31 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       );
     }
     _logCompassStatsIfNeeded(seq);
+    _logCompassFpsIfNeeded(now);
   }
 
   void _pumpCompassCamera() {
-    if (!_is3D || !_gpsFollow || _compassEventSeq == 0) return;
+    if (!_is3D || !_gpsFollow) return;
     final now = DateTime.now();
+    final renderInterval = _lastCompassRenderTickAt == null
+        ? null
+        : now.difference(_lastCompassRenderTickAt!);
+    _lastCompassRenderTickAt = now;
+    final renderSeq = ++_compassRenderSeq;
+    _recordCompassFpsRenderTick(renderInterval);
+    if (_compassEventSeq == 0) {
+      _logCompassFpsIfNeeded(now);
+      return;
+    }
+
     final interval = now.difference(_lastCompassCameraUpdate);
     final cameraDelta = _bearingDelta(_lastCameraBearing, _lastBearing);
-    final renderSeq = ++_compassRenderSeq;
     final shouldLog = _shouldLogCompassFrame(renderSeq);
 
     if (cameraDelta.abs() < _compassMinCameraDelta) {
       _compassSkipSeq++;
-      if (shouldLog || interval.inMilliseconds > 120) {
+      _recordCompassFpsSkip();
+      if (shouldLog || (interval.inMilliseconds > 120 && renderSeq % 20 == 0)) {
         DebugConsole.log(
           'COMPASS_SKIP: seq=$_compassEventSeq renderSeq=$renderSeq '
           'reason=render-small-delta path=render-pump '
@@ -718,6 +869,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
           'dCamera=${cameraDelta.toStringAsFixed(1)}',
         );
       }
+      _logCompassFpsIfNeeded(now);
       return;
     }
 
@@ -739,6 +891,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     final rawCameraLag = _lastRawCompassHeading == null
         ? double.nan
         : _bearingDelta(nextCameraBearing, _lastRawCompassHeading!);
+    _recordCompassFpsCamera(interval, targetLag);
     if (shouldLog ||
         cameraDelta.abs() >= 8.0 ||
         interval.inMilliseconds > 120 ||
@@ -756,6 +909,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         'renderGain=$renderGain',
       );
     }
+    _logCompassFpsIfNeeded(now);
   }
 
   void _set3DMode({required bool enabled, bool compassFollow = true}) {
