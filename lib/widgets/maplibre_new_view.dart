@@ -41,6 +41,7 @@ part 'maplibre_new_view/maplibre_radius_layer_rebuild.dart';
 part 'maplibre_new_view/maplibre_radius_sync.dart';
 part 'maplibre_new_view/maplibre_style_state.dart';
 part 'maplibre_new_view/maplibre_style_urls.dart';
+part 'maplibre_new_view/maplibre_user_location_layer.dart';
 part 'maplibre_new_view/maplibre_tap_handling.dart';
 part 'maplibre_new_view/maplibre_veil_layer.dart';
 
@@ -65,9 +66,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   int? _androidGeoJsonSyncViewId;
   final LocationService _locationService = LocationService();
   // 3D view + GPS follow + compass
-  static const Duration _minCompassCameraInterval = Duration(milliseconds: 48);
-  static const double _compassSmoothingGain = 0.55;
-  static const double _compassMinCameraDelta = 0.7;
+  static const Duration _minCompassCameraInterval = Duration(milliseconds: 32);
+  static const double _compassSmoothingGain = 0.72;
+  static const double _compassFastTurnGain = 1.0;
+  static const double _compassFastTurnDelta = 6.0;
+  static const double _compassFastTurnRateDegPerSec = 120.0;
+  static const double _compassMinCameraDelta = 0.45;
   bool _is3D = false;
   bool _gpsFollow = false;
   double _lastBearing = 0;
@@ -77,6 +81,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   int _compassEventSeq = 0;
   int _compassCameraSeq = 0;
   int _compassSkipSeq = 0;
+  double _compassEventDtSumMs = 0;
+  int _compassEventDtCount = 0;
+  double _compassCameraIntervalSumMs = 0;
+  int _compassCameraIntervalCount = 0;
+  double _compassMaxRawLag = 0;
+  double _compassMaxCameraLag = 0;
   StreamSubscription<CompassEvent>? _compassSub;
   bool _resumeCompassAfterAssign = false;
   // 3D button eject animation
@@ -103,6 +113,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   double _deviceDpr = 1.0;
   double _speedKmh = 0;
   Position? _userPos;
+  String _lastUserLocationGeoJson = '';
+  bool _userLocationLayerReady = false;
   Offset? _lastPointerDownPos;
   Offset? _assignScreenCenter;
   Uint8List? _assignMarkerPng;
@@ -477,13 +489,81 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
 
   bool _shouldLogCompassFrame(int frame) => frame <= 3 || frame % 20 == 0;
 
+  double _compassGainFor(double rawDelta, double turnRateDegPerSec) {
+    if (rawDelta.abs() >= _compassFastTurnDelta ||
+        turnRateDegPerSec.abs() >= _compassFastTurnRateDegPerSec) {
+      return _compassFastTurnGain;
+    }
+    return _compassSmoothingGain;
+  }
+
+  void _recordCompassEventDt(int? eventDtMs) {
+    if (eventDtMs == null || eventDtMs < 0) return;
+    _compassEventDtSumMs += eventDtMs;
+    _compassEventDtCount++;
+  }
+
+  void _recordCompassCameraInterval(Duration interval) {
+    final ms = interval.inMilliseconds;
+    if (ms < 0) return;
+    _compassCameraIntervalSumMs += ms;
+    _compassCameraIntervalCount++;
+  }
+
+  void _recordCompassLag({required double rawLag, required double cameraLag}) {
+    _compassMaxRawLag = math.max(_compassMaxRawLag, rawLag.abs());
+    _compassMaxCameraLag = math.max(_compassMaxCameraLag, cameraLag.abs());
+  }
+
+  String _formatCompassStat(double value) {
+    if (!value.isFinite) return 'n/a';
+    return value.toStringAsFixed(1);
+  }
+
+  void _logCompassStatsIfNeeded(int seq) {
+    if (seq == 0 || seq % 60 != 0) return;
+    final avgEventDt = _compassEventDtCount == 0
+        ? double.nan
+        : _compassEventDtSumMs / _compassEventDtCount;
+    final avgCameraInterval = _compassCameraIntervalCount == 0
+        ? double.nan
+        : _compassCameraIntervalSumMs / _compassCameraIntervalCount;
+    final eventHz = avgEventDt.isFinite && avgEventDt > 0
+        ? 1000.0 / avgEventDt
+        : double.nan;
+    final cameraHz = avgCameraInterval.isFinite && avgCameraInterval > 0
+        ? 1000.0 / avgCameraInterval
+        : double.nan;
+    final cameraPct = _compassEventSeq == 0
+        ? 0.0
+        : _compassCameraSeq * 100.0 / _compassEventSeq;
+    DebugConsole.log(
+      'COMPASS_STATS: events=$_compassEventSeq cameras=$_compassCameraSeq '
+      'skips=$_compassSkipSeq cameraPct=${cameraPct.toStringAsFixed(1)} '
+      'avgEventDt=${_formatCompassStat(avgEventDt)}ms '
+      'eventHz=${_formatCompassStat(eventHz)} '
+      'avgCameraInterval=${_formatCompassStat(avgCameraInterval)}ms '
+      'cameraHz=${_formatCompassStat(cameraHz)} '
+      'maxRawLag=${_compassMaxRawLag.toStringAsFixed(1)} '
+      'maxCameraLag=${_compassMaxCameraLag.toStringAsFixed(1)}',
+    );
+  }
+
   void _startCompassFollow() {
     _compassSub?.cancel();
-    _lastCompassCameraUpdate = DateTime.fromMillisecondsSinceEpoch(0);
+    _lastCompassCameraUpdate = DateTime.now().subtract(
+      _minCompassCameraInterval,
+    );
     _lastCompassEventAt = null;
     _compassEventSeq = 0;
     _compassCameraSeq = 0;
     _compassSkipSeq = 0;
+    _compassEventDtSumMs = 0;
+    _compassEventDtCount = 0;
+    _compassCameraIntervalSumMs = 0;
+    _compassCameraIntervalCount = 0;
+    _compassMaxRawLag = 0;
+    _compassMaxCameraLag = 0;
     final events = FlutterCompass.events;
     _compassSub = events?.listen(_handleCompassEvent);
     DebugConsole.log(
@@ -491,7 +571,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       'follow=$_gpsFollow bearing=${_lastBearing.toStringAsFixed(1)} '
       'camera=${_lastCameraBearing.toStringAsFixed(1)} '
       'interval=${_minCompassCameraInterval.inMilliseconds}ms '
-      'gain=$_compassSmoothingGain minDelta=$_compassMinCameraDelta',
+      'gain=$_compassSmoothingGain fastGain=$_compassFastTurnGain '
+      'fastDelta=$_compassFastTurnDelta '
+      'fastRate=$_compassFastTurnRateDegPerSec '
+      'minDelta=$_compassMinCameraDelta',
     );
   }
 
@@ -503,7 +586,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       DebugConsole.log(
         'COMPASS_STOP: events=$_compassEventSeq cameras=$_compassCameraSeq '
         'skips=$_compassSkipSeq bearing=${_lastBearing.toStringAsFixed(1)} '
-        'camera=${_lastCameraBearing.toStringAsFixed(1)}',
+        'camera=${_lastCameraBearing.toStringAsFixed(1)} '
+        'maxRawLag=${_compassMaxRawLag.toStringAsFixed(1)} '
+        'maxCameraLag=${_compassMaxCameraLag.toStringAsFixed(1)}',
       );
     }
   }
@@ -516,6 +601,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         : now.difference(_lastCompassEventAt!).inMilliseconds;
     _lastCompassEventAt = now;
     final seq = ++_compassEventSeq;
+    _recordCompassEventDt(eventDt);
 
     final rawHeading = event.heading;
     if (rawHeading == null) {
@@ -525,30 +611,43 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
           'COMPASS_SKIP: seq=$seq reason=null-heading eventDt=${eventDt ?? -1}ms',
         );
       }
+      _logCompassStatsIfNeeded(seq);
       return;
     }
 
     final heading = _normalizeBearing(rawHeading);
     final rawDelta = _bearingDelta(_lastBearing, heading);
-    _lastBearing = _normalizeBearing(
-      _lastBearing + rawDelta * _compassSmoothingGain,
-    );
+    final turnRateDegPerSec = eventDt != null && eventDt > 0
+        ? rawDelta / (eventDt / 1000.0)
+        : 0.0;
+    final gain = _compassGainFor(rawDelta, turnRateDegPerSec);
+    _lastBearing = _normalizeBearing(_lastBearing + rawDelta * gain);
+
+    final rawLag = _bearingDelta(_lastBearing, heading);
+    final cameraLag = _bearingDelta(_lastCameraBearing, heading);
+    _recordCompassLag(rawLag: rawLag, cameraLag: cameraLag);
 
     final interval = now.difference(_lastCompassCameraUpdate);
     final cameraDelta = _bearingDelta(_lastCameraBearing, _lastBearing);
     final shouldLog = _shouldLogCompassFrame(seq);
     if (interval < _minCompassCameraInterval) {
       _compassSkipSeq++;
-      if (shouldLog) {
+      if (shouldLog || cameraLag.abs() >= 15.0) {
         DebugConsole.log(
           'COMPASS_SKIP: seq=$seq reason=interval '
           'eventDt=${eventDt ?? -1}ms interval=${interval.inMilliseconds}ms '
           'raw=${heading.toStringAsFixed(1)} '
+          'rawDelta=${rawDelta.toStringAsFixed(1)} '
+          'turnRate=${turnRateDegPerSec.toStringAsFixed(1)} '
           'target=${_lastBearing.toStringAsFixed(1)} '
           'camera=${_lastCameraBearing.toStringAsFixed(1)} '
-          'dCamera=${cameraDelta.toStringAsFixed(1)}',
+          'dCamera=${cameraDelta.toStringAsFixed(1)} '
+          'rawLag=${rawLag.toStringAsFixed(1)} '
+          'cameraLag=${cameraLag.toStringAsFixed(1)} '
+          'gain=$gain',
         );
       }
+      _logCompassStatsIfNeeded(seq);
       return;
     }
     if (cameraDelta.abs() < _compassMinCameraDelta) {
@@ -558,33 +657,48 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
           'COMPASS_SKIP: seq=$seq reason=small-delta '
           'eventDt=${eventDt ?? -1}ms interval=${interval.inMilliseconds}ms '
           'raw=${heading.toStringAsFixed(1)} '
+          'rawDelta=${rawDelta.toStringAsFixed(1)} '
+          'turnRate=${turnRateDegPerSec.toStringAsFixed(1)} '
           'target=${_lastBearing.toStringAsFixed(1)} '
           'camera=${_lastCameraBearing.toStringAsFixed(1)} '
-          'dCamera=${cameraDelta.toStringAsFixed(1)}',
+          'dCamera=${cameraDelta.toStringAsFixed(1)} '
+          'rawLag=${rawLag.toStringAsFixed(1)} '
+          'cameraLag=${cameraLag.toStringAsFixed(1)} '
+          'gain=$gain',
         );
       }
+      _logCompassStatsIfNeeded(seq);
       return;
     }
 
     final previousCameraBearing = _lastCameraBearing;
+    final firstCameraUpdate = _compassCameraSeq == 0;
     _lastCompassCameraUpdate = now;
     _lastCameraBearing = _lastBearing;
     _compassCameraSeq++;
+    if (!firstCameraUpdate) {
+      _recordCompassCameraInterval(interval);
+    }
     _safeMoveCamera(bearing: _lastBearing);
     if (shouldLog ||
         cameraDelta.abs() >= 8.0 ||
-        interval.inMilliseconds > 120) {
+        interval.inMilliseconds > 120 ||
+        cameraLag.abs() >= 12.0) {
       DebugConsole.log(
         'COMPASS_CAMERA: seq=$seq cameraSeq=$_compassCameraSeq path=move '
         'eventDt=${eventDt ?? -1}ms interval=${interval.inMilliseconds}ms '
         'raw=${heading.toStringAsFixed(1)} '
         'rawDelta=${rawDelta.toStringAsFixed(1)} '
+        'turnRate=${turnRateDegPerSec.toStringAsFixed(1)} '
         'target=${_lastBearing.toStringAsFixed(1)} '
         'prevCamera=${previousCameraBearing.toStringAsFixed(1)} '
         'dCamera=${cameraDelta.toStringAsFixed(1)} '
-        'gain=$_compassSmoothingGain',
+        'rawLag=${rawLag.toStringAsFixed(1)} '
+        'cameraLag=${cameraLag.toStringAsFixed(1)} '
+        'gain=$gain',
       );
     }
+    _logCompassStatsIfNeeded(seq);
   }
 
   void _set3DMode({required bool enabled, bool compassFollow = true}) {
@@ -796,6 +910,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
 
     this._prepareVectorStyle(styleUrl);
     this._syncRadiusSource(alarmProv);
+    this._syncUserLocationSource(reason: 'build');
 
     return Stack(
       children: [
@@ -933,27 +1048,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
               );
             },
             onEvent: _onMapEvent,
-            layers: [
-              // Pin+chip markers are rendered as bitmap icons in _rebuildRadiusLayers
-              // (SymbolStyleLayer with composite icon-image, not MarkerLayer)
-              // User position — blue dot with white border + glow
-              if (_userPos != null) ...[
-                CircleLayer(
-                  points: [Point(coordinates: _userPos!)],
-                  radius: 16,
-                  color: const Color(0x262196F3),
-                  strokeColor: const Color(0x00000000),
-                  strokeWidth: 0,
-                ),
-                CircleLayer(
-                  points: [Point(coordinates: _userPos!)],
-                  radius: 8,
-                  color: const Color(0xFF2196F3),
-                  strokeColor: const Color(0xFFFFFFFF),
-                  strokeWidth: 3,
-                ),
-              ],
-            ],
+            layers: const [],
           ),
         ), // close GestureDetector
         // Capture pointer position before map processes it

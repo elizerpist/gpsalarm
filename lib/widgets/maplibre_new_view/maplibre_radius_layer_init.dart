@@ -60,6 +60,7 @@ extension _MaplibreRadiusLayerInit on _MaplibreNewViewState {
         },
       ),
     );
+    await this._initUserLocationLayer(style);
     await style.addSource(
       GeoJsonSource(id: 'fast-pt-src', data: _emptyGeoJson),
     );

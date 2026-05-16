@@ -17,6 +17,8 @@ extension _MaplibreStyleState on _MaplibreNewViewState {
     _lastRadiusDataHash = '';
     _lastVeilGeoJson = '';
     _lastVeilOutlineGeoJson = '';
+    _lastUserLocationGeoJson = '';
+    _userLocationLayerReady = false;
     this._resetExitDebugTrace();
     _assignExitVeilOutlineRestoreTimer?.cancel();
     _assignExitVeilOutlineRestoreTimer = null;

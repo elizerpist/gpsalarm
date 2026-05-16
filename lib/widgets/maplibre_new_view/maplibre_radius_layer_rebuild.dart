@@ -657,5 +657,6 @@ extension _MaplibreRadiusLayerRebuild on _MaplibreNewViewState {
     _radiusVisualIds
       ..clear()
       ..addAll(activeVisualIds);
+    await this._ensureUserLocationLayerOrder(style);
   }
 }

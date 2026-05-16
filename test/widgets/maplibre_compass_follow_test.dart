@@ -42,5 +42,31 @@ void main() {
             'A per-sample native animation duration keeps the map behind the device heading.',
       );
     });
+
+    test('uses low-lag adaptive compass tracking diagnostics', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      expect(view, contains('Duration(milliseconds: 32)'));
+      expect(view, contains('_compassFastTurnGain'));
+      expect(view, contains('_compassFastTurnDelta'));
+      expect(view, contains('DateTime.now().subtract'));
+      expect(view, contains('_minCompassCameraInterval'));
+      expect(view, contains('COMPASS_STATS'));
+
+      final start = view.indexOf(
+        'void _handleCompassEvent(CompassEvent event)',
+      );
+      final end = view.indexOf('void _set3DMode', start);
+      expect(start, isNonNegative);
+      expect(end, greaterThan(start));
+      final method = view.substring(start, end);
+
+      expect(method, contains('turnRate='));
+      expect(method, contains('rawLag='));
+      expect(method, contains('cameraLag='));
+      expect(method, contains('gain='));
+    });
   });
 }
