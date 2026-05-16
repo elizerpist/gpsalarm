@@ -162,12 +162,19 @@ void main() {
       ).readAsStringSync();
 
       expect(view, contains('_compassRenderInterval'));
-      expect(view, contains('_compassRenderTimer'));
+      expect(view, contains('_compassRenderTicker'));
+      expect(view, contains('createTicker'));
       expect(view, contains('_startCompassRenderPump'));
       expect(view, contains('_pumpCompassCamera'));
       expect(view, contains('_compassRenderSlowGain'));
       expect(view, contains('_compassRenderFastGain'));
-      expect(view, contains('path=render-pump'));
+      expect(view, contains('path=ticker-pump'));
+      expect(
+        view,
+        isNot(contains('Timer.periodic(_compassRenderInterval')),
+        reason:
+            'Timer.periodic can drift and catch up after slow frames; the compass pump should be driven by Flutter vsync.',
+      );
 
       final handlerStart = view.indexOf(
         'void _handleCompassEvent(CompassEvent event)',
@@ -189,6 +196,35 @@ void main() {
       );
       expect(pump, contains('_safeMoveCamera('));
       expect(pump, isNot(contains('_safeAnimateCamera(')));
+    });
+
+    test('guards compass heading spikes caused by device tilt', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      expect(view, contains('_compassSpikeClampDelta'));
+      expect(view, contains('_compassSpikeClampRateDegPerSec'));
+      expect(view, contains('_compassSpikeClampStep'));
+      expect(view, contains('_stabilizeCompassHeading'));
+      expect(view, contains('COMPASS_SPIKE_CLAMP'));
+
+      final handlerStart = view.indexOf(
+        'void _handleCompassEvent(CompassEvent event)',
+      );
+      final pumpStart = view.indexOf('void _pumpCompassCamera', handlerStart);
+      expect(handlerStart, isNonNegative);
+      expect(pumpStart, greaterThan(handlerStart));
+      final handler = view.substring(handlerStart, pumpStart);
+
+      expect(handler, contains('_stabilizeCompassHeading('));
+      expect(handler, contains('usedDelta='));
+      expect(
+        handler,
+        contains('_compassGainFor(usedDelta, turnRateDegPerSec)'),
+        reason:
+            'Tilt-induced sensor spikes should be clamped before the target bearing is advanced.',
+      );
     });
   });
 }
