@@ -105,6 +105,37 @@ void main() {
       expect(pump, contains('_recordCompassFpsCamera('));
       expect(pump, contains('_logCompassFpsIfNeeded(now'));
     });
+
+    test('targets a 60Hz compass render cadence', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      final lines = view.split('\n');
+      final renderIntervalLine = lines.firstWhere(
+        (line) => line.contains('_compassRenderInterval'),
+      );
+      final renderJankLine = lines.firstWhere(
+        (line) => line.contains('_compassRenderJankMs'),
+      );
+      final renderStallLine = lines.firstWhere(
+        (line) => line.contains('_compassRenderStallMs'),
+      );
+
+      expect(
+        renderIntervalLine,
+        contains('Duration(milliseconds: 16)'),
+        reason:
+            'A 24ms compass render pump caps camera updates around 41Hz, so it cannot deliver a 60fps compass-follow path.',
+      );
+      expect(renderJankLine, contains('= 25;'));
+      expect(renderStallLine, contains('= 50;'));
+      expect(
+        view,
+        contains('desiredRenderMs=\${_compassRenderInterval.inMilliseconds}'),
+      );
+    });
+
     test('coalesces compass samples through a frame-paced render pump', () {
       final view = File(
         'lib/widgets/maplibre_new_view.dart',

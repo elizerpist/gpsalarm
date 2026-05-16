@@ -67,10 +67,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   final LocationService _locationService = LocationService();
   // 3D view + GPS follow + compass
   static const Duration _minCompassCameraInterval = Duration(milliseconds: 32);
-  static const Duration _compassRenderInterval = Duration(milliseconds: 24);
+  static const Duration _compassRenderInterval = Duration(milliseconds: 16);
   static const Duration _compassFpsReportInterval = Duration(seconds: 1);
-  static const int _compassRenderJankMs = 34;
-  static const int _compassRenderStallMs = 80;
+  static const int _compassRenderJankMs = 25;
+  static const int _compassRenderStallMs = 50;
   static const double _compassSmoothingGain = 0.72;
   static const double _compassFastTurnGain = 1.0;
   static const double _compassFastTurnDelta = 6.0;
