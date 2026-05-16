@@ -80,7 +80,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   static const double _compassRenderFastGain = 0.92;
   static const double _compassRenderMediumDelta = 3.0;
   static const double _compassRenderFastDelta = 12.0;
-  static const double _compassMinCameraDelta = 0.45;
+  static const double _compassMinCameraDelta = 0.15;
   bool _is3D = false;
   bool _gpsFollow = false;
   double _lastBearing = 0;

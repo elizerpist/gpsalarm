@@ -136,6 +136,26 @@ void main() {
       );
     });
 
+    test('keeps slow compass turns below the visible deadzone', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      final minDeltaMatch = RegExp(
+        r'_compassMinCameraDelta\s*=\s*([0-9.]+);',
+      ).firstMatch(view);
+      expect(minDeltaMatch, isNotNull);
+      final minDelta = double.parse(minDeltaMatch!.group(1)!);
+
+      expect(
+        minDelta,
+        lessThanOrEqualTo(0.18),
+        reason:
+            'Slow compass turns should not wait for nearly half a degree before moving the camera; that makes low-speed rotation step visibly.',
+      );
+      expect(view, contains('minDelta=\$_compassMinCameraDelta'));
+    });
+
     test('coalesces compass samples through a frame-paced render pump', () {
       final view = File(
         'lib/widgets/maplibre_new_view.dart',
