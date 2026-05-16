@@ -415,7 +415,7 @@ void main() {
             'Severe tilt samples must not keep extending the hold window while the user is intentionally rotating.',
       );
       expect(stabilizer, contains('_dampenCompassTiltJitter('));
-      expect(stabilizer, contains('reason=rate-only-jitter'));
+      expect(view, contains("return 'rate-only-jitter';"));
     });
 
     test('dampens tilt stall pass-through instead of snapping target', () {
@@ -468,13 +468,77 @@ void main() {
       expect(recordStart, greaterThan(stabilizerStart));
       final stabilizer = view.substring(stabilizerStart, recordStart);
 
-      expect(stabilizer, contains('reason=tilt-stall-jitter'));
+      expect(view, contains("return 'tilt-stall-jitter';"));
       expect(stabilizer, contains('eventDt >= _compassTiltJitterStallEventMs'));
       expect(
         stabilizer,
         contains('if (tiltJitter) return dampedHeading;'),
         reason:
             'Stalled tilt jitter must be damped even when the old clamp predicate is true.',
+      );
+    });
+
+    test('treats visible below-clamp tilt deltas as damped jitter', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      expect(view, contains('_compassVisibleTiltJitterDelta'));
+      expect(view, contains('_isCompassVisibleTiltJitter'));
+      expect(view, contains("return 'visible-tilt-jitter';"));
+      expect(view, contains('reason=\$tiltJitterReason'));
+
+      final stabilizerStart = view.indexOf('double _stabilizeCompassHeading({');
+      final recordStart = view.indexOf(
+        'void _recordCompassEventDt',
+        stabilizerStart,
+      );
+      expect(stabilizerStart, isNonNegative);
+      expect(recordStart, greaterThan(stabilizerStart));
+      final stabilizer = view.substring(stabilizerStart, recordStart);
+
+      expect(
+        stabilizer,
+        contains('_isCompassVisibleTiltJitter('),
+        reason:
+            'The logs show 8-12 degree tilt deltas passing through because they sit below the old 12 degree clamp threshold.',
+      );
+      expect(
+        stabilizer,
+        contains('if (tiltJitter) return dampedHeading;'),
+        reason:
+            'Visible tilt jitter should be damped before the pass-through path can return the raw heading.',
+      );
+    });
+
+    test('uses recovery damping after severe tilt hold', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      expect(view, contains('_compassTiltRecoveryDuration'));
+      expect(view, contains('_compassTiltRecoveryUntil'));
+      expect(view, contains('_compassTiltRecoveryGain'));
+      expect(view, contains('_compassTiltRecoveryMaxStep'));
+      expect(view, contains("return 'tilt-recovery';"));
+      expect(view, contains('reason=\$tiltJitterReason'));
+
+      final stabilizerStart = view.indexOf('double _stabilizeCompassHeading({');
+      final recordStart = view.indexOf(
+        'void _recordCompassEventDt',
+        stabilizerStart,
+      );
+      expect(stabilizerStart, isNonNegative);
+      expect(recordStart, greaterThan(stabilizerStart));
+      final stabilizer = view.substring(stabilizerStart, recordStart);
+
+      expect(stabilizer, contains('_compassTiltRecoveryUntil ='));
+      expect(stabilizer, contains('_isCompassTiltRecoveryActive(now)'));
+      expect(
+        stabilizer,
+        contains('tiltRecoveryActive'),
+        reason:
+            'After the short hold expires, severe tilt should recover through low-confidence damping instead of immediately resuming clamp steps.',
       );
     });
   });
