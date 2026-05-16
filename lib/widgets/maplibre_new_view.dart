@@ -104,6 +104,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   );
   static const double _compassTiltRecoveryGain = 0.18;
   static const double _compassTiltRecoveryMaxStep = 1.5;
+  static const double _compassRotationIntentDelta = 18.0;
+  static const double _compassRotationIntentRateDegPerSec = 650.0;
+  static const int _compassRotationIntentSamples = 2;
+  static const Duration _compassRotationIntentGraceDuration = Duration(
+    milliseconds: 260,
+  );
   bool _is3D = false;
   bool _gpsFollow = false;
   double _lastBearing = 0;
@@ -116,8 +122,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   double? _lastCompassUsedDelta;
   DateTime _compassTiltHoldUntil = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _compassTiltRecoveryUntil = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _compassRotationIntentUntil = DateTime.fromMillisecondsSinceEpoch(0);
   bool _compassTiltHoldArmed = true;
   int _compassTiltBurstSamples = 0;
+  int _compassFastRotationSamples = 0;
   DateTime _compassFpsWindowStart = DateTime.fromMillisecondsSinceEpoch(0);
   int _compassFpsWindowEvents = 0;
   int _compassFpsWindowRenders = 0;
@@ -601,6 +609,21 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     return now.isBefore(_compassTiltRecoveryUntil);
   }
 
+  bool _isCompassRotationIntentActive(DateTime now) {
+    return now.isBefore(_compassRotationIntentUntil);
+  }
+
+  bool _isCompassRotationIntent({
+    required double rawDelta,
+    required double turnRateDegPerSec,
+    required int? eventDt,
+  }) {
+    return eventDt != null &&
+        eventDt > 0 &&
+        rawDelta.abs() >= _compassRotationIntentDelta &&
+        turnRateDegPerSec.abs() >= _compassRotationIntentRateDegPerSec;
+  }
+
   bool _shouldHoldCompassTilt({
     required bool shouldClamp,
     required double rawLagBefore,
@@ -822,11 +845,35 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     if (holdReleaseOk) {
       _compassTiltHoldArmed = true;
       _compassTiltBurstSamples = 0;
+      _compassFastRotationSamples = 0;
+      _compassTiltRecoveryUntil = DateTime.fromMillisecondsSinceEpoch(0);
+      _compassRotationIntentUntil = DateTime.fromMillisecondsSinceEpoch(0);
+      tiltRecoveryActive = false;
+    }
+    final rotationIntent = _isCompassRotationIntent(
+      rawDelta: rawDelta,
+      turnRateDegPerSec: turnRateDegPerSec,
+      eventDt: eventDt,
+    );
+    var rotationIntentConfirmed = _isCompassRotationIntentActive(now);
+    if (rotationIntent && !holdActive) {
+      _compassFastRotationSamples++;
+      if (_compassFastRotationSamples >= _compassRotationIntentSamples) {
+        _compassRotationIntentUntil = now.add(
+          _compassRotationIntentGraceDuration,
+        );
+        rotationIntentConfirmed = true;
+      }
+    } else if (!holdActive && !rotationIntentConfirmed) {
+      _compassFastRotationSamples = 0;
+    }
+    if (rotationIntentConfirmed && tiltRecoveryActive) {
       _compassTiltRecoveryUntil = DateTime.fromMillisecondsSinceEpoch(0);
       tiltRecoveryActive = false;
     }
     final holdArmed = _compassTiltHoldArmed;
     final shouldHold =
+        !rotationIntentConfirmed &&
         !holdActive &&
         holdArmed &&
         _shouldHoldCompassTilt(
@@ -834,7 +881,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
           rawLagBefore: rawLagBefore,
           cameraLagBefore: cameraLagBefore,
         );
-    final shouldKeepHolding = holdActive && !holdReleaseOk;
+    final shouldKeepHolding =
+        holdActive && !holdReleaseOk && !rotationIntentConfirmed;
     final visibleTiltJitter = _isCompassVisibleTiltJitter(
       rawDelta: rawDelta,
       deltaOk: deltaOk,
@@ -842,24 +890,27 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       lagOk: lagOk,
     );
     final tiltCandidate =
-        shouldClamp ||
-        visibleTiltJitter ||
-        _isCompassTiltStallJitter(
-          rawDelta: rawDelta,
-          deltaOk: deltaOk,
-          rateOk: rateOk,
-          lagOk: lagOk,
-          stalledEvent: stalledEvent,
-        );
+        !rotationIntentConfirmed &&
+        (shouldClamp ||
+            visibleTiltJitter ||
+            _isCompassTiltStallJitter(
+              rawDelta: rawDelta,
+              deltaOk: deltaOk,
+              rateOk: rateOk,
+              lagOk: lagOk,
+              stalledEvent: stalledEvent,
+            ));
     if (!holdReleaseOk &&
         rawDelta.abs() >= _compassVisibleTiltJitterDelta &&
         tiltCandidate) {
       _compassTiltBurstSamples++;
-    } else if (!holdActive) {
+    } else if (!holdActive || rotationIntentConfirmed) {
       _compassTiltBurstSamples = 0;
     }
     final tiltBurstActive =
-        _compassTiltBurstSamples >= 2 && rawDelta.abs() < _compassTiltHoldDelta;
+        !rotationIntentConfirmed &&
+        _compassTiltBurstSamples >= 2 &&
+        rawDelta.abs() < _compassTiltHoldDelta;
     final tiltJitter = _isCompassTiltJitter(
       rawDelta: rawDelta,
       deltaOk: deltaOk,
@@ -918,6 +969,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         'holdArmed=$holdArmed '
         'holdReleaseOk=$holdReleaseOk '
         'tiltRecoveryActive=$tiltRecoveryActive '
+        'rotationIntent=$rotationIntent '
+        'rotationIntentConfirmed=$rotationIntentConfirmed '
+        'fastRotationSamples=$_compassFastRotationSamples '
         'tiltBurstSamples=$_compassTiltBurstSamples '
         'rawLagBefore=${rawLagBefore.toStringAsFixed(1)} '
         'cameraLagBefore=${cameraLagBefore.toStringAsFixed(1)} '
@@ -1162,8 +1216,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     _lastCompassUsedDelta = null;
     _compassTiltHoldUntil = DateTime.fromMillisecondsSinceEpoch(0);
     _compassTiltRecoveryUntil = DateTime.fromMillisecondsSinceEpoch(0);
+    _compassRotationIntentUntil = DateTime.fromMillisecondsSinceEpoch(0);
     _compassTiltHoldArmed = true;
     _compassTiltBurstSamples = 0;
+    _compassFastRotationSamples = 0;
     _compassEventSeq = 0;
     _compassCameraSeq = 0;
     _compassRenderSeq = 0;
@@ -1213,7 +1269,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       'visibleTiltMaxStep=$_compassVisibleTiltJitterMaxStep '
       'tiltRecoveryMs=${_compassTiltRecoveryDuration.inMilliseconds} '
       'tiltRecoveryGain=$_compassTiltRecoveryGain '
-      'tiltRecoveryMaxStep=$_compassTiltRecoveryMaxStep',
+      'tiltRecoveryMaxStep=$_compassTiltRecoveryMaxStep '
+      'rotationIntentDelta=$_compassRotationIntentDelta '
+      'rotationIntentRate=$_compassRotationIntentRateDegPerSec '
+      'rotationIntentSamples=$_compassRotationIntentSamples '
+      'rotationIntentGraceMs=${_compassRotationIntentGraceDuration.inMilliseconds}',
     );
   }
 

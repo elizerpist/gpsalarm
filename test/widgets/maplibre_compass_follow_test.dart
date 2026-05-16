@@ -541,5 +541,49 @@ void main() {
             'After the short hold expires, severe tilt should recover through low-confidence damping instead of immediately resuming clamp steps.',
       );
     });
+
+    test('lets sustained fast rotation escape tilt recovery', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      expect(view, contains('_compassRotationIntentDelta'));
+      expect(view, contains('_compassRotationIntentRateDegPerSec'));
+      expect(view, contains('_compassRotationIntentSamples'));
+      expect(view, contains('_compassFastRotationSamples'));
+      expect(view, contains('_isCompassRotationIntent'));
+      expect(view, contains('rotationIntentConfirmed'));
+      expect(view, contains('rotationIntent='));
+
+      final stabilizerStart = view.indexOf('double _stabilizeCompassHeading({');
+      final recordStart = view.indexOf(
+        'void _recordCompassEventDt',
+        stabilizerStart,
+      );
+      expect(stabilizerStart, isNonNegative);
+      expect(recordStart, greaterThan(stabilizerStart));
+      final stabilizer = view.substring(stabilizerStart, recordStart);
+
+      expect(
+        stabilizer,
+        contains(
+          '_compassTiltRecoveryUntil = DateTime.fromMillisecondsSinceEpoch(0);',
+        ),
+        reason:
+            'Confirmed real rotation must clear the low-confidence recovery window instead of staying limited to 1.5 degrees per sample.',
+      );
+      expect(
+        stabilizer,
+        contains('!rotationIntentConfirmed &&'),
+        reason:
+            'Confirmed real rotation must bypass tilt hold and burst damping so normal yaw starts promptly.',
+      );
+      expect(
+        stabilizer,
+        contains('_compassFastRotationSamples = 0;'),
+        reason:
+            'The fast-rotation confidence state must reset when motion settles or compass follow restarts.',
+      );
+    });
   });
 }
