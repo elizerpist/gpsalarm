@@ -688,7 +688,7 @@ void main() {
       );
     });
 
-    test('keeps smooth rotation below visible jump steps', () {
+    test('keeps tilt bursts from confirming rotation too early', () {
       final view = File(
         'lib/widgets/maplibre_new_view.dart',
       ).readAsStringSync();
@@ -715,9 +715,9 @@ void main() {
 
       expect(
         intConstant('_compassRotationIntentSamples'),
-        lessThanOrEqualTo(2),
+        greaterThanOrEqualTo(3),
         reason:
-            'Waiting for three high-rate samples lets target lag build up, then releases it as a visible jump.',
+            'Two high-rate samples let tilt bursts enter rotation follow before the tilt dampener can absorb them.',
       );
       expect(
         doubleConstant('_compassRotationFollowMaxRateDegPerSec'),

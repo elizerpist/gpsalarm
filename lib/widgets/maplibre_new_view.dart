@@ -109,7 +109,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   static const double _compassTiltRecoveryMaxStep = 1.5;
   static const double _compassRotationIntentDelta = 18.0;
   static const double _compassRotationIntentRateDegPerSec = 650.0;
-  static const int _compassRotationIntentSamples = 2;
+  static const int _compassRotationIntentSamples = 3;
   static const double _compassRotationFollowGain = 0.58;
   static const double _compassRotationFollowMaxRateDegPerSec = 260.0;
   static const double _compassRotationFollowSnapDelta = 4.0;
