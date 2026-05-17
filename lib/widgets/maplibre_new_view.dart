@@ -88,6 +88,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   static const double _compassRotationSensorMinDelta = 0.45;
   static const double _compassRotationSensorImmediateDelta = 1.1;
   static const int _compassRotationSensorSamplesRequired = 2;
+  static const int _compassRotationSensorProtectedSamplesRequired = 4;
+  static const double _compassRotationSensorProtectedMinRawDelta = 12.0;
+  static const double _compassRotationSensorProtectedMaxDelta = 4.0;
+  static const double _compassRotationSensorProtectedMaxRateDegPerSec = 180.0;
   static const double _compassRotationSensorMaxStep = 4.0;
   static const double _compassRotationSensorMaxRateDegPerSec = 220.0;
   static const double _compassRotationSensorGain = 1.0;
@@ -685,6 +689,14 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     return now.isBefore(_compassRotationIntentUntil);
   }
 
+  bool _isCompassTiltProtectionActive(DateTime now) {
+    return _isCompassTiltHoldActive(now) ||
+        _isCompassTiltRecoveryActive(now) ||
+        _isCompassTiltSettleActive(now) ||
+        _isCompassTiltQuarantineActive(now) ||
+        _compassTiltBurstSamples >= 2;
+  }
+
   bool _isCompassRotationIntent({
     required double rawDelta,
     required double turnRateDegPerSec,
@@ -1038,6 +1050,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     required int seq,
   }) {
     final now = DateTime.now();
+    final tiltProtectionActive = _isCompassTiltProtectionActive(now);
     final rotationHeading = _followCompassSensorRotation(
       heading: heading,
       rawDelta: rawDelta,
@@ -1046,6 +1059,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       eventDt: eventDt,
       seq: seq,
       now: now,
+      tiltProtectionActive: tiltProtectionActive,
     );
     if (rotationHeading != null) return rotationHeading;
 
@@ -1066,6 +1080,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     required int? eventDt,
     required int seq,
     required DateTime now,
+    required bool tiltProtectionActive,
   }) {
     if (eventDt == null || eventDt <= 0) return null;
     final sensorAbs = sensorDelta.abs();
@@ -1087,6 +1102,23 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       _compassSensorRotationDirection = sensorDirection;
       _compassSensorRotationSamples = 1;
     }
+    final protectedRotationCandidate =
+        rawDelta.abs() >= _compassRotationSensorProtectedMinRawDelta &&
+        rawDelta.sign == sensorDelta.sign &&
+        sensorAbs <= _compassRotationSensorProtectedMaxDelta &&
+        turnRateDegPerSec.abs() <=
+            _compassRotationSensorProtectedMaxRateDegPerSec;
+    if (tiltProtectionActive && !protectedRotationCandidate) {
+      _compassSensorRotationSamples = 0;
+      _compassSensorRotationDirection = 0;
+      return null;
+    }
+    final protectedRotationEvidence =
+        !tiltProtectionActive ||
+        _compassSensorRotationSamples >=
+            _compassRotationSensorProtectedSamplesRequired;
+    if (!protectedRotationEvidence) return null;
+
     final sensorRotationConfirmed =
         sensorAbs >= _compassRotationSensorImmediateDelta ||
         _compassSensorRotationSamples >= _compassRotationSensorSamplesRequired;
@@ -1122,6 +1154,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       'targetGain=${targetGain.toStringAsFixed(2)} '
       'heading=${followedHeading.toStringAsFixed(1)} '
       'maxStep=${maxStep.toStringAsFixed(1)} '
+      'tiltProtected=$tiltProtectionActive '
+      'protectedCandidate=$protectedRotationCandidate '
+      'protectedEvidence=$protectedRotationEvidence '
       'sensorSamples=$_compassSensorRotationSamples '
       'sensorDirection=$_compassSensorRotationDirection',
     );

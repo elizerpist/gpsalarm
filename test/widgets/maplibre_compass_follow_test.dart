@@ -1541,7 +1541,7 @@ void main() {
     });
 
     test(
-      'keeps sensor rotation independent from tilt quarantine and lag gates',
+      'keeps sensor rotation available through a protected tilt escape gate',
       () {
         final view = File(
           'lib/widgets/maplibre_new_view.dart',
@@ -1557,17 +1557,34 @@ void main() {
         expect(tiltStart, greaterThan(rotationStart));
 
         final wrapper = view.substring(wrapperStart, rotationStart);
+        expect(wrapper, contains('_isCompassTiltProtectionActive(now)'));
+        expect(wrapper, contains('tiltProtectionActive: tiltProtectionActive'));
         expect(
-          wrapper,
-          isNot(contains('_isCompassTiltProtectionActive')),
+          wrapper.indexOf('_followCompassSensorRotation('),
+          lessThan(wrapper.indexOf('_stabilizeCompassTilt(')),
           reason:
-              'The latest logs still route steady sensorDelta through tilt-burst/quarantine; rotation must be evaluated before any tilt protection gate.',
+              'Rotation still needs the first chance, but protected tilt state must be passed into the rotation gate.',
         );
 
         final rotation = view.substring(rotationStart, tiltStart);
+        expect(rotation, contains('required bool tiltProtectionActive'));
         expect(rotation, contains('_compassSensorRotationSamples'));
         expect(rotation, contains('_compassRotationSensorSamplesRequired'));
         expect(rotation, contains('_compassRotationSensorImmediateDelta'));
+        expect(
+          rotation,
+          contains('_compassRotationSensorProtectedMinRawDelta'),
+        );
+        expect(rotation, contains('_compassRotationSensorProtectedMaxDelta'));
+        expect(
+          rotation,
+          contains('_compassRotationSensorProtectedMaxRateDegPerSec'),
+        );
+        expect(rotation, contains('protectedRotationCandidate'));
+        expect(rotation, contains('!protectedRotationCandidate'));
+        expect(rotation, contains('_compassSensorRotationSamples = 0;'));
+        expect(rotation, contains('protectedRotationEvidence'));
+        expect(rotation, contains('!protectedRotationEvidence'));
         expect(rotation, contains('final targetGain'));
         expect(rotation, contains('_compassFastTurnRateDegPerSec'));
         expect(rotation, contains('followedDelta / targetGain'));
@@ -1577,12 +1594,51 @@ void main() {
           rotation,
           isNot(contains('_compassRotationSensorMaxLag')),
           reason:
-              'Steady rotation in the log accumulates rawDelta past 12 degrees while the target is frozen; direct sensor follow must not have a raw-lag cutoff.',
+              'Steady rotation in the log accumulates rawDelta while the target is frozen; direct sensor follow must use a protected escape gate, not a global raw-lag cutoff.',
         );
-        expect(rotation, isNot(contains('tiltQuarantine')));
-        expect(rotation, isNot(contains('tiltBurst')));
       },
     );
+
+    test('does not promote local tilt wobble to protected sensor rotation', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+      final rotationStart = view.indexOf(
+        'double? _followCompassSensorRotation({',
+      );
+      final tiltStart = view.indexOf('double _stabilizeCompassTilt({');
+      expect(rotationStart, isNonNegative);
+      expect(tiltStart, greaterThan(rotationStart));
+
+      final rotation = view.substring(rotationStart, tiltStart);
+      expect(
+        rotation,
+        contains(
+          'rawDelta.abs() >= _compassRotationSensorProtectedMinRawDelta',
+        ),
+        reason:
+            'In the failing log, tilt quarantine samples with rawDelta around 0-6 degrees were incorrectly promoted to COMPASS_SENSOR_ROTATION.',
+      );
+      expect(
+        rotation,
+        contains('sensorAbs <= _compassRotationSensorProtectedMaxDelta'),
+        reason:
+            'Large tilt-produced sensor jumps should remain in tilt damping instead of being followed as yaw.',
+      );
+      expect(rotation, contains('turnRateDegPerSec.abs()'));
+      expect(
+        rotation,
+        contains('_compassRotationSensorProtectedMaxRateDegPerSec'),
+        reason:
+            'The tilt regression shows very high rate compass swings during quarantine; protected rotation must reject those before target drift starts.',
+      );
+      expect(
+        rotation,
+        contains('rawDelta.sign == sensorDelta.sign'),
+        reason:
+            'Protected rotation should only escape when lag and sensor motion agree.',
+      );
+    });
 
     test('resets sensor rotation evidence when compass follow starts', () {
       final view = File(
