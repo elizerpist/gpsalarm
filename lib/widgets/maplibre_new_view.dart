@@ -111,6 +111,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   static const double _compassRotationIntentDelta = 18.0;
   static const double _compassRotationIntentRateDegPerSec = 650.0;
   static const int _compassRotationIntentSamples = 3;
+  static const int _compassBlockedRotationEscapeSamples = 6;
+  static const double _compassRotationMediumTiltLag = 24.0;
+  static const double _compassRotationHighTiltLag = 42.0;
+  static const double _compassRotationMediumTiltPenalty = 0.65;
+  static const double _compassRotationHighTiltPenalty = 0.45;
   static const double _compassRotationFollowGain = 0.58;
   static const double _compassRotationFollowMaxRateDegPerSec = 180.0;
   static const double _compassRotationFollowSnapDelta = 4.0;
@@ -133,6 +138,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   bool _compassTiltHoldArmed = true;
   int _compassTiltBurstSamples = 0;
   int _compassFastRotationSamples = 0;
+  int _compassBlockedRotationSamples = 0;
+  int _compassBlockedRotationDirection = 0;
   DateTime _compassFpsWindowStart = DateTime.fromMillisecondsSinceEpoch(0);
   int _compassFpsWindowEvents = 0;
   int _compassFpsWindowRenders = 0;
@@ -854,6 +861,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     required double turnRateDegPerSec,
     required int? eventDt,
     required int seq,
+    required double tiltPenalty,
   }) {
     if (rawDelta.abs() <= _compassRotationFollowSnapDelta) {
       return heading;
@@ -861,11 +869,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     final dtSeconds = eventDt != null && eventDt > 0
         ? eventDt / 1000.0
         : _minCompassCameraInterval.inMilliseconds / 1000.0;
+    final effectiveGain = _compassRotationFollowGain * tiltPenalty;
     final maxStep = math.max(
       _compassSpikeClampStep,
-      _compassRotationFollowMaxRateDegPerSec * dtSeconds,
+      _compassRotationFollowMaxRateDegPerSec * tiltPenalty * dtSeconds,
     );
-    final followedDelta = (rawDelta * _compassRotationFollowGain)
+    final followedDelta = (rawDelta * effectiveGain)
         .clamp(-maxStep, maxStep)
         .toDouble();
     final followedHeading = _normalizeBearing(_lastBearing + followedDelta);
@@ -876,9 +885,26 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       'turnRate=${turnRateDegPerSec.toStringAsFixed(1)} '
       'usedDelta=${followedDelta.toStringAsFixed(1)} '
       'heading=${followedHeading.toStringAsFixed(1)} '
-      'maxStep=${maxStep.toStringAsFixed(1)}',
+      'maxStep=${maxStep.toStringAsFixed(1)} '
+      'tiltPenalty=${tiltPenalty.toStringAsFixed(2)}',
     );
     return followedHeading;
+  }
+
+  void _resetCompassBlockedRotationEvidence() {
+    _compassBlockedRotationSamples = 0;
+    _compassBlockedRotationDirection = 0;
+  }
+
+  double _compassRotationTiltPenalty(double cameraLagBefore) {
+    final lag = cameraLagBefore.abs();
+    if (lag >= _compassRotationHighTiltLag) {
+      return _compassRotationHighTiltPenalty;
+    }
+    if (lag >= _compassRotationMediumTiltLag) {
+      return _compassRotationMediumTiltPenalty;
+    }
+    return 1.0;
   }
 
   double _stabilizeCompassHeading({
@@ -909,6 +935,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       _compassTiltHoldArmed = true;
       _compassTiltBurstSamples = 0;
       _compassFastRotationSamples = 0;
+      _resetCompassBlockedRotationEvidence();
       _compassTiltRecoveryUntil = DateTime.fromMillisecondsSinceEpoch(0);
       _compassRotationIntentUntil = DateTime.fromMillisecondsSinceEpoch(0);
       tiltRecoveryActive = false;
@@ -918,12 +945,45 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       turnRateDegPerSec: turnRateDegPerSec,
       eventDt: eventDt,
     );
+    final blockedRotationDirection = rawDelta == 0 ? 0 : rawDelta.sign.toInt();
+    final blockedRotationCandidate =
+        rotationIntent &&
+        !holdActive &&
+        !holdReleaseOk &&
+        _compassTiltBurstSamples >= 2 &&
+        rawDelta.abs() >= _compassRotationIntentDelta;
+    if (blockedRotationCandidate && blockedRotationDirection != 0) {
+      if (_compassBlockedRotationDirection == blockedRotationDirection) {
+        _compassBlockedRotationSamples++;
+      } else {
+        _compassBlockedRotationDirection = blockedRotationDirection;
+        _compassBlockedRotationSamples = 1;
+      }
+    } else if (!holdActive) {
+      _resetCompassBlockedRotationEvidence();
+    }
+
+    final sustainedRotationEscape =
+        _compassBlockedRotationSamples >= _compassBlockedRotationEscapeSamples;
+    if (sustainedRotationEscape && tiltRecoveryActive) {
+      _compassTiltRecoveryUntil = DateTime.fromMillisecondsSinceEpoch(0);
+      tiltRecoveryActive = false;
+    }
+
     final tiltBurstBlocksRotation =
+        !sustainedRotationEscape &&
         !holdReleaseOk &&
         _compassTiltBurstSamples >= 2 &&
         rawDelta.abs() >= _compassVisibleTiltJitterDelta;
     var rotationIntentConfirmed = _isCompassRotationIntentActive(now);
-    if (tiltBurstBlocksRotation || tiltRecoveryActive || holdActive) {
+    if (sustainedRotationEscape && rotationIntent && !holdActive) {
+      _compassFastRotationSamples = _compassRotationIntentSamples;
+      _compassRotationIntentUntil = now.add(
+        _compassRotationIntentGraceDuration,
+      );
+      rotationIntentConfirmed = true;
+      _compassTiltBurstSamples = 0;
+    } else if (tiltBurstBlocksRotation || tiltRecoveryActive || holdActive) {
       _compassFastRotationSamples = 0;
       _compassRotationIntentUntil = DateTime.fromMillisecondsSinceEpoch(0);
       rotationIntentConfirmed = false;
@@ -1042,6 +1102,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         'rotationIntent=$rotationIntent '
         'rotationIntentConfirmed=$rotationIntentConfirmed '
         'tiltBurstBlocksRotation=$tiltBurstBlocksRotation '
+        'sustainedRotationEscape=$sustainedRotationEscape '
+        'blockedRotationSamples=$_compassBlockedRotationSamples '
         'fastRotationSamples=$_compassFastRotationSamples '
         'tiltBurstSamples=$_compassTiltBurstSamples '
         'rawLagBefore=${rawLagBefore.toStringAsFixed(1)} '
@@ -1079,6 +1141,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         'cameraLagBefore=${cameraLagBefore.toStringAsFixed(1)} '
         'holdMs=$remainingHoldMs',
       );
+      _resetCompassBlockedRotationEvidence();
       return _lastBearing;
     }
 
@@ -1089,6 +1152,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         turnRateDegPerSec: turnRateDegPerSec,
         eventDt: eventDt,
         seq: seq,
+        tiltPenalty: _compassRotationTiltPenalty(cameraLagBefore),
       );
     }
 
@@ -1301,6 +1365,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     _compassTiltHoldArmed = true;
     _compassTiltBurstSamples = 0;
     _compassFastRotationSamples = 0;
+    _resetCompassBlockedRotationEvidence();
     _compassEventSeq = 0;
     _compassCameraSeq = 0;
     _compassRenderSeq = 0;
@@ -1358,6 +1423,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       'rotationIntentDelta=$_compassRotationIntentDelta '
       'rotationIntentRate=$_compassRotationIntentRateDegPerSec '
       'rotationIntentSamples=$_compassRotationIntentSamples '
+      'blockedRotationEscapeSamples=$_compassBlockedRotationEscapeSamples '
+      'rotationTiltLag=$_compassRotationMediumTiltLag/$_compassRotationHighTiltLag '
+      'rotationTiltPenalty=$_compassRotationMediumTiltPenalty/$_compassRotationHighTiltPenalty '
       'rotationFollowGain=$_compassRotationFollowGain '
       'rotationFollowMaxRate=$_compassRotationFollowMaxRateDegPerSec '
       'rotationFollowSnapDelta=$_compassRotationFollowSnapDelta '

@@ -767,6 +767,112 @@ void main() {
       );
     });
 
+    test('lets sustained blocked rotation escape tilt burst damping', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      int intConstant(String name) {
+        final match = RegExp(
+          'static const int $name'
+          r'\s*=\s*([0-9]+);',
+          multiLine: true,
+        ).firstMatch(view);
+        expect(match, isNotNull, reason: '$name should be declared');
+        return int.parse(match!.group(1)!);
+      }
+
+      double doubleConstant(String name) {
+        final match = RegExp(
+          'static const double $name'
+          r'\s*=\s*([0-9.]+);',
+          multiLine: true,
+        ).firstMatch(view);
+        expect(match, isNotNull, reason: '$name should be declared');
+        return double.parse(match!.group(1)!);
+      }
+
+      expect(
+        intConstant('_compassBlockedRotationEscapeSamples'),
+        inInclusiveRange(5, 8),
+        reason:
+            'Real yaw should escape the tilt-burst trap after a short sustained evidence window, not after dozens of samples.',
+      );
+      expect(
+        doubleConstant('_compassRotationHighTiltPenalty'),
+        inInclusiveRange(0.35, 0.6),
+        reason:
+            'High tilt confidence should slow rotation follow without falling back to the 1 degree tilt clamp.',
+      );
+
+      final stateStart = view.indexOf('DateTime _compassRotationIntentUntil');
+      final fpsStart = view.indexOf(
+        'DateTime _compassFpsWindowStart',
+        stateStart,
+      );
+      expect(stateStart, isNonNegative);
+      expect(fpsStart, greaterThan(stateStart));
+      final stateFields = view.substring(stateStart, fpsStart);
+
+      expect(stateFields, contains('_compassBlockedRotationSamples = 0'));
+      expect(stateFields, contains('_compassBlockedRotationDirection = 0'));
+
+      final stabilizerStart = view.indexOf('double _stabilizeCompassHeading({');
+      final recordStart = view.indexOf(
+        'void _recordCompassEventDt',
+        stabilizerStart,
+      );
+      expect(stabilizerStart, isNonNegative);
+      expect(recordStart, greaterThan(stabilizerStart));
+      final stabilizer = view.substring(stabilizerStart, recordStart);
+
+      expect(stabilizer, contains('blockedRotationCandidate'));
+      expect(stabilizer, contains('_compassBlockedRotationSamples++'));
+      expect(stabilizer, contains('sustainedRotationEscape'));
+      expect(
+        stabilizer,
+        contains('!sustainedRotationEscape'),
+        reason:
+            'Tilt burst should block early samples, but sustained same-direction rotation must be able to escape.',
+      );
+      expect(
+        stabilizer,
+        contains('_compassFastRotationSamples = _compassRotationIntentSamples'),
+        reason:
+            'Once escape is proven, rotation follow should become responsive immediately instead of waiting for another full confirmation window.',
+      );
+      expect(
+        stabilizer,
+        contains('tiltRecoveryActive = false'),
+        reason:
+            'Sustained rotation must be able to leave tilt recovery; otherwise real rotation remains lagged for the whole recovery window.',
+      );
+      expect(
+        stabilizer,
+        contains('sustainedRotationEscape=\$sustainedRotationEscape'),
+      );
+      expect(
+        stabilizer,
+        contains('blockedRotationSamples=\$_compassBlockedRotationSamples'),
+      );
+
+      final followStart = view.indexOf('double _followCompassRotationIntent({');
+      final followEnd = view.indexOf(
+        'double _stabilizeCompassHeading({',
+        followStart,
+      );
+      expect(followStart, isNonNegative);
+      expect(followEnd, greaterThan(followStart));
+      final follow = view.substring(followStart, followEnd);
+
+      expect(follow, contains('tiltPenalty'));
+      expect(
+        follow,
+        contains('_compassRotationFollowMaxRateDegPerSec * tiltPenalty'),
+      );
+      expect(follow, contains('_compassRotationFollowGain * tiltPenalty'));
+    });
+
     test('dampens all visible below-clamp tilt instead of raw pass-through', () {
       final view = File(
         'lib/widgets/maplibre_new_view.dart',
