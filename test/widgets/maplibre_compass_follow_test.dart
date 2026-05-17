@@ -1117,6 +1117,59 @@ void main() {
       expect(follow, contains('rotationIntent'));
     });
 
+    test('keeps lag-only rotation catch-up below direct yaw follow steps', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      double constant(String name) {
+        final match = RegExp(
+          'static const double $name'
+          r'\s*=\s*([0-9.]+);',
+          multiLine: true,
+        ).firstMatch(view);
+        expect(match, isNotNull, reason: '$name should be declared');
+        return double.parse(match!.group(1)!);
+      }
+
+      expect(
+        constant('_compassRotationLagFollowMaxStep'),
+        lessThan(constant('_compassRotationFollowMaxStep')),
+        reason:
+            'The 22:10 trace shows lag-only catch-up using 10-12 degree target jumps after target freeze, which makes rotation visibly step instead of glide.',
+      );
+      expect(
+        constant('_compassRotationLagFollowMaxStep'),
+        lessThanOrEqualTo(6.0),
+        reason:
+            'Lag-only catch-up should stay near the sensor/coast step size so camera frames do not get repeated 5 degree jumps.',
+      );
+
+      final followStart = view.indexOf('double _followCompassRotationIntent({');
+      final followEnd = view.indexOf(
+        'void _resetCompassBlockedRotationEvidence',
+        followStart,
+      );
+      expect(followStart, isNonNegative);
+      expect(followEnd, greaterThan(followStart));
+      final follow = view.substring(followStart, followEnd);
+
+      expect(follow, contains('required bool lagFollowCandidate'));
+      expect(
+        follow,
+        contains('? _compassRotationLagFollowMaxStep'),
+        reason: 'Lag-only follow must select the smaller max step branch.',
+      );
+      expect(
+        follow,
+        contains(
+          'rotationIntent && rawDelta.abs() >= _compassRotationFollowLagBoostDelta',
+        ),
+        reason:
+            'The extra lag boost should only apply to direct rotation intent, not to lag-only recovery after tilt quarantine.',
+      );
+    });
+
     test('releases rotation grace before visible tilt jitter is integrated', () {
       final view = File(
         'lib/widgets/maplibre_new_view.dart',

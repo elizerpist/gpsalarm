@@ -151,6 +151,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   static const double _compassRotationFollowGain = 0.58;
   static const double _compassRotationFollowMaxRateDegPerSec = 320.0;
   static const double _compassRotationFollowMaxStep = 10.0;
+  static const double _compassRotationLagFollowMaxStep = 6.0;
   static const double _compassRotationGraceMaxStep = 4.0;
   static const double _compassRotationGraceReleaseDelta = 12.0;
   static const double _compassRotationFollowLagBoostDelta = 35.0;
@@ -998,6 +999,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     required int? eventDt,
     required int seq,
     required bool rotationIntent,
+    required bool lagFollowCandidate,
   }) {
     if (rawDelta.abs() <= _compassRotationFollowSnapDelta) {
       return heading;
@@ -1011,6 +1013,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         : 0.0;
     final modeMaxStep = rotationIntent
         ? _compassRotationFollowMaxStep
+        : lagFollowCandidate
+        ? _compassRotationLagFollowMaxStep
         : _compassRotationGraceMaxStep;
     final boostedModeMaxStep = modeMaxStep + lagBoostStep;
     final maxStep = math.max(
@@ -1032,6 +1036,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       'usedDelta=${followedDelta.toStringAsFixed(1)} '
       'heading=${followedHeading.toStringAsFixed(1)} '
       'rotationIntent=$rotationIntent '
+      'lagFollowCandidate=$lagFollowCandidate '
       'followGain=${_compassRotationFollowGain.toStringAsFixed(2)} '
       'followMaxStep=${maxStep.toStringAsFixed(1)} '
       'modeMaxStep=${boostedModeMaxStep.toStringAsFixed(1)} '
@@ -1536,13 +1541,14 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         ? eventDt / 1000.0
         : _minCompassCameraInterval.inMilliseconds / 1000.0;
     final rotationLagBoostStep =
-        rotationEvidence &&
-            rawDelta.abs() >= _compassRotationFollowLagBoostDelta
+        rotationIntent && rawDelta.abs() >= _compassRotationFollowLagBoostDelta
         ? _compassRotationFollowLagBoostStep
         : 0.0;
     final rotationModeMaxStep =
-        (rotationEvidence
+        (rotationIntent
             ? _compassRotationFollowMaxStep
+            : lagFollowCandidate
+            ? _compassRotationLagFollowMaxStep
             : _compassRotationGraceMaxStep) +
         rotationLagBoostStep;
     const rotationFollowGain = _compassRotationFollowGain;
@@ -1715,7 +1721,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         turnRateDegPerSec: turnRateDegPerSec,
         eventDt: eventDt,
         seq: seq,
-        rotationIntent: rotationEvidence,
+        rotationIntent: rotationIntent,
+        lagFollowCandidate: lagFollowCandidate,
       );
     }
 
