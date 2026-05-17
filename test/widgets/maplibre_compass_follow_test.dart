@@ -1692,6 +1692,46 @@ void main() {
       );
     });
 
+    test('escapes protected tilt when sustained rotation lag is building', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+      final rotationStart = view.indexOf(
+        'double? _followCompassSensorRotation({',
+      );
+      final tiltStart = view.indexOf('double _stabilizeCompassTilt({');
+      expect(rotationStart, isNonNegative);
+      expect(tiltStart, greaterThan(rotationStart));
+
+      final rotation = view.substring(rotationStart, tiltStart);
+      expect(
+        rotation,
+        contains('protectedLagEscapeCandidate'),
+        reason:
+            'The failing log freezes target updates during tilt-burst until raw lag jumps beyond 40 degrees; sustained same-direction lag needs a rotation-only escape before tilt can absorb it.',
+      );
+      expect(
+        rotation,
+        contains('_compassRotationSensorProtectedLagEscapeMaxDelta'),
+      );
+      expect(
+        rotation,
+        contains('_compassRotationSensorProtectedLagEscapeMaxRateDegPerSec'),
+      );
+      expect(
+        rotation,
+        contains('_compassRotationSensorProtectedLagEscapeSamplesRequired'),
+      );
+      expect(rotation, contains('protectedLagGrowing'));
+      expect(rotation, contains('rawDelta.sign == sensorDelta.sign'));
+      expect(
+        rotation,
+        isNot(contains('_dampenCompassTiltJitter')),
+        reason:
+            'The lag escape must live in the rotation gate, leaving the tilt dampening behavior unchanged.',
+      );
+    });
+
     test('coasts protected rotation through brief sensor wobble', () {
       final view = File(
         'lib/widgets/maplibre_new_view.dart',
