@@ -949,5 +949,65 @@ void main() {
             'Only confirmed rotation should use the larger render step; tilt/unconfirmed jitter must keep the base clamp.',
       );
     });
+
+    test('logs compass decision inputs separately from action outputs', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      final stabilizerStart = view.indexOf('double _stabilizeCompassHeading({');
+      final recordStart = view.indexOf(
+        'void _recordCompassEventDt',
+        stabilizerStart,
+      );
+      expect(stabilizerStart, isNonNegative);
+      expect(recordStart, greaterThan(stabilizerStart));
+      final stabilizer = view.substring(stabilizerStart, recordStart);
+
+      expect(stabilizer, contains('COMPASS_DECISION'));
+      for (final field in [
+        'mode=',
+        'rotationGraceActive=',
+        'rotationGraceMs=',
+        'tiltPenaltySource=',
+        'tiltPenaltyBand=',
+        'tiltCandidate=',
+        'tiltJitter=',
+        'visibleTiltJitter=',
+        'shouldHold=',
+        'shouldKeepHolding=',
+        'blockedRotationCandidate=',
+        'blockedRotationDirection=',
+        'rawLagBefore=',
+        'cameraLagBefore=',
+        'followGain=',
+        'followMaxStep=',
+      ]) {
+        expect(stabilizer, contains(field));
+      }
+    });
+
+    test('logs compass camera render decision details', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      final pumpStart = view.indexOf('void _pumpCompassCamera');
+      final modeStart = view.indexOf('void _set3DMode', pumpStart);
+      expect(pumpStart, isNonNegative);
+      expect(modeStart, greaterThan(pumpStart));
+      final pump = view.substring(pumpStart, modeStart);
+
+      for (final field in [
+        'rotationResponsive=',
+        'renderMaxStep=',
+        'cameraIntervalMs=',
+        'renderIntervalMs=',
+        'renderStallMs=',
+        'firstCameraUpdate=',
+      ]) {
+        expect(pump, contains(field));
+      }
+    });
   });
 }
