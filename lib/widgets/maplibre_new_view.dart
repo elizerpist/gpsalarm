@@ -668,6 +668,16 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         turnRateDegPerSec.abs() >= _compassRotationIntentRateDegPerSec;
   }
 
+  bool _isCompassLagFollowCandidate({
+    required double rawDelta,
+    required double cameraLagBefore,
+    required bool holdReleaseOk,
+  }) {
+    return !holdReleaseOk &&
+        rawDelta.abs() >= _compassRotationIntentDelta &&
+        cameraLagBefore.abs() >= _compassSpikeClampLagDelta;
+  }
+
   bool _shouldHoldCompassTilt({
     required bool shouldClamp,
     required double rawLagBefore,
@@ -967,13 +977,14 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       turnRateDegPerSec: turnRateDegPerSec,
       eventDt: eventDt,
     );
+    final lagFollowCandidate = _isCompassLagFollowCandidate(
+      rawDelta: rawDelta,
+      cameraLagBefore: cameraLagBefore,
+      holdReleaseOk: holdReleaseOk,
+    );
+    final rotationEvidence = rotationIntent || lagFollowCandidate;
     final blockedRotationDirection = rawDelta == 0 ? 0 : rawDelta.sign.toInt();
-    final blockedRotationCandidate =
-        rotationIntent &&
-        !holdActive &&
-        !holdReleaseOk &&
-        _compassTiltBurstSamples >= 2 &&
-        rawDelta.abs() >= _compassRotationIntentDelta;
+    final blockedRotationCandidate = lagFollowCandidate;
     if (blockedRotationCandidate && blockedRotationDirection != 0) {
       if (_compassBlockedRotationDirection == blockedRotationDirection) {
         _compassBlockedRotationSamples++;
@@ -993,27 +1004,30 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     }
 
     final tiltBurstBlocksRotation =
+        !lagFollowCandidate &&
         !sustainedRotationEscape &&
         !holdReleaseOk &&
         _compassTiltBurstSamples >= 2 &&
         rawDelta.abs() >= _compassVisibleTiltJitterDelta;
     var rotationIntentConfirmed = _isCompassRotationIntentActive(now);
-    if (sustainedRotationEscape && rotationIntent && !holdActive) {
+    if (sustainedRotationEscape && rotationEvidence && !holdActive) {
       _compassFastRotationSamples = _compassRotationIntentSamples;
       _compassRotationIntentUntil = now.add(
         _compassRotationIntentGraceDuration,
       );
       rotationIntentConfirmed = true;
       _compassTiltBurstSamples = 0;
-    } else if (tiltBurstBlocksRotation || tiltRecoveryActive || holdActive) {
+    } else if (tiltBurstBlocksRotation ||
+        (tiltRecoveryActive && !lagFollowCandidate) ||
+        holdActive) {
       _compassFastRotationSamples = 0;
       _compassRotationIntentUntil = DateTime.fromMillisecondsSinceEpoch(0);
       rotationIntentConfirmed = false;
     }
-    if (rotationIntent &&
+    if (rotationEvidence &&
         !holdActive &&
         !tiltBurstBlocksRotation &&
-        !tiltRecoveryActive) {
+        (!tiltRecoveryActive || lagFollowCandidate)) {
       _compassFastRotationSamples++;
       if (_compassFastRotationSamples >= _compassRotationIntentSamples) {
         _compassRotationIntentUntil = now.add(
@@ -1033,7 +1047,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     final releaseRotationGrace =
         rotationIntentConfirmed &&
         _shouldReleaseCompassRotationGrace(
-          rotationIntent: rotationIntent,
+          rotationIntent: rotationEvidence,
           visibleTiltJitter: visibleTiltJitter,
           rawDelta: rawDelta,
           stalledEvent: stalledEvent,
@@ -1046,6 +1060,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     final holdArmed = _compassTiltHoldArmed;
     final severeTiltHoldCandidate =
         !stalledEvent &&
+        !lagFollowCandidate &&
         !holdActive &&
         holdArmed &&
         _shouldHoldCompassTilt(
@@ -1054,12 +1069,14 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
           cameraLagBefore: cameraLagBefore,
         );
     final holdBlockedByRotation =
-        rotationIntent &&
+        rotationEvidence &&
         !rotationIntentConfirmed &&
         (severeTiltHoldCandidate || (holdActive && !holdReleaseOk));
     final shouldHold =
-        !rotationIntent && !rotationIntentConfirmed && severeTiltHoldCandidate;
-    final shouldKeepHolding = holdActive && !holdReleaseOk && !rotationIntent;
+        !rotationEvidence &&
+        !rotationIntentConfirmed &&
+        severeTiltHoldCandidate;
+    final shouldKeepHolding = holdActive && !holdReleaseOk && !rotationEvidence;
     final tiltCandidate =
         !rotationIntentConfirmed &&
         (shouldClamp ||
@@ -1121,7 +1138,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     final rotationDtSeconds = eventDt != null && eventDt > 0
         ? eventDt / 1000.0
         : _minCompassCameraInterval.inMilliseconds / 1000.0;
-    final rotationModeMaxStep = rotationIntent
+    final rotationModeMaxStep = rotationEvidence
         ? _compassRotationFollowMaxStep
         : _compassRotationGraceMaxStep;
     const rotationFollowGain = _compassRotationFollowGain;
@@ -1182,6 +1199,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         'tiltBurstActive=$tiltBurstActive '
         'tiltBurstBlocksRotation=$tiltBurstBlocksRotation '
         'rotationIntent=$rotationIntent '
+        'lagFollowCandidate=$lagFollowCandidate '
+        'rotationEvidence=$rotationEvidence '
         'rotationGraceActive=$rotationGraceActive '
         'releaseRotationGrace=$releaseRotationGrace '
         'rotationIntentConfirmed=$rotationIntentConfirmed '
@@ -1234,6 +1253,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         'holdReleaseOk=$holdReleaseOk '
         'tiltRecoveryActive=$tiltRecoveryActive '
         'rotationIntent=$rotationIntent '
+        'lagFollowCandidate=$lagFollowCandidate '
         'rotationIntentConfirmed=$rotationIntentConfirmed '
         'tiltBurstBlocksRotation=$tiltBurstBlocksRotation '
         'sustainedRotationEscape=$sustainedRotationEscape '
@@ -1286,7 +1306,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         turnRateDegPerSec: turnRateDegPerSec,
         eventDt: eventDt,
         seq: seq,
-        rotationIntent: rotationIntent,
+        rotationIntent: rotationEvidence,
       );
     }
 

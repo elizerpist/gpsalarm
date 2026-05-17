@@ -566,15 +566,15 @@ void main() {
 
       expect(
         stabilizer,
-        contains('tiltRecoveryActive || holdActive'),
+        contains('(tiltRecoveryActive && !lagFollowCandidate) ||'),
         reason:
-            'Recovery is a low-confidence compass state and must clear rotation confidence before a new rotation can confirm.',
+            'Recovery remains a low-confidence compass state unless a large persistent lag proves rotation catch-up.',
       );
       expect(
         stabilizer,
-        contains('!tiltRecoveryActive'),
+        contains('(!tiltRecoveryActive || lagFollowCandidate)'),
         reason:
-            'Rotation candidates should only accumulate while the signal is outside recovery.',
+            'Rotation candidates should only accumulate during recovery when persistent lag is present.',
       );
       expect(
         stabilizer,
@@ -1160,9 +1160,9 @@ void main() {
 
       expect(
         stabilizer,
-        contains('!rotationIntent &&'),
+        contains('!rotationEvidence &&'),
         reason:
-            'A same-direction rotation candidate should be damped or followed, not frozen by a tilt hold window.',
+            'A same-direction rotation or catch-up candidate should be damped or followed, not frozen by a tilt hold window.',
       );
       expect(stabilizer, contains('holdBlockedByRotation='));
     });
@@ -1224,6 +1224,60 @@ void main() {
         contains('!stalledEvent &&'),
         reason:
             'The latest log shows a 213ms stalled tilt frame opened a severe hold, which then caused recovery jumps; stalled tilt should stay in absorbed damping.',
+      );
+    });
+
+    test('uses persistent compass lag as rotation catch-up evidence', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      expect(view, contains('_isCompassLagFollowCandidate'));
+
+      final stabilizerStart = view.indexOf('double _stabilizeCompassHeading({');
+      final recordStart = view.indexOf(
+        'void _recordCompassEventDt',
+        stabilizerStart,
+      );
+      expect(stabilizerStart, isNonNegative);
+      expect(recordStart, greaterThan(stabilizerStart));
+      final stabilizer = view.substring(stabilizerStart, recordStart);
+
+      expect(stabilizer, contains('lagFollowCandidate'));
+      expect(stabilizer, contains('rotationIntent || lagFollowCandidate'));
+      expect(
+        stabilizer,
+        contains('blockedRotationCandidate = lagFollowCandidate'),
+        reason:
+            'The latest rotation log froze with sensorDelta near zero but 30-70 degrees of target/camera lag; persistent lag must enter rotation-follow instead of waiting for sensor rate.',
+      );
+    });
+
+    test('does not let tilt burst or severe hold lock rotation catch-up lag', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      final stabilizerStart = view.indexOf('double _stabilizeCompassHeading({');
+      final recordStart = view.indexOf(
+        'void _recordCompassEventDt',
+        stabilizerStart,
+      );
+      expect(stabilizerStart, isNonNegative);
+      expect(recordStart, greaterThan(stabilizerStart));
+      final stabilizer = view.substring(stabilizerStart, recordStart);
+
+      expect(
+        stabilizer,
+        contains('!lagFollowCandidate &&'),
+        reason:
+            'Large persistent lag is rotation catch-up evidence; tilt-burst absorb and severe hold must not lock that path.',
+      );
+      expect(
+        stabilizer,
+        contains('!tiltRecoveryActive || lagFollowCandidate'),
+        reason:
+            'Recovery damping should not keep absorbing real rotation once large lag is present again.',
       );
     });
 
