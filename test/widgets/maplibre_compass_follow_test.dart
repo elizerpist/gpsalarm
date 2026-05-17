@@ -794,9 +794,9 @@ void main() {
 
       expect(
         intConstant('_compassBlockedRotationEscapeSamples'),
-        inInclusiveRange(5, 8),
+        lessThanOrEqualTo(3),
         reason:
-            'Real yaw should escape the tilt-burst trap after a short sustained evidence window, not after dozens of samples.',
+            'The logs show rotation now feels fluent but starts late because tilt-burst waits 5-6 samples before escape.',
       );
       expect(
         doubleConstant('_compassRotationFollowMaxStep'),
@@ -1015,6 +1015,33 @@ void main() {
       }
     });
 
+    test('uses sensor-to-sensor delta for rotation rate', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      final handleStart = view.indexOf('void _handleCompassEvent');
+      final pumpStart = view.indexOf('void _pumpCompassCamera', handleStart);
+      expect(handleStart, isNonNegative);
+      expect(pumpStart, greaterThan(handleStart));
+      final handle = view.substring(handleStart, pumpStart);
+
+      expect(handle, contains('previousRawCompassHeading'));
+      expect(handle, contains('sensorDelta'));
+      expect(
+        handle,
+        contains('sensorDelta / (eventDt / 1000.0)'),
+        reason:
+            'A frozen target plus hand tilt created large rawDelta on every event; rotation rate must come from raw compass sample-to-sample motion instead.',
+      );
+      expect(
+        handle,
+        isNot(contains('rawDelta / (eventDt / 1000.0)')),
+        reason:
+            'Using target lag as turn rate misclassifies held tilt offsets as fast yaw.',
+      );
+    });
+
     test('does not treat rotation lag as tilt confidence', () {
       final view = File(
         'lib/widgets/maplibre_new_view.dart',
@@ -1140,6 +1167,66 @@ void main() {
       expect(stabilizer, contains('holdBlockedByRotation='));
     });
 
+    test('absorbs tilt burst, stall, and recovery without target drift', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      double constant(String name) {
+        final match = RegExp(
+          'static const double $name'
+          r'\s*=\s*([0-9.]+);',
+          multiLine: true,
+        ).firstMatch(view);
+        expect(match, isNotNull, reason: '$name should be declared');
+        return double.parse(match!.group(1)!);
+      }
+
+      expect(constant('_compassRateOnlyJitterGain'), equals(0.0));
+      expect(constant('_compassTiltJitterMaxStep'), equals(0.0));
+      expect(constant('_compassTiltRecoveryGain'), equals(0.0));
+      expect(constant('_compassTiltRecoveryMaxStep'), equals(0.0));
+
+      final dampenStart = view.indexOf('double _dampenCompassTiltJitter({');
+      final followStart = view.indexOf(
+        'double _followCompassRotationIntent({',
+        dampenStart,
+      );
+      expect(dampenStart, isNonNegative);
+      expect(followStart, greaterThan(dampenStart));
+      final dampen = view.substring(dampenStart, followStart);
+
+      expect(dampen, contains('tiltAbsorbed='));
+      expect(
+        dampen,
+        contains('_lastBearing + dampedDelta'),
+        reason:
+            'The tilt path should continue returning a target derived from the previous target, not raw sensor heading.',
+      );
+    });
+
+    test('does not open severe tilt hold on stalled tilt frames', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      final stabilizerStart = view.indexOf('double _stabilizeCompassHeading({');
+      final recordStart = view.indexOf(
+        'void _recordCompassEventDt',
+        stabilizerStart,
+      );
+      expect(stabilizerStart, isNonNegative);
+      expect(recordStart, greaterThan(stabilizerStart));
+      final stabilizer = view.substring(stabilizerStart, recordStart);
+
+      expect(
+        stabilizer,
+        contains('!stalledEvent &&'),
+        reason:
+            'The latest log shows a 213ms stalled tilt frame opened a severe hold, which then caused recovery jumps; stalled tilt should stay in absorbed damping.',
+      );
+    });
+
     test('keeps visible tilt integration below a visible one-degree drift', () {
       final view = File(
         'lib/widgets/maplibre_new_view.dart',
@@ -1157,13 +1244,15 @@ void main() {
 
       expect(
         constant('_compassVisibleTiltJitterGain'),
-        lessThanOrEqualTo(0.10),
+        equals(0.0),
+        reason:
+            'Hand tremor while tilting still integrated 0.4 degrees per sample at 25Hz, so visible tilt must be absorbed instead of followed.',
       );
       expect(
         constant('_compassVisibleTiltJitterMaxStep'),
-        lessThanOrEqualTo(0.5),
+        equals(0.0),
         reason:
-            'Repeated 6-12 degree visible tilt samples were integrating 0.9-1.0 degree per event and visibly shaking the map.',
+            'Repeated visible tilt samples should not move the compass target at all.',
       );
     });
   });

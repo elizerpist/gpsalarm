@@ -97,21 +97,21 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   static const double _compassTiltHoldReleaseDelta = 8.0;
   static const Duration _compassTiltHoldDuration = Duration(milliseconds: 140);
   static const double _compassRateOnlyJitterDelta = 8.0;
-  static const double _compassRateOnlyJitterGain = 0.35;
+  static const double _compassRateOnlyJitterGain = 0.0;
   static const int _compassTiltJitterStallEventMs = 80;
-  static const double _compassTiltJitterMaxStep = 4.0;
+  static const double _compassTiltJitterMaxStep = 0.0;
   static const double _compassVisibleTiltJitterDelta = 6.0;
-  static const double _compassVisibleTiltJitterGain = 0.08;
-  static const double _compassVisibleTiltJitterMaxStep = 0.4;
+  static const double _compassVisibleTiltJitterGain = 0.0;
+  static const double _compassVisibleTiltJitterMaxStep = 0.0;
   static const Duration _compassTiltRecoveryDuration = Duration(
     milliseconds: 650,
   );
-  static const double _compassTiltRecoveryGain = 0.18;
-  static const double _compassTiltRecoveryMaxStep = 1.5;
+  static const double _compassTiltRecoveryGain = 0.0;
+  static const double _compassTiltRecoveryMaxStep = 0.0;
   static const double _compassRotationIntentDelta = 18.0;
-  static const double _compassRotationIntentRateDegPerSec = 650.0;
+  static const double _compassRotationIntentRateDegPerSec = 220.0;
   static const int _compassRotationIntentSamples = 3;
-  static const int _compassBlockedRotationEscapeSamples = 6;
+  static const int _compassBlockedRotationEscapeSamples = 3;
   static const double _compassRotationFollowGain = 0.58;
   static const double _compassRotationFollowMaxRateDegPerSec = 180.0;
   static const double _compassRotationFollowMaxStep = 6.0;
@@ -843,10 +843,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
               tiltBurstActive
         ? _compassVisibleTiltJitterMaxStep
         : _compassTiltJitterMaxStep;
-    final dampedDelta = _clampCompassTiltJitterDelta(
-      rawDelta * gain,
-      maxStep: maxStep,
-    );
+    final tiltAbsorbed = gain == 0.0 || maxStep == 0.0;
+    final dampedDelta = tiltAbsorbed
+        ? 0.0
+        : _clampCompassTiltJitterDelta(rawDelta * gain, maxStep: maxStep);
     final dampedHeading = _normalizeBearing(_lastBearing + dampedDelta);
     DebugConsole.log(
       'COMPASS_TILT_JITTER: seq=$seq eventDt=${eventDt ?? -1}ms '
@@ -858,6 +858,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       'heading=${dampedHeading.toStringAsFixed(1)} '
       'gain=${gain.toStringAsFixed(2)} '
       'maxStep=${maxStep.toStringAsFixed(1)} '
+      'tiltAbsorbed=$tiltAbsorbed '
       'deltaOk=$deltaOk '
       'rateOk=$rateOk '
       'lagOk=$lagOk '
@@ -1044,6 +1045,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     }
     final holdArmed = _compassTiltHoldArmed;
     final severeTiltHoldCandidate =
+        !stalledEvent &&
         !holdActive &&
         holdArmed &&
         _shouldHoldCompassTilt(
@@ -1627,10 +1629,14 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     }
 
     final sensorHeading = _normalizeBearing(rawHeading);
+    final previousRawCompassHeading = _lastRawCompassHeading;
+    final sensorDelta = previousRawCompassHeading == null
+        ? 0.0
+        : _bearingDelta(previousRawCompassHeading, sensorHeading);
     _lastRawCompassHeading = sensorHeading;
     final rawDelta = _bearingDelta(_lastBearing, sensorHeading);
     final turnRateDegPerSec = eventDt != null && eventDt > 0
-        ? rawDelta / (eventDt / 1000.0)
+        ? sensorDelta / (eventDt / 1000.0)
         : 0.0;
     final heading = _stabilizeCompassHeading(
       heading: sensorHeading,
@@ -1659,6 +1665,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         'COMPASS_TARGET: seq=$seq eventDt=${eventDt ?? -1}ms '
         'raw=${sensorHeading.toStringAsFixed(1)} '
         'rawDelta=${rawDelta.toStringAsFixed(1)} '
+        'sensorDelta=${sensorDelta.toStringAsFixed(1)} '
         'usedDelta=${usedDelta.toStringAsFixed(1)} '
         'turnRate=${turnRateDegPerSec.toStringAsFixed(1)} '
         'target=${_lastBearing.toStringAsFixed(1)} '
