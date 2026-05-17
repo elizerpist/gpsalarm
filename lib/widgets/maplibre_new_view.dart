@@ -97,6 +97,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   static const double _compassRotationSensorProtectedFastMaxRateDegPerSec =
       260.0;
   static const double _compassRotationSensorProtectedLagTrendSlack = 1.0;
+  static const int _compassRotationSensorProtectedLagSeedSamplesRequired = 2;
+  static const double _compassRotationSensorProtectedLagSeedMinRawDelta = 13.5;
+  static const double _compassRotationSensorProtectedLagSeedMaxRateDegPerSec =
+      260.0;
   static const int _compassRotationSensorProtectedLagEscapeSamplesRequired = 3;
   static const double _compassRotationSensorProtectedLagEscapeMinRawDelta =
       18.0;
@@ -1169,6 +1173,14 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         sensorAbs <= _compassRotationSensorProtectedFastMaxDelta &&
         turnRateDegPerSec.abs() <=
             _compassRotationSensorProtectedFastMaxRateDegPerSec;
+    final protectedLagSeedCandidate =
+        rawAbs >= _compassRotationSensorProtectedLagSeedMinRawDelta &&
+        rawDelta.sign == sensorDelta.sign &&
+        protectedLagGrowing &&
+        sensorAbs >= _compassRotationSensorImmediateDelta &&
+        sensorAbs <= _compassRotationSensorProtectedFastMaxDelta &&
+        turnRateDegPerSec.abs() <=
+            _compassRotationSensorProtectedLagSeedMaxRateDegPerSec;
     final protectedLagEscapeCandidate =
         rawAbs >= _compassRotationSensorProtectedLagEscapeMinRawDelta &&
         rawDelta.sign == sensorDelta.sign &&
@@ -1179,11 +1191,14 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     if (tiltProtectionActive &&
         !protectedRotationCandidate &&
         !protectedFastRotationCandidate &&
+        !protectedLagSeedCandidate &&
         !protectedLagEscapeCandidate) {
       resetSensorRotationEvidence();
       return null;
     }
-    final protectedRotationSamplesRequired = protectedFastRotationCandidate
+    final protectedRotationSamplesRequired = protectedLagSeedCandidate
+        ? _compassRotationSensorProtectedLagSeedSamplesRequired
+        : protectedFastRotationCandidate
         ? _compassRotationSensorProtectedFastSamplesRequired
         : protectedLagEscapeCandidate
         ? _compassRotationSensorProtectedLagEscapeSamplesRequired
@@ -1238,6 +1253,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       'tiltProtected=$tiltProtectionActive '
       'protectedCandidate=$protectedRotationCandidate '
       'protectedFastCandidate=$protectedFastRotationCandidate '
+      'protectedLagSeedCandidate=$protectedLagSeedCandidate '
       'protectedLagEscapeCandidate=$protectedLagEscapeCandidate '
       'protectedLagGrowing=$protectedLagGrowing '
       'protectedEvidence=$protectedRotationEvidence '

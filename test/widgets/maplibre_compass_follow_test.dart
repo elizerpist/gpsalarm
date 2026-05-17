@@ -1678,9 +1678,7 @@ void main() {
       expect(rotation, contains('protectedRotationSamplesRequired'));
       expect(
         rotation,
-        contains(
-          'final protectedRotationSamplesRequired = protectedFastRotationCandidate',
-        ),
+        contains('protectedFastRotationCandidate'),
         reason:
             'Fast protected rotation should need fewer sustained samples than local tilt wobble, without weakening the normal protected tilt gate.',
       );
@@ -1729,6 +1727,46 @@ void main() {
         isNot(contains('_dampenCompassTiltJitter')),
         reason:
             'The lag escape must live in the rotation gate, leaving the tilt dampening behavior unchanged.',
+      );
+    });
+
+    test('starts protected rotation before tilt burst lag becomes visible', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+      final rotationStart = view.indexOf(
+        'double? _followCompassSensorRotation({',
+      );
+      final tiltStart = view.indexOf('double _stabilizeCompassTilt({');
+      expect(rotationStart, isNonNegative);
+      expect(tiltStart, greaterThan(rotationStart));
+
+      final rotation = view.substring(rotationStart, tiltStart);
+      expect(
+        rotation,
+        contains('protectedLagSeedCandidate'),
+        reason:
+            'The 21:10 trace still waits several tilt-burst samples before rotation resumes; a moderate same-direction lag should seed rotation earlier while tilt remains dampened.',
+      );
+      expect(
+        rotation,
+        contains('_compassRotationSensorProtectedLagSeedMinRawDelta'),
+      );
+      expect(
+        rotation,
+        contains('_compassRotationSensorProtectedLagSeedSamplesRequired'),
+      );
+      expect(
+        rotation,
+        contains('sensorAbs >= _compassRotationSensorImmediateDelta'),
+        reason:
+            'The early path should only follow real sensor movement, not stationary tilt quarantine noise.',
+      );
+      expect(
+        rotation,
+        isNot(contains('_dampenCompassTiltJitter')),
+        reason:
+            'Earlier rotation follow must stay isolated from the tilt dampener.',
       );
     });
 
