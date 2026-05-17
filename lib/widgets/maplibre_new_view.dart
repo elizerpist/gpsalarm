@@ -92,6 +92,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   static const double _compassRotationSensorProtectedMinRawDelta = 12.0;
   static const double _compassRotationSensorProtectedMaxDelta = 4.0;
   static const double _compassRotationSensorProtectedMaxRateDegPerSec = 180.0;
+  static const int _compassRotationSensorProtectedFastSamplesRequired = 3;
+  static const double _compassRotationSensorProtectedFastMaxDelta = 9.0;
+  static const double _compassRotationSensorProtectedFastMaxRateDegPerSec =
+      260.0;
+  static const double _compassRotationSensorProtectedLagTrendSlack = 1.0;
   static const double _compassRotationSensorMaxStep = 4.0;
   static const double _compassRotationSensorMaxRateDegPerSec = 220.0;
   static const double _compassRotationSensorGain = 1.0;
@@ -160,6 +165,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   int _compassTiltBurstSamples = 0;
   int _compassSensorRotationSamples = 0;
   int _compassSensorRotationDirection = 0;
+  double _compassSensorRotationLastRawAbs = 0;
   int _compassFastRotationSamples = 0;
   int _compassBlockedRotationSamples = 0;
   int _compassBlockedRotationDirection = 0;
@@ -1083,46 +1089,73 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     required bool tiltProtectionActive,
   }) {
     if (eventDt == null || eventDt <= 0) return null;
+    final rawAbs = rawDelta.abs();
+
+    void resetSensorRotationEvidence() {
+      _compassSensorRotationSamples = 0;
+      _compassSensorRotationDirection = 0;
+      _compassSensorRotationLastRawAbs = rawAbs;
+    }
+
     final sensorAbs = sensorDelta.abs();
     final sensorDirection = sensorDelta == 0 ? 0 : sensorDelta.sign.toInt();
     if (sensorDirection == 0 || sensorAbs < _compassRotationSensorMinDelta) {
-      _compassSensorRotationSamples = 0;
-      _compassSensorRotationDirection = 0;
+      resetSensorRotationEvidence();
       return null;
     }
-    if (rawDelta.abs() > _compassRotationFollowSnapDelta &&
+    if (rawAbs > _compassRotationFollowSnapDelta &&
         rawDelta.sign != sensorDelta.sign) {
-      _compassSensorRotationSamples = 0;
-      _compassSensorRotationDirection = 0;
+      resetSensorRotationEvidence();
       return null;
     }
+
+    final previousProtectedRawAbs = _compassSensorRotationLastRawAbs;
     if (_compassSensorRotationDirection == sensorDirection) {
       _compassSensorRotationSamples++;
     } else {
       _compassSensorRotationDirection = sensorDirection;
       _compassSensorRotationSamples = 1;
     }
+    final protectedLagGrowing =
+        rawAbs + _compassRotationSensorProtectedLagTrendSlack >=
+        previousProtectedRawAbs;
     final protectedRotationCandidate =
-        rawDelta.abs() >= _compassRotationSensorProtectedMinRawDelta &&
+        rawAbs >= _compassRotationSensorProtectedMinRawDelta &&
         rawDelta.sign == sensorDelta.sign &&
         sensorAbs <= _compassRotationSensorProtectedMaxDelta &&
         turnRateDegPerSec.abs() <=
             _compassRotationSensorProtectedMaxRateDegPerSec;
-    if (tiltProtectionActive && !protectedRotationCandidate) {
-      _compassSensorRotationSamples = 0;
-      _compassSensorRotationDirection = 0;
+    final protectedFastRotationCandidate =
+        rawAbs >= _compassRotationSensorProtectedMinRawDelta &&
+        rawDelta.sign == sensorDelta.sign &&
+        protectedLagGrowing &&
+        sensorAbs <= _compassRotationSensorProtectedFastMaxDelta &&
+        turnRateDegPerSec.abs() <=
+            _compassRotationSensorProtectedFastMaxRateDegPerSec;
+    if (tiltProtectionActive &&
+        !protectedRotationCandidate &&
+        !protectedFastRotationCandidate) {
+      resetSensorRotationEvidence();
       return null;
     }
+    final protectedRotationSamplesRequired = protectedFastRotationCandidate
+        ? _compassRotationSensorProtectedFastSamplesRequired
+        : _compassRotationSensorProtectedSamplesRequired;
     final protectedRotationEvidence =
         !tiltProtectionActive ||
-        _compassSensorRotationSamples >=
-            _compassRotationSensorProtectedSamplesRequired;
-    if (!protectedRotationEvidence) return null;
+        _compassSensorRotationSamples >= protectedRotationSamplesRequired;
+    if (!protectedRotationEvidence) {
+      _compassSensorRotationLastRawAbs = rawAbs;
+      return null;
+    }
 
     final sensorRotationConfirmed =
         sensorAbs >= _compassRotationSensorImmediateDelta ||
         _compassSensorRotationSamples >= _compassRotationSensorSamplesRequired;
-    if (!sensorRotationConfirmed) return null;
+    if (!sensorRotationConfirmed) {
+      _compassSensorRotationLastRawAbs = rawAbs;
+      return null;
+    }
 
     final dtSeconds = eventDt / 1000.0;
     final maxStep = math.max(
@@ -1142,6 +1175,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     final followedHeading = _normalizeBearing(_lastBearing + compensatedDelta);
     _compassRotationIntentUntil = now.add(_compassRotationIntentGraceDuration);
     _compassFastRotationSamples = _compassRotationIntentSamples;
+    _compassSensorRotationLastRawAbs = rawAbs;
     _resetCompassBlockedRotationEvidence();
     DebugConsole.log(
       'COMPASS_SENSOR_ROTATION: seq=$seq eventDt=${eventDt}ms '
@@ -1156,7 +1190,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       'maxStep=${maxStep.toStringAsFixed(1)} '
       'tiltProtected=$tiltProtectionActive '
       'protectedCandidate=$protectedRotationCandidate '
+      'protectedFastCandidate=$protectedFastRotationCandidate '
+      'protectedLagGrowing=$protectedLagGrowing '
       'protectedEvidence=$protectedRotationEvidence '
+      'protectedSamplesRequired=$protectedRotationSamplesRequired '
       'sensorSamples=$_compassSensorRotationSamples '
       'sensorDirection=$_compassSensorRotationDirection',
     );
@@ -1782,6 +1819,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     _compassTiltBurstSamples = 0;
     _compassSensorRotationSamples = 0;
     _compassSensorRotationDirection = 0;
+    _compassSensorRotationLastRawAbs = 0;
     _compassFastRotationSamples = 0;
     _resetCompassBlockedRotationEvidence();
     _compassEventSeq = 0;

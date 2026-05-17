@@ -1613,9 +1613,7 @@ void main() {
       final rotation = view.substring(rotationStart, tiltStart);
       expect(
         rotation,
-        contains(
-          'rawDelta.abs() >= _compassRotationSensorProtectedMinRawDelta',
-        ),
+        contains('rawAbs >= _compassRotationSensorProtectedMinRawDelta'),
         reason:
             'In the failing log, tilt quarantine samples with rawDelta around 0-6 degrees were incorrectly promoted to COMPASS_SENSOR_ROTATION.',
       );
@@ -1640,6 +1638,60 @@ void main() {
       );
     });
 
+    test('keeps protected rotation moving while raw lag is still growing', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+      final rotationStart = view.indexOf(
+        'double? _followCompassSensorRotation({',
+      );
+      final tiltStart = view.indexOf('double _stabilizeCompassTilt({');
+      expect(rotationStart, isNonNegative);
+      expect(tiltStart, greaterThan(rotationStart));
+
+      final rotation = view.substring(rotationStart, tiltStart);
+      expect(
+        rotation,
+        contains('protectedFastRotationCandidate'),
+        reason:
+            'The rotation log shows target/camera updates stop while tilt quarantine is active, then jump after raw lag grows past 30 degrees.',
+      );
+      expect(rotation, contains('protectedLagGrowing'));
+      expect(
+        rotation,
+        contains('_compassRotationSensorProtectedFastSamplesRequired'),
+      );
+      expect(rotation, contains('_compassRotationSensorProtectedFastMaxDelta'));
+      expect(
+        rotation,
+        contains('_compassRotationSensorProtectedFastMaxRateDegPerSec'),
+      );
+      expect(rotation, contains('_compassSensorRotationLastRawAbs'));
+      expect(
+        rotation,
+        contains(
+          'final previousProtectedRawAbs = _compassSensorRotationLastRawAbs',
+        ),
+        reason:
+            'A rejected high-lag tilt spike must remain in memory so a smaller follow-up wobble cannot look like growing rotation.',
+      );
+      expect(rotation, contains('protectedRotationSamplesRequired'));
+      expect(
+        rotation,
+        contains(
+          'final protectedRotationSamplesRequired = protectedFastRotationCandidate',
+        ),
+        reason:
+            'Fast protected rotation should need fewer sustained samples than local tilt wobble, without weakening the normal protected tilt gate.',
+      );
+      expect(
+        rotation,
+        isNot(contains('_stabilizeCompassTilt(')),
+        reason:
+            'The escape belongs to the rotation gate; the tilt stabilizer should stay isolated.',
+      );
+    });
+
     test('resets sensor rotation evidence when compass follow starts', () {
       final view = File(
         'lib/widgets/maplibre_new_view.dart',
@@ -1652,6 +1704,7 @@ void main() {
       final startFollow = view.substring(start, end);
       expect(startFollow, contains('_compassSensorRotationSamples = 0;'));
       expect(startFollow, contains('_compassSensorRotationDirection = 0;'));
+      expect(startFollow, contains('_compassSensorRotationLastRawAbs = 0;'));
     });
   });
 }
