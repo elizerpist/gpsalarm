@@ -720,16 +720,62 @@ void main() {
             'Two high-rate samples let tilt bursts enter rotation follow before the tilt dampener can absorb them.',
       );
       expect(
-        doubleConstant('_compassRotationFollowMaxRateDegPerSec'),
-        lessThanOrEqualTo(280.0),
-        reason:
-            'Confirmed rotation follow was producing 16-19 degree target jumps per compass sample.',
-      );
-      expect(
         doubleConstant('_compassRenderMaxStep'),
         lessThanOrEqualTo(4.0),
         reason:
-            'The camera should not catch up in 8 degree frame chunks during plain rotation.',
+            'Unconfirmed tilt and plain jitter should stay on the subtle base render clamp.',
+      );
+    });
+
+    test('keeps confirmed rotation responsive without raising tilt render clamp', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      double doubleConstant(String name) {
+        final match = RegExp(
+          'static const double $name'
+          r'\s*=\s*([0-9.]+);',
+          multiLine: true,
+        ).firstMatch(view);
+        expect(match, isNotNull, reason: '$name should be declared');
+        return double.parse(match!.group(1)!);
+      }
+
+      expect(
+        doubleConstant('_compassRenderMaxStep'),
+        lessThanOrEqualTo(4.0),
+        reason: 'Tilt protection should keep the base render clamp subtle.',
+      );
+      expect(
+        doubleConstant('_compassRotationRenderMaxStep'),
+        greaterThanOrEqualTo(6.0),
+        reason:
+            'Confirmed rotation was lagging because the camera could only move 4 degrees per render frame.',
+      );
+      expect(
+        doubleConstant('_compassRotationRenderMaxStep'),
+        lessThanOrEqualTo(6.5),
+        reason:
+            'Confirmed rotation should be more responsive without returning to 8 degree frame jumps.',
+      );
+      expect(
+        doubleConstant('_compassRotationFollowMaxRateDegPerSec'),
+        greaterThanOrEqualTo(400.0),
+        reason:
+            'Confirmed rotation target lag reached 50-60 degrees with the 260 deg/s follow cap.',
+      );
+      expect(
+        doubleConstant('_compassRotationFollowMaxRateDegPerSec'),
+        lessThanOrEqualTo(430.0),
+        reason:
+            'Rotation follow should regain responsiveness without allowing unbounded target jumps.',
+      );
+      expect(
+        view,
+        contains('rotationResponsive: _isCompassRotationIntentActive(now)'),
+        reason:
+            'Only confirmed rotation should use the larger render step; tilt/unconfirmed jitter must keep the base clamp.',
       );
     });
   });

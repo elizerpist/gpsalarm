@@ -84,6 +84,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   static const int _compassRenderFallbackStallMs = 80;
   static const double _compassRenderFallbackDelta = 1.5;
   static const double _compassRenderMaxStep = 4.0;
+  static const double _compassRotationRenderMaxStep = 6.0;
   static const double _compassMinCameraDelta = 0.15;
   static const double _compassSpikeClampDelta = 12.0;
   static const double _compassSpikeClampRateDegPerSec = 250.0;
@@ -111,7 +112,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   static const double _compassRotationIntentRateDegPerSec = 650.0;
   static const int _compassRotationIntentSamples = 3;
   static const double _compassRotationFollowGain = 0.58;
-  static const double _compassRotationFollowMaxRateDegPerSec = 260.0;
+  static const double _compassRotationFollowMaxRateDegPerSec = 420.0;
   static const double _compassRotationFollowSnapDelta = 4.0;
   static const Duration _compassRotationIntentGraceDuration = Duration(
     milliseconds: 260,
@@ -582,11 +583,16 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     return _compassRenderSlowGain;
   }
 
-  double _clampCompassRenderStep(double cameraDelta, double renderGain) {
+  double _clampCompassRenderStep(
+    double cameraDelta,
+    double renderGain, {
+    required bool rotationResponsive,
+  }) {
     final desiredStep = cameraDelta * renderGain;
-    return desiredStep
-        .clamp(-_compassRenderMaxStep, _compassRenderMaxStep)
-        .toDouble();
+    final maxStep = rotationResponsive
+        ? _compassRotationRenderMaxStep
+        : _compassRenderMaxStep;
+    return desiredStep.clamp(-maxStep, maxStep).toDouble();
   }
 
   bool _shouldUseCompassSensorFallback(DateTime now, double targetDelta) {
@@ -1318,6 +1324,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       'renderFallbackStallMs=$_compassRenderFallbackStallMs '
       'renderFallbackDelta=$_compassRenderFallbackDelta '
       'renderMaxStep=$_compassRenderMaxStep '
+      'rotationRenderMaxStep=$_compassRotationRenderMaxStep '
       'renderPump=ticker path=ticker-pump '
       'targetGain=$_compassSmoothingGain fastTargetGain=$_compassFastTurnGain '
       'fastDelta=$_compassFastTurnDelta '
@@ -1503,7 +1510,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     final previousCameraBearing = _lastCameraBearing;
     final firstCameraUpdate = _compassCameraSeq == 0;
     final renderGain = _compassRenderGainFor(cameraDelta);
-    final renderStep = _clampCompassRenderStep(cameraDelta, renderGain);
+    final renderStep = _clampCompassRenderStep(
+      cameraDelta,
+      renderGain,
+      rotationResponsive: _isCompassRotationIntentActive(now),
+    );
     final nextCameraBearing = _normalizeBearing(
       _lastCameraBearing + renderStep,
     );
