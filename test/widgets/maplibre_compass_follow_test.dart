@@ -1692,6 +1692,55 @@ void main() {
       );
     });
 
+    test('coasts protected rotation through brief sensor wobble', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+      final rotationStart = view.indexOf(
+        'double? _followCompassSensorRotation({',
+      );
+      final tiltStart = view.indexOf('double _stabilizeCompassTilt({');
+      expect(rotationStart, isNonNegative);
+      expect(tiltStart, greaterThan(rotationStart));
+
+      final rotation = view.substring(rotationStart, tiltStart);
+      expect(
+        rotation,
+        contains('protectedRotationCoastCandidate'),
+        reason:
+            'After protected rotation has already been confirmed, a short sensor wobble must not drop into tilt-dampen and freeze the target.',
+      );
+      expect(rotation, contains('_isCompassRotationIntentActive(now)'));
+      expect(rotation, contains('_compassSensorRotationDirection'));
+      expect(
+        rotation,
+        contains('_compassRotationSensorProtectedCoastMaxOpposingDelta'),
+      );
+      expect(
+        rotation,
+        contains('_followCompassProtectedRotationCoast('),
+        reason:
+            'The coast should stay inside the rotation gate and return a small heading step before the tilt stabilizer can absorb the frame.',
+      );
+      expect(rotation, contains('COMPASS_SENSOR_ROTATION_COAST'));
+
+      final firstReset = rotation.indexOf('resetSensorRotationEvidence();');
+      final coast = rotation.indexOf('protectedRotationCoastCandidate');
+      expect(firstReset, isNonNegative);
+      expect(coast, isNonNegative);
+      expect(
+        coast,
+        lessThan(firstReset),
+        reason:
+            'The protected coast must be evaluated before tiny or opposite sensor deltas reset rotation evidence.',
+      );
+      expect(
+        rotation,
+        isNot(contains('_stabilizeCompassTilt(')),
+        reason: 'This must not change the tilt stabilizer path.',
+      );
+    });
+
     test('resets sensor rotation evidence when compass follow starts', () {
       final view = File(
         'lib/widgets/maplibre_new_view.dart',

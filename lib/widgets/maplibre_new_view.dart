@@ -97,6 +97,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   static const double _compassRotationSensorProtectedFastMaxRateDegPerSec =
       260.0;
   static const double _compassRotationSensorProtectedLagTrendSlack = 1.0;
+  static const double _compassRotationSensorProtectedCoastGain = 0.18;
+  static const double _compassRotationSensorProtectedCoastMaxOpposingDelta =
+      2.5;
   static const double _compassRotationSensorMaxStep = 4.0;
   static const double _compassRotationSensorMaxRateDegPerSec = 220.0;
   static const double _compassRotationSensorGain = 1.0;
@@ -1099,6 +1102,34 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
 
     final sensorAbs = sensorDelta.abs();
     final sensorDirection = sensorDelta == 0 ? 0 : sensorDelta.sign.toInt();
+    final rawDirection = rawDelta == 0 ? 0 : rawDelta.sign.toInt();
+    final protectedRotationGraceActive =
+        tiltProtectionActive &&
+        _isCompassRotationIntentActive(now) &&
+        _compassSensorRotationSamples >=
+            _compassRotationSensorProtectedFastSamplesRequired &&
+        rawAbs >= _compassRotationSensorProtectedMinRawDelta &&
+        rawDirection != 0 &&
+        _compassSensorRotationDirection == rawDirection;
+    final protectedSensorWobble =
+        sensorDirection == 0 ||
+        sensorAbs < _compassRotationSensorMinDelta ||
+        (sensorDirection != rawDirection &&
+            sensorAbs <= _compassRotationSensorProtectedCoastMaxOpposingDelta);
+    final protectedRotationCoastCandidate =
+        protectedRotationGraceActive && protectedSensorWobble;
+    if (protectedRotationCoastCandidate) {
+      return _followCompassProtectedRotationCoast(
+        heading: heading,
+        rawDelta: rawDelta,
+        sensorDelta: sensorDelta,
+        turnRateDegPerSec: turnRateDegPerSec,
+        eventDt: eventDt,
+        seq: seq,
+        now: now,
+        sensorAbs: sensorAbs,
+      );
+    }
     if (sensorDirection == 0 || sensorAbs < _compassRotationSensorMinDelta) {
       resetSensorRotationEvidence();
       return null;
@@ -1198,6 +1229,56 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       'sensorDirection=$_compassSensorRotationDirection',
     );
     return followedHeading;
+  }
+
+  double _followCompassProtectedRotationCoast({
+    required double heading,
+    required double rawDelta,
+    required double sensorDelta,
+    required double turnRateDegPerSec,
+    required int eventDt,
+    required int seq,
+    required DateTime now,
+    required double sensorAbs,
+  }) {
+    final dtSeconds = eventDt / 1000.0;
+    final maxStep = math.max(
+      _compassRotationSensorMinDelta,
+      math.min(
+        _compassRotationSensorMaxRateDegPerSec * dtSeconds,
+        _compassRotationSensorMaxStep,
+      ),
+    );
+    final coastStep = (rawDelta * _compassRotationSensorProtectedCoastGain)
+        .clamp(-maxStep, maxStep)
+        .toDouble();
+    final targetGain = turnRateDegPerSec.abs() >= _compassFastTurnRateDegPerSec
+        ? _compassFastTurnGain
+        : _compassSmoothingGain;
+    final compensatedDelta = coastStep / targetGain;
+    final coastHeading = _normalizeBearing(_lastBearing + compensatedDelta);
+    _compassRotationIntentUntil = now.add(_compassRotationIntentGraceDuration);
+    _compassFastRotationSamples = _compassRotationIntentSamples;
+    _compassSensorRotationLastRawAbs = rawDelta.abs();
+    _resetCompassBlockedRotationEvidence();
+    DebugConsole.log(
+      'COMPASS_SENSOR_ROTATION_COAST: seq=$seq eventDt=${eventDt}ms '
+      'raw=${heading.toStringAsFixed(1)} '
+      'rawDelta=${rawDelta.toStringAsFixed(1)} '
+      'sensorDelta=${sensorDelta.toStringAsFixed(1)} '
+      'turnRate=${turnRateDegPerSec.toStringAsFixed(1)} '
+      'usedDelta=${compensatedDelta.toStringAsFixed(1)} '
+      'coastStep=${coastStep.toStringAsFixed(1)} '
+      'targetGain=${targetGain.toStringAsFixed(2)} '
+      'heading=${coastHeading.toStringAsFixed(1)} '
+      'maxStep=${maxStep.toStringAsFixed(1)} '
+      'coastGain=${_compassRotationSensorProtectedCoastGain.toStringAsFixed(2)} '
+      'sensorAbs=${sensorAbs.toStringAsFixed(1)} '
+      'opposingLimit=${_compassRotationSensorProtectedCoastMaxOpposingDelta.toStringAsFixed(1)} '
+      'sensorSamples=$_compassSensorRotationSamples '
+      'sensorDirection=$_compassSensorRotationDirection',
+    );
+    return coastHeading;
   }
 
   double _stabilizeCompassTilt({
