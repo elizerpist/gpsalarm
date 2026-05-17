@@ -1522,7 +1522,7 @@ void main() {
 
       final rotation = view.substring(rotationStart, tiltStart);
       expect(rotation, contains('sensorDelta'));
-      expect(rotation, contains('_lastBearing + followedDelta'));
+      expect(rotation, contains('_lastBearing + compensatedDelta'));
       expect(
         rotation,
         isNot(contains('_isCompassLagFollowCandidate')),
@@ -1538,6 +1538,64 @@ void main() {
       expect(handleEnd, greaterThan(handleStart));
       final handle = view.substring(handleStart, handleEnd);
       expect(handle, contains('sensorDelta: sensorDelta'));
+    });
+
+    test(
+      'keeps sensor rotation independent from tilt quarantine and lag gates',
+      () {
+        final view = File(
+          'lib/widgets/maplibre_new_view.dart',
+        ).readAsStringSync();
+
+        final wrapperStart = view.indexOf('double _stabilizeCompassHeading({');
+        final rotationStart = view.indexOf(
+          'double? _followCompassSensorRotation({',
+        );
+        final tiltStart = view.indexOf('double _stabilizeCompassTilt({');
+        expect(wrapperStart, isNonNegative);
+        expect(rotationStart, greaterThan(wrapperStart));
+        expect(tiltStart, greaterThan(rotationStart));
+
+        final wrapper = view.substring(wrapperStart, rotationStart);
+        expect(
+          wrapper,
+          isNot(contains('_isCompassTiltProtectionActive')),
+          reason:
+              'The latest logs still route steady sensorDelta through tilt-burst/quarantine; rotation must be evaluated before any tilt protection gate.',
+        );
+
+        final rotation = view.substring(rotationStart, tiltStart);
+        expect(rotation, contains('_compassSensorRotationSamples'));
+        expect(rotation, contains('_compassRotationSensorSamplesRequired'));
+        expect(rotation, contains('_compassRotationSensorImmediateDelta'));
+        expect(rotation, contains('final targetGain'));
+        expect(rotation, contains('_compassFastTurnRateDegPerSec'));
+        expect(rotation, contains('followedDelta / targetGain'));
+        expect(rotation, contains('compensatedDelta'));
+        expect(rotation, contains('_lastBearing + compensatedDelta'));
+        expect(
+          rotation,
+          isNot(contains('_compassRotationSensorMaxLag')),
+          reason:
+              'Steady rotation in the log accumulates rawDelta past 12 degrees while the target is frozen; direct sensor follow must not have a raw-lag cutoff.',
+        );
+        expect(rotation, isNot(contains('tiltQuarantine')));
+        expect(rotation, isNot(contains('tiltBurst')));
+      },
+    );
+
+    test('resets sensor rotation evidence when compass follow starts', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+      final start = view.indexOf('void _startCompassFollow() {');
+      final end = view.indexOf('final events = FlutterCompass.events;', start);
+      expect(start, isNonNegative);
+      expect(end, greaterThan(start));
+
+      final startFollow = view.substring(start, end);
+      expect(startFollow, contains('_compassSensorRotationSamples = 0;'));
+      expect(startFollow, contains('_compassSensorRotationDirection = 0;'));
     });
   });
 }

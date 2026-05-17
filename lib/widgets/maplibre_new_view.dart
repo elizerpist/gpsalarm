@@ -85,10 +85,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   static const double _compassRenderFallbackDelta = 1.5;
   static const double _compassRenderMaxStep = 4.0;
   static const double _compassRotationRenderMaxStep = 5.0;
-  static const double _compassRotationSensorMinDelta = 0.65;
+  static const double _compassRotationSensorMinDelta = 0.45;
+  static const double _compassRotationSensorImmediateDelta = 1.1;
+  static const int _compassRotationSensorSamplesRequired = 2;
   static const double _compassRotationSensorMaxStep = 4.0;
   static const double _compassRotationSensorMaxRateDegPerSec = 220.0;
-  static const double _compassRotationSensorMaxLag = 12.0;
   static const double _compassRotationSensorGain = 1.0;
   static const double _compassMinCameraDelta = 0.15;
   static const double _compassSpikeClampDelta = 12.0;
@@ -153,6 +154,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   DateTime _compassRotationIntentUntil = DateTime.fromMillisecondsSinceEpoch(0);
   bool _compassTiltHoldArmed = true;
   int _compassTiltBurstSamples = 0;
+  int _compassSensorRotationSamples = 0;
+  int _compassSensorRotationDirection = 0;
   int _compassFastRotationSamples = 0;
   int _compassBlockedRotationSamples = 0;
   int _compassBlockedRotationDirection = 0;
@@ -682,13 +685,6 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     return now.isBefore(_compassRotationIntentUntil);
   }
 
-  bool _isCompassTiltProtectionActive(DateTime now) {
-    return _isCompassTiltHoldActive(now) ||
-        _isCompassTiltRecoveryActive(now) ||
-        _isCompassTiltQuarantineActive(now) ||
-        _compassTiltBurstSamples >= 2;
-  }
-
   bool _isCompassRotationIntent({
     required double rawDelta,
     required double turnRateDegPerSec,
@@ -1042,18 +1038,16 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     required int seq,
   }) {
     final now = DateTime.now();
-    if (!_isCompassTiltProtectionActive(now)) {
-      final rotationHeading = _followCompassSensorRotation(
-        heading: heading,
-        rawDelta: rawDelta,
-        sensorDelta: sensorDelta,
-        turnRateDegPerSec: turnRateDegPerSec,
-        eventDt: eventDt,
-        seq: seq,
-        now: now,
-      );
-      if (rotationHeading != null) return rotationHeading;
-    }
+    final rotationHeading = _followCompassSensorRotation(
+      heading: heading,
+      rawDelta: rawDelta,
+      sensorDelta: sensorDelta,
+      turnRateDegPerSec: turnRateDegPerSec,
+      eventDt: eventDt,
+      seq: seq,
+      now: now,
+    );
+    if (rotationHeading != null) return rotationHeading;
 
     return _stabilizeCompassTilt(
       heading: heading,
@@ -1074,12 +1068,29 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     required DateTime now,
   }) {
     if (eventDt == null || eventDt <= 0) return null;
-    if (sensorDelta.abs() < _compassRotationSensorMinDelta) return null;
-    if (rawDelta.abs() > _compassRotationSensorMaxLag) return null;
-    if (rawDelta.abs() > _compassRotationFollowSnapDelta &&
-        rawDelta.sign != sensorDelta.sign) {
+    final sensorAbs = sensorDelta.abs();
+    final sensorDirection = sensorDelta == 0 ? 0 : sensorDelta.sign.toInt();
+    if (sensorDirection == 0 || sensorAbs < _compassRotationSensorMinDelta) {
+      _compassSensorRotationSamples = 0;
+      _compassSensorRotationDirection = 0;
       return null;
     }
+    if (rawDelta.abs() > _compassRotationFollowSnapDelta &&
+        rawDelta.sign != sensorDelta.sign) {
+      _compassSensorRotationSamples = 0;
+      _compassSensorRotationDirection = 0;
+      return null;
+    }
+    if (_compassSensorRotationDirection == sensorDirection) {
+      _compassSensorRotationSamples++;
+    } else {
+      _compassSensorRotationDirection = sensorDirection;
+      _compassSensorRotationSamples = 1;
+    }
+    final sensorRotationConfirmed =
+        sensorAbs >= _compassRotationSensorImmediateDelta ||
+        _compassSensorRotationSamples >= _compassRotationSensorSamplesRequired;
+    if (!sensorRotationConfirmed) return null;
 
     final dtSeconds = eventDt / 1000.0;
     final maxStep = math.max(
@@ -1092,7 +1103,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     final followedDelta = (sensorDelta * _compassRotationSensorGain)
         .clamp(-maxStep, maxStep)
         .toDouble();
-    final followedHeading = _normalizeBearing(_lastBearing + followedDelta);
+    final targetGain = turnRateDegPerSec.abs() >= _compassFastTurnRateDegPerSec
+        ? _compassFastTurnGain
+        : _compassSmoothingGain;
+    final compensatedDelta = followedDelta / targetGain;
+    final followedHeading = _normalizeBearing(_lastBearing + compensatedDelta);
     _compassRotationIntentUntil = now.add(_compassRotationIntentGraceDuration);
     _compassFastRotationSamples = _compassRotationIntentSamples;
     _resetCompassBlockedRotationEvidence();
@@ -1102,9 +1117,13 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       'rawDelta=${rawDelta.toStringAsFixed(1)} '
       'sensorDelta=${sensorDelta.toStringAsFixed(1)} '
       'turnRate=${turnRateDegPerSec.toStringAsFixed(1)} '
-      'usedDelta=${followedDelta.toStringAsFixed(1)} '
+      'usedDelta=${compensatedDelta.toStringAsFixed(1)} '
+      'sensorStep=${followedDelta.toStringAsFixed(1)} '
+      'targetGain=${targetGain.toStringAsFixed(2)} '
       'heading=${followedHeading.toStringAsFixed(1)} '
-      'maxStep=${maxStep.toStringAsFixed(1)}',
+      'maxStep=${maxStep.toStringAsFixed(1)} '
+      'sensorSamples=$_compassSensorRotationSamples '
+      'sensorDirection=$_compassSensorRotationDirection',
     );
     return followedHeading;
   }
@@ -1726,6 +1745,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     _compassRotationIntentUntil = DateTime.fromMillisecondsSinceEpoch(0);
     _compassTiltHoldArmed = true;
     _compassTiltBurstSamples = 0;
+    _compassSensorRotationSamples = 0;
+    _compassSensorRotationDirection = 0;
     _compassFastRotationSamples = 0;
     _resetCompassBlockedRotationEvidence();
     _compassEventSeq = 0;
