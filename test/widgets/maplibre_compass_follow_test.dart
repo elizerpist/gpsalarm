@@ -542,7 +542,7 @@ void main() {
       );
     });
 
-    test('lets sustained fast rotation escape tilt recovery', () {
+    test('keeps tilt recovery ahead of rotation confidence', () {
       final view = File(
         'lib/widgets/maplibre_new_view.dart',
       ).readAsStringSync();
@@ -566,17 +566,21 @@ void main() {
 
       expect(
         stabilizer,
-        contains(
-          '_compassTiltRecoveryUntil = DateTime.fromMillisecondsSinceEpoch(0);',
-        ),
+        contains('tiltRecoveryActive || holdActive'),
         reason:
-            'Confirmed real rotation must clear the low-confidence recovery window instead of staying limited to 1.5 degrees per sample.',
+            'Recovery is a low-confidence compass state and must clear rotation confidence before a new rotation can confirm.',
       );
       expect(
         stabilizer,
-        contains('!rotationIntentConfirmed &&'),
+        contains('!tiltRecoveryActive'),
         reason:
-            'Confirmed real rotation must bypass tilt hold and burst damping so normal yaw starts promptly.',
+            'Rotation candidates should only accumulate while the signal is outside recovery.',
+      );
+      expect(
+        stabilizer,
+        isNot(contains('if (rotationIntentConfirmed && tiltRecoveryActive)')),
+        reason:
+            'Confirmed rotation must not automatically escape tilt recovery; recovery has priority.',
       );
       expect(
         stabilizer,
@@ -652,9 +656,9 @@ void main() {
         expect(clampStart, greaterThan(rotationFollowStart));
         expect(
           stabilizer,
-          contains('!rotationIntent &&'),
+          contains('!tiltBurstBlocksRotation'),
           reason:
-              'The first high-confidence rotation sample should not start a tilt hold that freezes the camera before confirmation.',
+              'Rotation follow should start only while the candidate window is still tilt-free.',
         );
       },
     );
@@ -727,6 +731,73 @@ void main() {
       );
     });
 
+    test('gives tilt burst priority over rotation confirmation', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      final stabilizerStart = view.indexOf('double _stabilizeCompassHeading({');
+      final recordStart = view.indexOf(
+        'void _recordCompassEventDt',
+        stabilizerStart,
+      );
+      expect(stabilizerStart, isNonNegative);
+      expect(recordStart, greaterThan(stabilizerStart));
+      final stabilizer = view.substring(stabilizerStart, recordStart);
+
+      expect(
+        stabilizer,
+        contains('tiltBurstBlocksRotation'),
+        reason:
+            'Once a sequence is already classified as tilt-burst, the same sequence must not be promoted into rotation follow.',
+      );
+      expect(
+        stabilizer,
+        contains('!tiltBurstBlocksRotation'),
+        reason:
+            'Rotation confirmation must require a tilt-free candidate window.',
+      );
+      expect(
+        stabilizer,
+        contains(
+          '_compassRotationIntentUntil = DateTime.fromMillisecondsSinceEpoch(0);',
+        ),
+        reason:
+            'Tilt-burst/recovery should clear any active rotation grace window instead of letting stale confirmation drive 6 degree camera jumps.',
+      );
+    });
+
+    test('dampens all visible below-clamp tilt instead of raw pass-through', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      final visibleStart = view.indexOf('bool _isCompassVisibleTiltJitter({');
+      final visibleEnd = view.indexOf('bool _isCompassTiltStallJitter({');
+      expect(visibleStart, isNonNegative);
+      expect(visibleEnd, greaterThan(visibleStart));
+      final visibleTilt = view.substring(visibleStart, visibleEnd);
+
+      expect(
+        visibleTilt,
+        contains('return !deltaOk &&'),
+        reason:
+            'Below-clamp visible tilt should enter the damped path before raw heading pass-through.',
+      );
+      expect(
+        visibleTilt,
+        isNot(contains('rawDelta.abs() >= _compassFastTurnDelta')),
+        reason:
+            'The 6-12 degree visible tilt range must not depend on the old fast-turn threshold to be damped.',
+      );
+      expect(
+        visibleTilt,
+        isNot(contains('rateOk || lagOk')),
+        reason:
+            'Visible tilt should not pass through raw just because rate and camera lag sit under their larger clamp thresholds.',
+      );
+    });
+
     test('keeps confirmed rotation responsive without raising tilt render clamp', () {
       final view = File(
         'lib/widgets/maplibre_new_view.dart',
@@ -749,27 +820,21 @@ void main() {
       );
       expect(
         doubleConstant('_compassRotationRenderMaxStep'),
-        greaterThanOrEqualTo(6.0),
+        lessThanOrEqualTo(3.5),
         reason:
-            'Confirmed rotation was lagging because the camera could only move 4 degrees per render frame.',
-      );
-      expect(
-        doubleConstant('_compassRotationRenderMaxStep'),
-        lessThanOrEqualTo(6.5),
-        reason:
-            'Confirmed rotation should be more responsive without returning to 8 degree frame jumps.',
+            'A 6 degree render frame is visible as a jump on MapLibre; rotation should be velocity-limited, not frame-step heavy.',
       );
       expect(
         doubleConstant('_compassRotationFollowMaxRateDegPerSec'),
-        greaterThanOrEqualTo(400.0),
+        greaterThanOrEqualTo(120.0),
         reason:
-            'Confirmed rotation target lag reached 50-60 degrees with the 260 deg/s follow cap.',
+            'Confirmed rotation still needs enough velocity to avoid feeling detached.',
       );
       expect(
         doubleConstant('_compassRotationFollowMaxRateDegPerSec'),
-        lessThanOrEqualTo(430.0),
+        lessThanOrEqualTo(180.0),
         reason:
-            'Rotation follow should regain responsiveness without allowing unbounded target jumps.',
+            'Rotation follow should not produce 14-17 degree target jumps per compass sample.',
       );
       expect(
         view,
