@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'clipboard_helper.dart';
 
@@ -5,8 +7,24 @@ class DebugConsole {
   DebugConsole._();
 
   static const _maxEntries = 500;
+  static const _notifyDelay = Duration(milliseconds: 100);
   static final _list = <String>[];
   static final ValueNotifier<int> _version = ValueNotifier(0);
+  static Timer? _notifyTimer;
+
+  static void _scheduleNotify() {
+    if (_notifyTimer?.isActive ?? false) return;
+    _notifyTimer = Timer(_notifyDelay, () {
+      _notifyTimer = null;
+      _version.value++;
+    });
+  }
+
+  static void _notifyNow() {
+    _notifyTimer?.cancel();
+    _notifyTimer = null;
+    _version.value++;
+  }
 
   static void log(String message) {
     final now = DateTime.now();
@@ -16,12 +34,12 @@ class DebugConsole {
     final ms = (now.millisecond ~/ 10).toString().padLeft(2, '0');
     if (_list.length >= _maxEntries) _list.removeAt(0);
     _list.add('[$h:$m:$s.$ms] $message');
-    _version.value++;
+    _scheduleNotify();
   }
 
   static void clear() {
     _list.clear();
-    _version.value++;
+    _notifyNow();
   }
 
   static List<String> get entries => _list;

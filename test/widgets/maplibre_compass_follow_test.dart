@@ -1309,5 +1309,87 @@ void main() {
             'Repeated visible tilt samples should not move the compass target at all.',
       );
     });
+
+    test('absorbs residual tilt settle tremor before raw pass-through', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      double constant(String name) {
+        final match = RegExp(
+          'static const double $name'
+          r'\s*=\s*([0-9.]+);',
+          multiLine: true,
+        ).firstMatch(view);
+        expect(match, isNotNull, reason: '$name should be declared');
+        return double.parse(match!.group(1)!);
+      }
+
+      expect(view, contains('_compassTiltSettleUntil'));
+      expect(view, contains('_compassTiltSettleDuration'));
+      expect(view, contains('_isCompassTiltSettleJitter'));
+      expect(
+        constant('_compassTiltSettleDelta'),
+        lessThan(constant('_compassVisibleTiltJitterDelta')),
+        reason:
+            'Residual tilt tremor below the visible-jitter threshold should still be absorbed briefly instead of passing raw heading through.',
+      );
+
+      final jitterStart = view.indexOf('bool _isCompassTiltJitter({');
+      final jitterEnd = view.indexOf('String _compassTiltJitterReason({');
+      expect(jitterStart, isNonNegative);
+      expect(jitterEnd, greaterThan(jitterStart));
+      final jitter = view.substring(jitterStart, jitterEnd);
+
+      expect(jitter, contains('_isCompassTiltSettleJitter'));
+
+      final stabilizerStart = view.indexOf('double _stabilizeCompassHeading({');
+      final recordStart = view.indexOf(
+        'void _recordCompassEventDt',
+        stabilizerStart,
+      );
+      expect(stabilizerStart, isNonNegative);
+      expect(recordStart, greaterThan(stabilizerStart));
+      final stabilizer = view.substring(stabilizerStart, recordStart);
+
+      expect(stabilizer, contains('tiltSettleActive'));
+      expect(
+        stabilizer,
+        contains(
+          '_compassTiltSettleUntil = now.add(_compassTiltSettleDuration)',
+        ),
+        reason:
+            'Visible tilt samples should arm a short settle window so the release-side wobble cannot move the target.',
+      );
+    });
+
+    test('tilt settle deadband does not block rotation evidence', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      final stabilizerStart = view.indexOf('double _stabilizeCompassHeading({');
+      final recordStart = view.indexOf(
+        'void _recordCompassEventDt',
+        stabilizerStart,
+      );
+      expect(stabilizerStart, isNonNegative);
+      expect(recordStart, greaterThan(stabilizerStart));
+      final stabilizer = view.substring(stabilizerStart, recordStart);
+
+      expect(stabilizer, contains('final tiltSettleActive'));
+      expect(
+        stabilizer,
+        contains('!rotationEvidence &&'),
+        reason:
+            'The residual tilt deadband is only for non-rotation tremor; real rotation evidence must bypass it.',
+      );
+      expect(
+        stabilizer,
+        contains('tiltSettleActive: tiltSettleActive'),
+        reason:
+            'The stabilizer should pass the rotation-gated settle state into the jitter classifier.',
+      );
+    });
   });
 }
