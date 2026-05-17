@@ -1490,5 +1490,54 @@ void main() {
         );
       },
     );
+
+    test('routes sensor rotation before the isolated tilt stabilizer', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      expect(view, contains('_compassRotationSensorMinDelta'));
+      expect(view, contains('_compassRotationSensorMaxStep'));
+
+      final wrapperStart = view.indexOf('double _stabilizeCompassHeading({');
+      final rotationStart = view.indexOf(
+        'double? _followCompassSensorRotation({',
+      );
+      final tiltStart = view.indexOf('double _stabilizeCompassTilt({');
+      expect(wrapperStart, isNonNegative);
+      expect(rotationStart, isNonNegative);
+      expect(tiltStart, greaterThan(wrapperStart));
+
+      final wrapper = view.substring(wrapperStart, rotationStart);
+      expect(wrapper, contains('required double sensorDelta'));
+      expect(wrapper, contains('_followCompassSensorRotation('));
+      expect(wrapper, contains('_stabilizeCompassTilt('));
+      expect(
+        wrapper.indexOf('_followCompassSensorRotation('),
+        lessThan(wrapper.indexOf('_stabilizeCompassTilt(')),
+        reason:
+            'Rotation must get the raw sensor-to-sensor delta before the tilt state machine can absorb the sample.',
+      );
+      expect(wrapper, contains('sensorDelta: sensorDelta'));
+
+      final rotation = view.substring(rotationStart, tiltStart);
+      expect(rotation, contains('sensorDelta'));
+      expect(rotation, contains('_lastBearing + followedDelta'));
+      expect(
+        rotation,
+        isNot(contains('_isCompassLagFollowCandidate')),
+        reason:
+            'Direct rotation follow should not wait for lag-follow evidence.',
+      );
+      expect(rotation, isNot(contains('_dampenCompassTiltJitter')));
+      expect(rotation, isNot(contains('_isCompassTiltJitter')));
+
+      final handleStart = view.indexOf('void _handleCompassEvent(');
+      final handleEnd = view.indexOf('void _pumpCompassCamera', handleStart);
+      expect(handleStart, isNonNegative);
+      expect(handleEnd, greaterThan(handleStart));
+      final handle = view.substring(handleStart, handleEnd);
+      expect(handle, contains('sensorDelta: sensorDelta'));
+    });
   });
 }

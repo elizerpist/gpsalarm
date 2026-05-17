@@ -85,6 +85,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   static const double _compassRenderFallbackDelta = 1.5;
   static const double _compassRenderMaxStep = 4.0;
   static const double _compassRotationRenderMaxStep = 5.0;
+  static const double _compassRotationSensorMinDelta = 0.65;
+  static const double _compassRotationSensorMaxStep = 4.0;
+  static const double _compassRotationSensorMaxRateDegPerSec = 220.0;
+  static const double _compassRotationSensorMaxLag = 12.0;
+  static const double _compassRotationSensorGain = 1.0;
   static const double _compassMinCameraDelta = 0.15;
   static const double _compassSpikeClampDelta = 12.0;
   static const double _compassSpikeClampRateDegPerSec = 250.0;
@@ -677,6 +682,13 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     return now.isBefore(_compassRotationIntentUntil);
   }
 
+  bool _isCompassTiltProtectionActive(DateTime now) {
+    return _isCompassTiltHoldActive(now) ||
+        _isCompassTiltRecoveryActive(now) ||
+        _isCompassTiltQuarantineActive(now) ||
+        _compassTiltBurstSamples >= 2;
+  }
+
   bool _isCompassRotationIntent({
     required double rawDelta,
     required double turnRateDegPerSec,
@@ -1022,6 +1034,82 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   }
 
   double _stabilizeCompassHeading({
+    required double heading,
+    required double rawDelta,
+    required double sensorDelta,
+    required double turnRateDegPerSec,
+    required int? eventDt,
+    required int seq,
+  }) {
+    final now = DateTime.now();
+    if (!_isCompassTiltProtectionActive(now)) {
+      final rotationHeading = _followCompassSensorRotation(
+        heading: heading,
+        rawDelta: rawDelta,
+        sensorDelta: sensorDelta,
+        turnRateDegPerSec: turnRateDegPerSec,
+        eventDt: eventDt,
+        seq: seq,
+        now: now,
+      );
+      if (rotationHeading != null) return rotationHeading;
+    }
+
+    return _stabilizeCompassTilt(
+      heading: heading,
+      rawDelta: rawDelta,
+      turnRateDegPerSec: turnRateDegPerSec,
+      eventDt: eventDt,
+      seq: seq,
+    );
+  }
+
+  double? _followCompassSensorRotation({
+    required double heading,
+    required double rawDelta,
+    required double sensorDelta,
+    required double turnRateDegPerSec,
+    required int? eventDt,
+    required int seq,
+    required DateTime now,
+  }) {
+    if (eventDt == null || eventDt <= 0) return null;
+    if (sensorDelta.abs() < _compassRotationSensorMinDelta) return null;
+    if (rawDelta.abs() > _compassRotationSensorMaxLag) return null;
+    if (rawDelta.abs() > _compassRotationFollowSnapDelta &&
+        rawDelta.sign != sensorDelta.sign) {
+      return null;
+    }
+
+    final dtSeconds = eventDt / 1000.0;
+    final maxStep = math.max(
+      _compassRotationSensorMinDelta,
+      math.min(
+        _compassRotationSensorMaxRateDegPerSec * dtSeconds,
+        _compassRotationSensorMaxStep,
+      ),
+    );
+    final followedDelta = (sensorDelta * _compassRotationSensorGain)
+        .clamp(-maxStep, maxStep)
+        .toDouble();
+    final followedHeading = _normalizeBearing(_lastBearing + followedDelta);
+    _compassRotationIntentUntil = now.add(_compassRotationIntentGraceDuration);
+    _compassFastRotationSamples = _compassRotationIntentSamples;
+    _resetCompassBlockedRotationEvidence();
+    DebugConsole.log(
+      'COMPASS_SENSOR_ROTATION: seq=$seq eventDt=${eventDt}ms '
+      'raw=${heading.toStringAsFixed(1)} '
+      'rawDelta=${rawDelta.toStringAsFixed(1)} '
+      'sensorDelta=${sensorDelta.toStringAsFixed(1)} '
+      'turnRate=${turnRateDegPerSec.toStringAsFixed(1)} '
+      'usedDelta=${followedDelta.toStringAsFixed(1)} '
+      'heading=${followedHeading.toStringAsFixed(1)} '
+      'maxStep=${maxStep.toStringAsFixed(1)}',
+    );
+    return followedHeading;
+  }
+
+  double _stabilizeCompassTilt({
     required double heading,
     required double rawDelta,
     required double turnRateDegPerSec,
@@ -1787,6 +1875,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     final heading = _stabilizeCompassHeading(
       heading: sensorHeading,
       rawDelta: rawDelta,
+      sensorDelta: sensorDelta,
       turnRateDegPerSec: turnRateDegPerSec,
       eventDt: eventDt,
       seq: seq,
