@@ -799,10 +799,10 @@ void main() {
             'Real yaw should escape the tilt-burst trap after a short sustained evidence window, not after dozens of samples.',
       );
       expect(
-        doubleConstant('_compassRotationHighTiltPenalty'),
-        inInclusiveRange(0.35, 0.6),
+        doubleConstant('_compassRotationFollowMaxStep'),
+        inInclusiveRange(4.5, 6.5),
         reason:
-            'High tilt confidence should slow rotation follow without falling back to the 1 degree tilt clamp.',
+            'Confirmed yaw should catch up with bounded follow steps instead of being slowed by accumulated camera lag.',
       );
 
       final stateStart = view.indexOf('DateTime _compassRotationIntentUntil');
@@ -865,12 +865,17 @@ void main() {
       expect(followEnd, greaterThan(followStart));
       final follow = view.substring(followStart, followEnd);
 
-      expect(follow, contains('tiltPenalty'));
+      expect(follow, contains('required bool rotationIntent'));
+      expect(follow, contains('_compassRotationFollowMaxStep'));
+      expect(follow, contains('_compassRotationGraceMaxStep'));
       expect(
         follow,
-        contains('_compassRotationFollowMaxRateDegPerSec * tiltPenalty'),
+        isNot(contains('_compassRotationFollowGain * tiltPenalty')),
       );
-      expect(follow, contains('_compassRotationFollowGain * tiltPenalty'));
+      expect(
+        follow,
+        isNot(contains('_compassRotationFollowMaxRateDegPerSec * tiltPenalty')),
+      );
     });
 
     test('dampens all visible below-clamp tilt instead of raw pass-through', () {
@@ -1008,6 +1013,158 @@ void main() {
       ]) {
         expect(pump, contains(field));
       }
+    });
+
+    test('does not treat rotation lag as tilt confidence', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      expect(
+        view,
+        isNot(contains('tiltPenaltySource=cameraLag')),
+        reason:
+            'The field logs proved camera lag is mostly rotation backlog; it must not be reused as tilt confidence.',
+      );
+      expect(view, contains('tiltPenaltySource=rotationMode'));
+
+      final followStart = view.indexOf('double _followCompassRotationIntent({');
+      final followEnd = view.indexOf(
+        'void _resetCompassBlockedRotationEvidence',
+        followStart,
+      );
+      expect(followStart, isNonNegative);
+      expect(followEnd, greaterThan(followStart));
+      final follow = view.substring(followStart, followEnd);
+
+      expect(follow, contains('required bool rotationIntent'));
+      expect(
+        follow,
+        isNot(contains('_compassRotationFollowGain * tiltPenalty')),
+      );
+      expect(
+        follow,
+        isNot(contains('_compassRotationFollowMaxRateDegPerSec * tiltPenalty')),
+      );
+    });
+
+    test('caps confirmed rotation and grace coast follow steps', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      double constant(String name) {
+        final match = RegExp(
+          'static const double $name'
+          r'\s*=\s*([0-9.]+);',
+          multiLine: true,
+        ).firstMatch(view);
+        expect(match, isNotNull, reason: '$name should be declared');
+        return double.parse(match!.group(1)!);
+      }
+
+      expect(
+        constant('_compassRotationFollowMaxStep'),
+        inInclusiveRange(4.5, 6.5),
+        reason:
+            'Large real rotation should catch up, but not produce huge target jumps after stalled sensor frames.',
+      );
+      expect(
+        constant('_compassRotationGraceMaxStep'),
+        lessThanOrEqualTo(3.5),
+        reason:
+            'When rotation intent has dropped but grace is still active, follow should coast without 6-11 degree snaps.',
+      );
+
+      final followStart = view.indexOf('double _followCompassRotationIntent({');
+      final followEnd = view.indexOf(
+        'void _resetCompassBlockedRotationEvidence',
+        followStart,
+      );
+      expect(followStart, isNonNegative);
+      expect(followEnd, greaterThan(followStart));
+      final follow = view.substring(followStart, followEnd);
+
+      expect(follow, contains('_compassRotationFollowMaxStep'));
+      expect(follow, contains('_compassRotationGraceMaxStep'));
+      expect(follow, contains('rotationIntent'));
+    });
+
+    test('releases rotation grace before visible tilt jitter is integrated', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      expect(view, contains('_shouldReleaseCompassRotationGrace'));
+      expect(view, contains('_compassRotationGraceReleaseDelta'));
+
+      final stabilizerStart = view.indexOf('double _stabilizeCompassHeading({');
+      final recordStart = view.indexOf(
+        'void _recordCompassEventDt',
+        stabilizerStart,
+      );
+      expect(stabilizerStart, isNonNegative);
+      expect(recordStart, greaterThan(stabilizerStart));
+      final stabilizer = view.substring(stabilizerStart, recordStart);
+
+      expect(stabilizer, contains('releaseRotationGrace'));
+      expect(stabilizer, contains('visibleTiltJitter'));
+      expect(
+        stabilizer,
+        contains(
+          '_compassRotationIntentUntil = DateTime.fromMillisecondsSinceEpoch(0);',
+        ),
+      );
+    });
+
+    test('keeps rotation intent out of severe tilt hold', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      final stabilizerStart = view.indexOf('double _stabilizeCompassHeading({');
+      final recordStart = view.indexOf(
+        'void _recordCompassEventDt',
+        stabilizerStart,
+      );
+      expect(stabilizerStart, isNonNegative);
+      expect(recordStart, greaterThan(stabilizerStart));
+      final stabilizer = view.substring(stabilizerStart, recordStart);
+
+      expect(
+        stabilizer,
+        contains('!rotationIntent &&'),
+        reason:
+            'A same-direction rotation candidate should be damped or followed, not frozen by a tilt hold window.',
+      );
+      expect(stabilizer, contains('holdBlockedByRotation='));
+    });
+
+    test('keeps visible tilt integration below a visible one-degree drift', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      double constant(String name) {
+        final match = RegExp(
+          'static const double $name'
+          r'\s*=\s*([0-9.]+);',
+          multiLine: true,
+        ).firstMatch(view);
+        expect(match, isNotNull, reason: '$name should be declared');
+        return double.parse(match!.group(1)!);
+      }
+
+      expect(
+        constant('_compassVisibleTiltJitterGain'),
+        lessThanOrEqualTo(0.10),
+      );
+      expect(
+        constant('_compassVisibleTiltJitterMaxStep'),
+        lessThanOrEqualTo(0.5),
+        reason:
+            'Repeated 6-12 degree visible tilt samples were integrating 0.9-1.0 degree per event and visibly shaking the map.',
+      );
     });
   });
 }

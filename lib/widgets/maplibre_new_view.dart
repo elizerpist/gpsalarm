@@ -101,8 +101,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   static const int _compassTiltJitterStallEventMs = 80;
   static const double _compassTiltJitterMaxStep = 4.0;
   static const double _compassVisibleTiltJitterDelta = 6.0;
-  static const double _compassVisibleTiltJitterGain = 0.14;
-  static const double _compassVisibleTiltJitterMaxStep = 1.0;
+  static const double _compassVisibleTiltJitterGain = 0.08;
+  static const double _compassVisibleTiltJitterMaxStep = 0.4;
   static const Duration _compassTiltRecoveryDuration = Duration(
     milliseconds: 650,
   );
@@ -112,12 +112,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   static const double _compassRotationIntentRateDegPerSec = 650.0;
   static const int _compassRotationIntentSamples = 3;
   static const int _compassBlockedRotationEscapeSamples = 6;
-  static const double _compassRotationMediumTiltLag = 24.0;
-  static const double _compassRotationHighTiltLag = 42.0;
-  static const double _compassRotationMediumTiltPenalty = 0.65;
-  static const double _compassRotationHighTiltPenalty = 0.45;
   static const double _compassRotationFollowGain = 0.58;
   static const double _compassRotationFollowMaxRateDegPerSec = 180.0;
+  static const double _compassRotationFollowMaxStep = 6.0;
+  static const double _compassRotationGraceMaxStep = 3.0;
+  static const double _compassRotationGraceReleaseDelta = 12.0;
   static const double _compassRotationFollowSnapDelta = 4.0;
   static const Duration _compassRotationIntentGraceDuration = Duration(
     milliseconds: 260,
@@ -875,7 +874,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     required double turnRateDegPerSec,
     required int? eventDt,
     required int seq,
-    required double tiltPenalty,
+    required bool rotationIntent,
   }) {
     if (rawDelta.abs() <= _compassRotationFollowSnapDelta) {
       return heading;
@@ -883,12 +882,14 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     final dtSeconds = eventDt != null && eventDt > 0
         ? eventDt / 1000.0
         : _minCompassCameraInterval.inMilliseconds / 1000.0;
-    final effectiveGain = _compassRotationFollowGain * tiltPenalty;
+    final modeMaxStep = rotationIntent
+        ? _compassRotationFollowMaxStep
+        : _compassRotationGraceMaxStep;
     final maxStep = math.max(
       _compassSpikeClampStep,
-      _compassRotationFollowMaxRateDegPerSec * tiltPenalty * dtSeconds,
+      math.min(_compassRotationFollowMaxRateDegPerSec * dtSeconds, modeMaxStep),
     );
-    final followedDelta = (rawDelta * effectiveGain)
+    final followedDelta = (rawDelta * _compassRotationFollowGain)
         .clamp(-maxStep, maxStep)
         .toDouble();
     final followedHeading = _normalizeBearing(_lastBearing + followedDelta);
@@ -899,10 +900,13 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       'turnRate=${turnRateDegPerSec.toStringAsFixed(1)} '
       'usedDelta=${followedDelta.toStringAsFixed(1)} '
       'heading=${followedHeading.toStringAsFixed(1)} '
-      'followGain=${effectiveGain.toStringAsFixed(2)} '
+      'rotationIntent=$rotationIntent '
+      'followGain=${_compassRotationFollowGain.toStringAsFixed(2)} '
       'followMaxStep=${maxStep.toStringAsFixed(1)} '
+      'modeMaxStep=${modeMaxStep.toStringAsFixed(1)} '
       'maxStep=${maxStep.toStringAsFixed(1)} '
-      'tiltPenalty=${tiltPenalty.toStringAsFixed(2)}',
+      'tiltPenalty=1.00 '
+      'tiltPenaltySource=rotationMode',
     );
     return followedHeading;
   }
@@ -912,22 +916,16 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     _compassBlockedRotationDirection = 0;
   }
 
-  double _compassRotationTiltPenalty(double cameraLagBefore) {
-    final lag = cameraLagBefore.abs();
-    if (lag >= _compassRotationHighTiltLag) {
-      return _compassRotationHighTiltPenalty;
-    }
-    if (lag >= _compassRotationMediumTiltLag) {
-      return _compassRotationMediumTiltPenalty;
-    }
-    return 1.0;
-  }
-
-  String _compassRotationTiltPenaltyBand(double cameraLagBefore) {
-    final lag = cameraLagBefore.abs();
-    if (lag >= _compassRotationHighTiltLag) return 'high-camera-lag';
-    if (lag >= _compassRotationMediumTiltLag) return 'medium-camera-lag';
-    return 'none';
+  bool _shouldReleaseCompassRotationGrace({
+    required bool rotationIntent,
+    required bool visibleTiltJitter,
+    required double rawDelta,
+    required bool stalledEvent,
+  }) {
+    if (rotationIntent) return false;
+    return visibleTiltJitter ||
+        stalledEvent ||
+        rawDelta.abs() <= _compassRotationGraceReleaseDelta;
   }
 
   double _stabilizeCompassHeading({
@@ -1025,9 +1023,27 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     } else if (!holdActive && !rotationIntentConfirmed) {
       _compassFastRotationSamples = 0;
     }
+    final visibleTiltJitter = _isCompassVisibleTiltJitter(
+      rawDelta: rawDelta,
+      deltaOk: deltaOk,
+      rateOk: rateOk,
+      lagOk: lagOk,
+    );
+    final releaseRotationGrace =
+        rotationIntentConfirmed &&
+        _shouldReleaseCompassRotationGrace(
+          rotationIntent: rotationIntent,
+          visibleTiltJitter: visibleTiltJitter,
+          rawDelta: rawDelta,
+          stalledEvent: stalledEvent,
+        );
+    if (releaseRotationGrace) {
+      _compassRotationIntentUntil = DateTime.fromMillisecondsSinceEpoch(0);
+      rotationIntentConfirmed = false;
+      _compassFastRotationSamples = 0;
+    }
     final holdArmed = _compassTiltHoldArmed;
-    final shouldHold =
-        !rotationIntentConfirmed &&
+    final severeTiltHoldCandidate =
         !holdActive &&
         holdArmed &&
         _shouldHoldCompassTilt(
@@ -1035,13 +1051,13 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
           rawLagBefore: rawLagBefore,
           cameraLagBefore: cameraLagBefore,
         );
-    final shouldKeepHolding = holdActive && !holdReleaseOk;
-    final visibleTiltJitter = _isCompassVisibleTiltJitter(
-      rawDelta: rawDelta,
-      deltaOk: deltaOk,
-      rateOk: rateOk,
-      lagOk: lagOk,
-    );
+    final holdBlockedByRotation =
+        rotationIntent &&
+        !rotationIntentConfirmed &&
+        (severeTiltHoldCandidate || (holdActive && !holdReleaseOk));
+    final shouldHold =
+        !rotationIntent && !rotationIntentConfirmed && severeTiltHoldCandidate;
+    final shouldKeepHolding = holdActive && !holdReleaseOk && !rotationIntent;
     final tiltCandidate =
         !rotationIntentConfirmed &&
         (shouldClamp ||
@@ -1098,19 +1114,21 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
               .inMilliseconds
               .clamp(0, _compassRotationIntentGraceDuration.inMilliseconds)
         : 0;
-    final rotationTiltPenalty = _compassRotationTiltPenalty(cameraLagBefore);
-    final rotationTiltPenaltyBand = _compassRotationTiltPenaltyBand(
-      cameraLagBefore,
-    );
+    const rotationTiltPenalty = 1.0;
+    const rotationTiltPenaltyBand = 'none';
     final rotationDtSeconds = eventDt != null && eventDt > 0
         ? eventDt / 1000.0
         : _minCompassCameraInterval.inMilliseconds / 1000.0;
-    final rotationFollowGain = _compassRotationFollowGain * rotationTiltPenalty;
+    final rotationModeMaxStep = rotationIntent
+        ? _compassRotationFollowMaxStep
+        : _compassRotationGraceMaxStep;
+    const rotationFollowGain = _compassRotationFollowGain;
     final rotationFollowMaxStep = math.max(
       _compassSpikeClampStep,
-      _compassRotationFollowMaxRateDegPerSec *
-          rotationTiltPenalty *
-          rotationDtSeconds,
+      math.min(
+        _compassRotationFollowMaxRateDegPerSec * rotationDtSeconds,
+        rotationModeMaxStep,
+      ),
     );
     final decisionMode = shouldHold || shouldKeepHolding
         ? 'hold'
@@ -1128,6 +1146,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
           cameraLagBefore: cameraLagBefore,
         ) ||
         rotationIntentConfirmed ||
+        releaseRotationGrace ||
+        holdBlockedByRotation ||
         tiltJitter ||
         shouldHold ||
         shouldKeepHolding;
@@ -1151,6 +1171,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         'holdArmed=$holdArmed '
         'holdReleaseOk=$holdReleaseOk '
         'shouldHold=$shouldHold '
+        'holdBlockedByRotation=$holdBlockedByRotation '
         'shouldKeepHolding=$shouldKeepHolding '
         'tiltRecoveryActive=$tiltRecoveryActive '
         'tiltCandidate=$tiltCandidate '
@@ -1160,6 +1181,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         'tiltBurstBlocksRotation=$tiltBurstBlocksRotation '
         'rotationIntent=$rotationIntent '
         'rotationGraceActive=$rotationGraceActive '
+        'releaseRotationGrace=$releaseRotationGrace '
         'rotationIntentConfirmed=$rotationIntentConfirmed '
         'rotationGraceMs=$rotationGraceMs '
         'sustainedRotationEscape=$sustainedRotationEscape '
@@ -1171,7 +1193,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         'rawLagBefore=${rawLagBefore.toStringAsFixed(1)} '
         'cameraLagBefore=${cameraLagBefore.toStringAsFixed(1)} '
         'tiltPenalty=${rotationTiltPenalty.toStringAsFixed(2)} '
-        'tiltPenaltySource=cameraLag '
+        'tiltPenaltySource=rotationMode '
         'tiltPenaltyBand=$rotationTiltPenaltyBand '
         'followGain=${rotationFollowGain.toStringAsFixed(2)} '
         'followMaxStep=${rotationFollowMaxStep.toStringAsFixed(1)} '
@@ -1262,7 +1284,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         turnRateDegPerSec: turnRateDegPerSec,
         eventDt: eventDt,
         seq: seq,
-        tiltPenalty: rotationTiltPenalty,
+        rotationIntent: rotationIntent,
       );
     }
 
@@ -1534,11 +1556,13 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       'rotationIntentRate=$_compassRotationIntentRateDegPerSec '
       'rotationIntentSamples=$_compassRotationIntentSamples '
       'blockedRotationEscapeSamples=$_compassBlockedRotationEscapeSamples '
-      'rotationTiltLag=$_compassRotationMediumTiltLag/$_compassRotationHighTiltLag '
-      'rotationTiltPenalty=$_compassRotationMediumTiltPenalty/$_compassRotationHighTiltPenalty '
-      'rotationTiltPenaltySource=cameraLag '
+      'rotationTiltPenalty=disabled '
+      'rotationTiltPenaltySource=rotationMode '
       'rotationFollowGain=$_compassRotationFollowGain '
       'rotationFollowMaxRate=$_compassRotationFollowMaxRateDegPerSec '
+      'rotationFollowMaxStep=$_compassRotationFollowMaxStep '
+      'rotationGraceMaxStep=$_compassRotationGraceMaxStep '
+      'rotationGraceReleaseDelta=$_compassRotationGraceReleaseDelta '
       'rotationFollowSnapDelta=$_compassRotationFollowSnapDelta '
       'rotationIntentGraceMs=${_compassRotationIntentGraceDuration.inMilliseconds}',
     );
