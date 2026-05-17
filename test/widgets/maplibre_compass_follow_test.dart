@@ -800,7 +800,7 @@ void main() {
       );
       expect(
         doubleConstant('_compassRotationFollowMaxStep'),
-        inInclusiveRange(4.5, 6.5),
+        inInclusiveRange(8.0, 12.0),
         reason:
             'Confirmed yaw should catch up with bounded follow steps instead of being slowed by accumulated camera lag.',
       );
@@ -909,7 +909,7 @@ void main() {
       );
     });
 
-    test('keeps confirmed rotation responsive without raising tilt render clamp', () {
+    test('uses a separate render clamp for confirmed rotation', () {
       final view = File(
         'lib/widgets/maplibre_new_view.dart',
       ).readAsStringSync();
@@ -931,21 +931,21 @@ void main() {
       );
       expect(
         doubleConstant('_compassRotationRenderMaxStep'),
-        lessThanOrEqualTo(3.5),
+        inInclusiveRange(4.0, 5.5),
         reason:
-            'A 6 degree render frame is visible as a jump on MapLibre; rotation should be velocity-limited, not frame-step heavy.',
+            'Confirmed rotation needs a slightly larger render cap to catch up after dropped camera ticks without snapping the target.',
       );
       expect(
         doubleConstant('_compassRotationFollowMaxRateDegPerSec'),
-        greaterThanOrEqualTo(120.0),
+        greaterThanOrEqualTo(240.0),
         reason:
             'Confirmed rotation still needs enough velocity to avoid feeling detached.',
       );
       expect(
         doubleConstant('_compassRotationFollowMaxRateDegPerSec'),
-        lessThanOrEqualTo(180.0),
+        lessThanOrEqualTo(360.0),
         reason:
-            'Rotation follow should not produce 14-17 degree target jumps per compass sample.',
+            'Rotation follow should stay velocity-limited so dropped sensor frames do not create unbounded target jumps.',
       );
       expect(
         view,
@@ -1092,15 +1092,15 @@ void main() {
 
       expect(
         constant('_compassRotationFollowMaxStep'),
-        inInclusiveRange(4.5, 6.5),
+        inInclusiveRange(8.0, 12.0),
         reason:
             'Large real rotation should catch up, but not produce huge target jumps after stalled sensor frames.',
       );
       expect(
         constant('_compassRotationGraceMaxStep'),
-        lessThanOrEqualTo(3.5),
+        lessThanOrEqualTo(4.5),
         reason:
-            'When rotation intent has dropped but grace is still active, follow should coast without 6-11 degree snaps.',
+            'When rotation intent has dropped but grace is still active, follow should coast without large snaps.',
       );
 
       final followStart = view.indexOf('double _followCompassRotationIntent({');
@@ -1391,5 +1391,104 @@ void main() {
             'The stabilizer should pass the rotation-gated settle state into the jitter classifier.',
       );
     });
+
+    test(
+      'uses adaptive rotation catch-up instead of fixed six degree target steps',
+      () {
+        final view = File(
+          'lib/widgets/maplibre_new_view.dart',
+        ).readAsStringSync();
+
+        double constant(String name) {
+          final match = RegExp(
+            'static const double $name'
+            r'\s*=\s*([0-9.]+);',
+            multiLine: true,
+          ).firstMatch(view);
+          expect(match, isNotNull, reason: '$name should be declared');
+          return double.parse(match!.group(1)!);
+        }
+
+        expect(
+          constant('_compassRotationFollowMaxStep'),
+          greaterThan(6.0),
+          reason:
+              'The latest rotation log shows repeated usedDelta=6.0 while rawLag grows beyond 50 degrees; the target follow cap must be high enough to catch up.',
+        );
+        expect(view, contains('_compassRotationFollowLagBoostDelta'));
+        expect(view, contains('_compassRotationFollowLagBoostStep'));
+
+        final followStart = view.indexOf(
+          'double _followCompassRotationIntent({',
+        );
+        final followEnd = view.indexOf(
+          'void _resetCompassBlockedRotationEvidence',
+          followStart,
+        );
+        expect(followStart, isNonNegative);
+        expect(followEnd, greaterThan(followStart));
+        final follow = view.substring(followStart, followEnd);
+
+        expect(follow, contains('lagBoostStep'));
+        expect(
+          follow,
+          contains('rawDelta.abs() >= _compassRotationFollowLagBoostDelta'),
+        );
+        expect(follow, contains('modeMaxStep + lagBoostStep'));
+      },
+    );
+
+    test(
+      'keeps recent tilt bursts quarantined from spike clamp and lag follow',
+      () {
+        final view = File(
+          'lib/widgets/maplibre_new_view.dart',
+        ).readAsStringSync();
+
+        expect(view, contains('_compassTiltQuarantineUntil'));
+        expect(view, contains('_compassTiltQuarantineDuration'));
+        expect(view, contains('_isCompassTiltQuarantineActive'));
+        expect(view, contains('_compassTiltQuarantineDelta'));
+        expect(view, contains("return 'tilt-quarantine-jitter';"));
+
+        final lagCandidateStart = view.indexOf(
+          'bool _isCompassLagFollowCandidate({',
+        );
+        final lagCandidateEnd = view.indexOf(
+          'bool _shouldHoldCompassTilt',
+          lagCandidateStart,
+        );
+        expect(lagCandidateStart, isNonNegative);
+        expect(lagCandidateEnd, greaterThan(lagCandidateStart));
+        final lagCandidate = view.substring(lagCandidateStart, lagCandidateEnd);
+        expect(lagCandidate, contains('tiltQuarantineActive'));
+        expect(lagCandidate, contains('!tiltQuarantineActive'));
+
+        final stabilizerStart = view.indexOf(
+          'double _stabilizeCompassHeading({',
+        );
+        final recordStart = view.indexOf(
+          'void _recordCompassEventDt',
+          stabilizerStart,
+        );
+        expect(stabilizerStart, isNonNegative);
+        expect(recordStart, greaterThan(stabilizerStart));
+        final stabilizer = view.substring(stabilizerStart, recordStart);
+
+        expect(stabilizer, contains('tiltQuarantineActive'));
+        expect(
+          stabilizer,
+          contains('tiltQuarantineActive: tiltQuarantineActive'),
+        );
+        expect(
+          stabilizer,
+          contains(
+            '_compassTiltQuarantineUntil = now.add(_compassTiltQuarantineDuration)',
+          ),
+          reason:
+              'Visible tilt and tilt bursts should arm a longer quarantine so 13-22 degree tilt tremor cannot enter spike-clamp or lag-follow.',
+        );
+      },
+    );
   });
 }

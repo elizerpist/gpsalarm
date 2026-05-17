@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gpsalarm/services/debug_console.dart';
 
@@ -31,4 +33,17 @@ void main() {
       DebugConsole.clear();
     }
   });
+
+  test(
+    'debug dialog renders logs lazily instead of rebuilding one huge text field',
+    () {
+      final source = File('lib/services/debug_console.dart').readAsStringSync();
+
+      expect(source, contains('ListView.builder'));
+      expect(source, contains('DebugConsole.entries'));
+      expect(source, contains('DebugConsole.allText'));
+      expect(source, isNot(contains('TextEditingController')));
+      expect(source, isNot(contains('_textCtrl.value =')));
+    },
+  );
 }
