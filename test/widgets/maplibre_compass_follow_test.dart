@@ -1713,7 +1713,7 @@ void main() {
         expect(rotation, contains('protectedRotationEvidence'));
         expect(rotation, contains('!protectedRotationEvidence'));
         expect(rotation, contains('final targetGain'));
-        expect(rotation, contains('_compassFastTurnRateDegPerSec'));
+        expect(rotation, contains('_compassFastTurnGain'));
         expect(rotation, contains('followedDelta / targetGain'));
         expect(rotation, contains('compensatedDelta'));
         expect(rotation, contains('_lastBearing + compensatedDelta'));
@@ -1904,7 +1904,7 @@ void main() {
 
       double doubleConstant(String name) {
         final match = RegExp(
-          'static const double $name = ([0-9.]+);',
+          'static const double $name =\\s*([0-9.]+);',
         ).firstMatch(view);
         expect(match, isNotNull, reason: '$name should be a double constant.');
         return double.parse(match!.group(1)!);
@@ -1912,9 +1912,9 @@ void main() {
 
       expect(
         doubleConstant('_compassRotationSensorProtectedLagSeedMinRawDelta'),
-        lessThanOrEqualTo(9.0),
+        greaterThanOrEqualTo(12.0),
         reason:
-            'The 09:28 trace freezes through -9.5 and -12.8 degrees of same-direction lag before rotation resumes.',
+            'The 10:12 trace shows 8-12 degree tilt-quarantine drift can tremble when the protected lag seed is too permissive.',
       );
       expect(
         doubleConstant('_compassRotationSensorMaxStep'),
@@ -1941,6 +1941,100 @@ void main() {
       expect(rotation, contains('_compassRotationSensorMaxRateDegPerSec'));
       expect(rotation, contains('_compassRotationSensorMaxStep'));
       expect(rotation, isNot(contains('_dampenCompassTiltJitter')));
+    });
+
+    test('uses a separate protected burst gate for fast rotation', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      double doubleConstant(String name) {
+        final match = RegExp(
+          'static const double $name =\\s*([0-9.]+);',
+        ).firstMatch(view);
+        expect(match, isNotNull, reason: '$name should be a double constant.');
+        return double.parse(match!.group(1)!);
+      }
+
+      int intConstant(String name) {
+        final match = RegExp(
+          'static const int $name = ([0-9]+);',
+        ).firstMatch(view);
+        expect(match, isNotNull, reason: '$name should be an int constant.');
+        return int.parse(match!.group(1)!);
+      }
+
+      expect(
+        intConstant('_compassRotationSensorProtectedBurstSamplesRequired'),
+        equals(2),
+        reason:
+            'Fast rotation in the 10:12 trace has two clear same-direction burst samples before spike clamp creates 50+ degrees of lag.',
+      );
+      expect(
+        doubleConstant('_compassRotationSensorProtectedBurstMinRawDelta'),
+        lessThanOrEqualTo(9.4),
+        reason:
+            'The latest trace starts the real fast-turn lag at 9.4 degrees raw lag; this gate must catch that burst before tilt quarantine turns it into spike-clamp lag.',
+      );
+      expect(
+        doubleConstant('_compassRotationSensorProtectedBurstMinDelta'),
+        lessThanOrEqualTo(7.2),
+      );
+      expect(
+        doubleConstant('_compassRotationSensorProtectedBurstMinRateDegPerSec'),
+        lessThanOrEqualTo(189.1),
+      );
+      expect(
+        doubleConstant('_compassRotationSensorProtectedBurstMaxDelta'),
+        greaterThanOrEqualTo(24.7),
+      );
+      expect(
+        doubleConstant('_compassRotationSensorProtectedBurstMaxRateDegPerSec'),
+        greaterThanOrEqualTo(667.2),
+      );
+
+      final rotationStart = view.indexOf(
+        'double? _followCompassSensorRotation({',
+      );
+      final tiltStart = view.indexOf('double _stabilizeCompassTilt({');
+      expect(rotationStart, isNonNegative);
+      expect(tiltStart, greaterThan(rotationStart));
+
+      final rotation = view.substring(rotationStart, tiltStart);
+      expect(rotation, contains('protectedBurstRotationCandidate'));
+      expect(rotation, contains('!protectedBurstRotationCandidate'));
+      expect(
+        rotation,
+        contains('? _compassRotationSensorProtectedBurstSamplesRequired'),
+      );
+      expect(
+        rotation,
+        contains('sensorAbs >= _compassRotationSensorProtectedBurstMinDelta'),
+      );
+      expect(rotation, contains('turnRateDegPerSec.abs() >='));
+      expect(rotation, isNot(contains('_stabilizeCompassTilt(')));
+    });
+
+    test('applies full rotation follow steps after fast-turn lag', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+      final followStart = view.indexOf('double _followCompassRotationIntent({');
+      final followEnd = view.indexOf(
+        'void _resetCompassBlockedRotationEvidence',
+        followStart,
+      );
+      expect(followStart, isNonNegative);
+      expect(followEnd, greaterThan(followStart));
+
+      final follow = view.substring(followStart, followEnd);
+      expect(follow, contains('final targetGain'));
+      expect(
+        follow,
+        contains('final compensatedDelta = followedDelta / targetGain'),
+      );
+      expect(follow, contains('_lastBearing + compensatedDelta'));
+      expect(follow, contains('targetGain=\${targetGain.toStringAsFixed(2)}'));
     });
 
     test('coasts protected rotation through brief sensor wobble', () {

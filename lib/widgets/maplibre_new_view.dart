@@ -99,9 +99,17 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   static const double _compassRotationSensorProtectedFastMaxDelta = 9.0;
   static const double _compassRotationSensorProtectedFastMaxRateDegPerSec =
       260.0;
+  static const int _compassRotationSensorProtectedBurstSamplesRequired = 2;
+  static const double _compassRotationSensorProtectedBurstMinRawDelta = 8.0;
+  static const double _compassRotationSensorProtectedBurstMinDelta = 6.0;
+  static const double _compassRotationSensorProtectedBurstMaxDelta = 32.0;
+  static const double _compassRotationSensorProtectedBurstMinRateDegPerSec =
+      150.0;
+  static const double _compassRotationSensorProtectedBurstMaxRateDegPerSec =
+      900.0;
   static const double _compassRotationSensorProtectedLagTrendSlack = 1.0;
   static const int _compassRotationSensorProtectedLagSeedSamplesRequired = 2;
-  static const double _compassRotationSensorProtectedLagSeedMinRawDelta = 7.5;
+  static const double _compassRotationSensorProtectedLagSeedMinRawDelta = 13.5;
   static const double _compassRotationSensorProtectedLagSeedMaxRateDegPerSec =
       260.0;
   static const int _compassRotationSensorProtectedLagEscapeSamplesRequired = 3;
@@ -619,6 +627,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   bool _shouldLogCompassFrame(int frame) => frame <= 3 || frame % 20 == 0;
 
   double _compassGainFor(double rawDelta, double turnRateDegPerSec) {
+    if (_compassTargetPath == _CompassTargetPath.rotation) {
+      return _compassFastTurnGain;
+    }
     if (rawDelta.abs() >= _compassFastTurnDelta ||
         turnRateDegPerSec.abs() >= _compassFastTurnRateDegPerSec) {
       return _compassFastTurnGain;
@@ -1036,19 +1047,22 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     final followedDelta = (rawDelta * _compassRotationFollowGain)
         .clamp(-maxStep, maxStep)
         .toDouble();
-    final followedHeading = _normalizeBearing(_lastBearing + followedDelta);
+    final targetGain = _compassFastTurnGain;
+    final compensatedDelta = followedDelta / targetGain;
+    final followedHeading = _normalizeBearing(_lastBearing + compensatedDelta);
     DebugConsole.log(
       'COMPASS_ROTATION_FOLLOW: seq=$seq eventDt=${eventDt ?? -1}ms '
       'raw=${heading.toStringAsFixed(1)} '
       'rawDelta=${rawDelta.toStringAsFixed(1)} '
       'turnRate=${turnRateDegPerSec.toStringAsFixed(1)} '
-      'usedDelta=${followedDelta.toStringAsFixed(1)} '
+      'usedDelta=${compensatedDelta.toStringAsFixed(1)} '
       'heading=${followedHeading.toStringAsFixed(1)} '
       'rotationIntent=$rotationIntent '
       'lagFollowCandidate=$lagFollowCandidate '
       'followGain=${_compassRotationFollowGain.toStringAsFixed(2)} '
       'followMaxStep=${maxStep.toStringAsFixed(1)} '
       'modeMaxStep=${boostedModeMaxStep.toStringAsFixed(1)} '
+      'targetGain=${targetGain.toStringAsFixed(2)} '
       'lagBoostStep=${lagBoostStep.toStringAsFixed(1)} '
       'maxStep=${maxStep.toStringAsFixed(1)} '
       'tiltPenalty=1.00 '
@@ -1191,6 +1205,16 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         sensorAbs <= _compassRotationSensorProtectedFastMaxDelta &&
         turnRateDegPerSec.abs() <=
             _compassRotationSensorProtectedFastMaxRateDegPerSec;
+    final protectedBurstRotationCandidate =
+        rawAbs >= _compassRotationSensorProtectedBurstMinRawDelta &&
+        rawDelta.sign == sensorDelta.sign &&
+        protectedLagGrowing &&
+        sensorAbs >= _compassRotationSensorProtectedBurstMinDelta &&
+        sensorAbs <= _compassRotationSensorProtectedBurstMaxDelta &&
+        turnRateDegPerSec.abs() >=
+            _compassRotationSensorProtectedBurstMinRateDegPerSec &&
+        turnRateDegPerSec.abs() <=
+            _compassRotationSensorProtectedBurstMaxRateDegPerSec;
     final protectedLagSeedCandidate =
         rawAbs >= _compassRotationSensorProtectedLagSeedMinRawDelta &&
         rawDelta.sign == sensorDelta.sign &&
@@ -1209,12 +1233,15 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     if (tiltProtectionActive &&
         !protectedRotationCandidate &&
         !protectedFastRotationCandidate &&
+        !protectedBurstRotationCandidate &&
         !protectedLagSeedCandidate &&
         !protectedLagEscapeCandidate) {
       resetSensorRotationEvidence();
       return null;
     }
-    final protectedRotationSamplesRequired = protectedLagSeedCandidate
+    final protectedRotationSamplesRequired = protectedBurstRotationCandidate
+        ? _compassRotationSensorProtectedBurstSamplesRequired
+        : protectedLagSeedCandidate
         ? _compassRotationSensorProtectedLagSeedSamplesRequired
         : protectedFastRotationCandidate
         ? _compassRotationSensorProtectedFastSamplesRequired
@@ -1248,9 +1275,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     final followedDelta = (sensorDelta * _compassRotationSensorGain)
         .clamp(-maxStep, maxStep)
         .toDouble();
-    final targetGain = turnRateDegPerSec.abs() >= _compassFastTurnRateDegPerSec
-        ? _compassFastTurnGain
-        : _compassSmoothingGain;
+    final targetGain = _compassFastTurnGain;
     final compensatedDelta = followedDelta / targetGain;
     final followedHeading = _normalizeBearing(_lastBearing + compensatedDelta);
     _compassRotationIntentUntil = now.add(_compassRotationIntentGraceDuration);
@@ -1272,6 +1297,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       'protectedCandidate=$protectedRotationCandidate '
       'protectedFastCandidate=$protectedFastRotationCandidate '
       'protectedLagSeedCandidate=$protectedLagSeedCandidate '
+      'protectedBurstCandidate=$protectedBurstRotationCandidate '
       'protectedLagEscapeCandidate=$protectedLagEscapeCandidate '
       'protectedLagGrowing=$protectedLagGrowing '
       'protectedEvidence=$protectedRotationEvidence '
@@ -1303,9 +1329,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     final coastStep = (rawDelta * _compassRotationSensorProtectedCoastGain)
         .clamp(-maxStep, maxStep)
         .toDouble();
-    final targetGain = turnRateDegPerSec.abs() >= _compassFastTurnRateDegPerSec
-        ? _compassFastTurnGain
-        : _compassSmoothingGain;
+    final targetGain = _compassFastTurnGain;
     final compensatedDelta = coastStep / targetGain;
     final coastHeading = _normalizeBearing(_lastBearing + compensatedDelta);
     _compassRotationIntentUntil = now.add(_compassRotationIntentGraceDuration);
