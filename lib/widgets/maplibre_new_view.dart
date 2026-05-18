@@ -48,6 +48,8 @@ part 'maplibre_new_view/maplibre_veil_layer.dart';
 
 enum _AssignVisualOwner { nativeLive, transitionPending }
 
+enum _CompassTargetPath { pass, rotation, tilt }
+
 class MaplibreNewView extends StatefulWidget {
   final GlobalKey<ScaffoldState> scaffoldKey;
   const MaplibreNewView({super.key, required this.scaffoldKey});
@@ -84,7 +86,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   static const int _compassRenderFallbackStallMs = 80;
   static const double _compassRenderFallbackDelta = 1.5;
   static const double _compassRenderMaxStep = 4.0;
-  static const double _compassRotationRenderMaxStep = 5.0;
+  static const double _compassRotationRenderGain = 1.0;
+  static const double _compassRotationRenderMaxStep = 10.0;
   static const double _compassRotationSensorMinDelta = 0.45;
   static const double _compassRotationSensorImmediateDelta = 1.1;
   static const int _compassRotationSensorSamplesRequired = 2;
@@ -170,6 +173,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   Ticker? _compassRenderTicker;
   DateTime? _lastCompassEventAt;
   double? _lastCompassUsedDelta;
+  _CompassTargetPath _compassTargetPath = _CompassTargetPath.pass;
   DateTime _compassTiltHoldUntil = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _compassTiltRecoveryUntil = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _compassTiltSettleUntil = DateTime.fromMillisecondsSinceEpoch(0);
@@ -622,7 +626,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     return _compassSmoothingGain;
   }
 
-  double _compassRenderGainFor(double cameraDelta) {
+  double _compassRenderGainFor(
+    double cameraDelta, {
+    required bool rotationResponsive,
+  }) {
+    if (rotationResponsive) return _compassRotationRenderGain;
+
     final absDelta = cameraDelta.abs();
     if (absDelta >= _compassRenderFastDelta) {
       return _compassRenderFastGain;
@@ -1074,6 +1083,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     required int seq,
   }) {
     final now = DateTime.now();
+    _compassTargetPath = _CompassTargetPath.pass;
     final tiltProtectionActive = _isCompassTiltProtectionActive(now);
     final rotationHeading = _followCompassSensorRotation(
       heading: heading,
@@ -1085,7 +1095,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       now: now,
       tiltProtectionActive: tiltProtectionActive,
     );
-    if (rotationHeading != null) return rotationHeading;
+    if (rotationHeading != null) {
+      _compassTargetPath = _CompassTargetPath.rotation;
+      return rotationHeading;
+    }
 
     return _stabilizeCompassTilt(
       heading: heading,
@@ -1711,11 +1724,12 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         'holdMs=$remainingHoldMs',
       );
       _resetCompassBlockedRotationEvidence();
+      _compassTargetPath = _CompassTargetPath.tilt;
       return _lastBearing;
     }
 
     if (rotationIntentConfirmed) {
-      return _followCompassRotationIntent(
+      final nextHeading = _followCompassRotationIntent(
         heading: heading,
         rawDelta: rawDelta,
         turnRateDegPerSec: turnRateDegPerSec,
@@ -1724,6 +1738,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         rotationIntent: rotationIntent,
         lagFollowCandidate: lagFollowCandidate,
       );
+      _compassTargetPath = _CompassTargetPath.rotation;
+      return nextHeading;
     }
 
     final dampedHeading = _dampenCompassTiltJitter(
@@ -1741,8 +1757,14 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       eventDt: eventDt,
       seq: seq,
     );
-    if (tiltJitter) return dampedHeading;
-    if (!shouldClamp) return heading;
+    if (tiltJitter) {
+      _compassTargetPath = _CompassTargetPath.tilt;
+      return dampedHeading;
+    }
+    if (!shouldClamp) {
+      _compassTargetPath = _CompassTargetPath.pass;
+      return heading;
+    }
 
     final clampedDelta = rawDelta.sign * _compassSpikeClampStep;
     final stabilizedHeading = _normalizeBearing(_lastBearing + clampedDelta);
@@ -1755,6 +1777,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       'usedDelta=${clampedDelta.toStringAsFixed(1)} '
       'heading=${stabilizedHeading.toStringAsFixed(1)}',
     );
+    _compassTargetPath = _CompassTargetPath.tilt;
     return stabilizedHeading;
   }
 
@@ -1942,6 +1965,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     _compassSensorRotationDirection = 0;
     _compassSensorRotationLastRawAbs = 0;
     _compassFastRotationSamples = 0;
+    _compassTargetPath = _CompassTargetPath.pass;
     _resetCompassBlockedRotationEvidence();
     _compassEventSeq = 0;
     _compassCameraSeq = 0;
@@ -1971,6 +1995,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       'renderFallbackStallMs=$_compassRenderFallbackStallMs '
       'renderFallbackDelta=$_compassRenderFallbackDelta '
       'renderMaxStep=$_compassRenderMaxStep '
+      'rotationRenderGain=$_compassRotationRenderGain '
       'rotationRenderMaxStep=$_compassRotationRenderMaxStep '
       'renderPump=ticker path=ticker-pump '
       'targetGain=$_compassSmoothingGain fastTargetGain=$_compassFastTurnGain '
@@ -2037,6 +2062,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     final wasActive = _compassSub != null || _compassRenderTicker != null;
     _compassSub?.cancel();
     _compassSub = null;
+    _compassTargetPath = _CompassTargetPath.pass;
     _stopCompassRenderPump();
     if (wasActive) {
       _logCompassFpsIfNeeded(DateTime.now(), force: true);
@@ -2123,6 +2149,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         'targetDelta=${targetDelta.toStringAsFixed(1)} '
         'rawLag=${rawLag.toStringAsFixed(1)} '
         'cameraLag=${cameraLag.toStringAsFixed(1)} '
+        'targetPath=${_compassTargetPath.name} '
         'gain=$gain '
         'sensorFallback=$sensorFallback',
       );
@@ -2156,6 +2183,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     final shouldLog = _shouldLogCompassFrame(renderSeq);
     final renderIntervalMs = renderInterval?.inMilliseconds ?? -1;
     final renderStallMs = renderIntervalMs < 0 ? 0 : renderIntervalMs;
+    final rotationResponsive =
+        _compassTargetPath == _CompassTargetPath.rotation;
 
     if (cameraDelta.abs() < _compassMinCameraDelta) {
       _compassSkipSeq++;
@@ -2168,8 +2197,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
           'cameraIntervalMs=${interval.inMilliseconds} '
           'renderIntervalMs=$renderIntervalMs '
           'renderStallMs=$renderStallMs '
-          'rotationResponsive=${_isCompassRotationIntentActive(now)} '
-          'renderMaxStep=${_compassRenderMaxStepFor(rotationResponsive: _isCompassRotationIntentActive(now))} '
+          'rotationResponsive=$rotationResponsive '
+          'renderMaxStep=${_compassRenderMaxStepFor(rotationResponsive: rotationResponsive)} '
           'firstCameraUpdate=${_compassCameraSeq == 0} '
           'target=${_lastBearing.toStringAsFixed(1)} '
           'camera=${_lastCameraBearing.toStringAsFixed(1)} '
@@ -2182,8 +2211,10 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
 
     final previousCameraBearing = _lastCameraBearing;
     final firstCameraUpdate = _compassCameraSeq == 0;
-    final rotationResponsive = _isCompassRotationIntentActive(now);
-    final renderGain = _compassRenderGainFor(cameraDelta);
+    final renderGain = _compassRenderGainFor(
+      cameraDelta,
+      rotationResponsive: rotationResponsive,
+    );
     final renderMaxStep = _compassRenderMaxStepFor(
       rotationResponsive: rotationResponsive,
     );
@@ -2225,6 +2256,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         'target=${_lastBearing.toStringAsFixed(1)} '
         'prevCamera=${previousCameraBearing.toStringAsFixed(1)} '
         'sent=${nextCameraBearing.toStringAsFixed(1)} '
+        'targetPath=${_compassTargetPath.name} '
         'dCamera=${cameraDelta.toStringAsFixed(1)} '
         'renderStep=${renderStep.toStringAsFixed(1)} '
         'targetLag=${targetLag.toStringAsFixed(1)} '

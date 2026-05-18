@@ -472,9 +472,13 @@ void main() {
       expect(stabilizer, contains('eventDt >= _compassTiltJitterStallEventMs'));
       expect(
         stabilizer,
-        contains('if (tiltJitter) return dampedHeading;'),
+        contains('_compassTargetPath = _CompassTargetPath.tilt;'),
         reason:
-            'Stalled tilt jitter must be damped even when the old clamp predicate is true.',
+            'Stalled tilt jitter must stay on the tilt path even when the old clamp predicate is true.',
+      );
+      expect(
+        stabilizer.indexOf('if (tiltJitter)'),
+        lessThan(stabilizer.indexOf('if (!shouldClamp)')),
       );
     });
 
@@ -505,9 +509,13 @@ void main() {
       );
       expect(
         stabilizer,
-        contains('if (tiltJitter) return dampedHeading;'),
+        contains('_compassTargetPath = _CompassTargetPath.tilt;'),
         reason:
-            'Visible tilt jitter should be damped before the pass-through path can return the raw heading.',
+            'Visible tilt jitter should remain on the tilt path before the pass-through path can return the raw heading.',
+      );
+      expect(
+        stabilizer.indexOf('if (tiltJitter)'),
+        lessThan(stabilizer.indexOf('if (!shouldClamp)')),
       );
     });
 
@@ -931,9 +939,9 @@ void main() {
       );
       expect(
         doubleConstant('_compassRotationRenderMaxStep'),
-        inInclusiveRange(4.0, 5.5),
+        inInclusiveRange(8.0, 12.0),
         reason:
-            'Confirmed rotation needs a slightly larger render cap to catch up after dropped camera ticks without snapping the target.',
+            'Confirmed rotation has its own camera path, so it can use a wider bounded render cap without changing the tilt clamp.',
       );
       expect(
         doubleConstant('_compassRotationFollowMaxRateDegPerSec'),
@@ -949,10 +957,76 @@ void main() {
       );
       expect(
         view,
-        contains('rotationResponsive: _isCompassRotationIntentActive(now)'),
+        contains('_compassTargetPath == _CompassTargetPath.rotation'),
         reason:
-            'Only confirmed rotation should use the larger render step; tilt/unconfirmed jitter must keep the base clamp.',
+            'Only the isolated confirmed-rotation target path should use the larger render step; tilt/unconfirmed jitter must keep the base clamp.',
       );
+    });
+
+    test('uses an isolated fast camera render path for confirmed rotation', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      double doubleConstant(String name) {
+        final match = RegExp(
+          'static const double $name'
+          r'\s*=\s*([0-9.]+);',
+          multiLine: true,
+        ).firstMatch(view);
+        expect(match, isNotNull, reason: '$name should be declared');
+        return double.parse(match!.group(1)!);
+      }
+
+      expect(view, contains('enum _CompassTargetPath'));
+      expect(view, contains('_CompassTargetPath.rotation'));
+      expect(view, contains('_CompassTargetPath.tilt'));
+      expect(view, contains('_compassTargetPath'));
+
+      expect(
+        doubleConstant('_compassRotationRenderGain'),
+        equals(1.0),
+        reason:
+            'Confirmed yaw should not be eased a second time in the render pump; the target path already bounded rotation velocity.',
+      );
+      expect(
+        doubleConstant('_compassRotationRenderMaxStep'),
+        inInclusiveRange(8.0, 12.0),
+        reason:
+            'Rotation needs a wider camera step than tilt jitter so it can catch the bounded target without visible delay.',
+      );
+
+      final gainStart = view.indexOf('double _compassRenderGainFor(');
+      final clampStart = view.indexOf(
+        'double _compassRenderMaxStepFor',
+        gainStart,
+      );
+      expect(gainStart, isNonNegative);
+      expect(clampStart, greaterThan(gainStart));
+      final gainFor = view.substring(gainStart, clampStart);
+
+      expect(gainFor, contains('required bool rotationResponsive'));
+      expect(gainFor, contains('if (rotationResponsive)'));
+      expect(gainFor, contains('return _compassRotationRenderGain;'));
+
+      final pumpStart = view.indexOf('void _pumpCompassCamera');
+      final modeStart = view.indexOf('void _set3DMode', pumpStart);
+      expect(pumpStart, isNonNegative);
+      expect(modeStart, greaterThan(pumpStart));
+      final pump = view.substring(pumpStart, modeStart);
+
+      expect(
+        pump,
+        contains('final rotationResponsive'),
+        reason:
+            'Camera responsiveness must be driven by the latest confirmed rotation path, not by tilt recovery/quarantine state.',
+      );
+      expect(
+        pump,
+        contains('_compassTargetPath == _CompassTargetPath.rotation'),
+      );
+      expect(pump, contains('rotationResponsive: rotationResponsive'));
+      expect(pump, contains('renderGain='));
     });
 
     test('logs compass decision inputs separately from action outputs', () {
