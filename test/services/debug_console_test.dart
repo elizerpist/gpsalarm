@@ -46,4 +46,27 @@ void main() {
       expect(source, isNot(contains('_textCtrl.value =')));
     },
   );
+
+  test('builds a Termux command that overwrites the latest compass log file', () {
+    DebugConsole.clear();
+    try {
+      DebugConsole.log('COMPASS_DECISION: seq=1 mode=rotation-follow');
+      DebugConsole.log("COMPASS_TARGET: raw=42.0 reason='quoted'");
+
+      final command = DebugConsole.termuxCompassLogExportCommand;
+
+      expect(
+        command,
+        startsWith(
+          "mkdir -p gpsalarm_repo/debug_logs && cat > "
+          "gpsalarm_repo/debug_logs/compass_latest.log <<'GPSALARM_DEBUG_LOGS'\n",
+        ),
+      );
+      expect(command, contains(DebugConsole.allText));
+      expect(command, endsWith('\nGPSALARM_DEBUG_LOGS'));
+      expect(command, isNot(contains('>>')));
+    } finally {
+      DebugConsole.clear();
+    }
+  });
 }

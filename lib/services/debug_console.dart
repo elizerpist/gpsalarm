@@ -7,7 +7,11 @@ class DebugConsole {
   DebugConsole._();
 
   static const _maxEntries = 500;
+  static const _termuxCompassLogPath =
+      'gpsalarm_repo/debug_logs/compass_latest.log';
+  static const _termuxCompassLogDelimiter = 'GPSALARM_DEBUG_LOGS';
   static const _notifyDelay = Duration(milliseconds: 100);
+
   static final _list = <String>[];
   static final ValueNotifier<int> _version = ValueNotifier(0);
   static Timer? _notifyTimer;
@@ -44,6 +48,13 @@ class DebugConsole {
 
   static List<String> get entries => _list;
   static String get allText => _list.join('\n');
+  static String get termuxCompassLogExportCommand {
+    return "mkdir -p gpsalarm_repo/debug_logs && cat > "
+        "${_termuxCompassLogPath} <<'${_termuxCompassLogDelimiter}'\n"
+        "${allText}\n"
+        "${_termuxCompassLogDelimiter}";
+  }
+
   static ValueNotifier<int> get notifier => _version;
 }
 
@@ -57,6 +68,7 @@ class DebugConsoleDialog extends StatefulWidget {
 class _DebugConsoleDialogState extends State<DebugConsoleDialog> {
   final ScrollController _scrollCtrl = ScrollController();
   bool _copied = false;
+  bool _termuxCopied = false;
 
   @override
   void initState() {
@@ -90,6 +102,24 @@ class _DebugConsoleDialogState extends State<DebugConsoleDialog> {
         setState(() => _copied = true);
         Future.delayed(const Duration(seconds: 2), () {
           if (mounted) setState(() => _copied = false);
+        });
+      }
+    } catch (e) {
+      DebugConsole.log('Clipboard failed: $e');
+    }
+  }
+
+  Future<void> _copyTermuxExportCommand() async {
+    if (DebugConsole.entries.isEmpty) return;
+    try {
+      final ok = await copyToClipboard(
+        DebugConsole.termuxCompassLogExportCommand,
+      );
+      if (!mounted) return;
+      if (ok) {
+        setState(() => _termuxCopied = true);
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted) setState(() => _termuxCopied = false);
         });
       }
     } catch (e) {
@@ -149,6 +179,24 @@ class _DebugConsoleDialogState extends State<DebugConsoleDialog> {
                         ? const Color(0xFF2ECC71)
                         : const Color(0xFF89B4FA),
                     tooltip: _copied ? 'Copied!' : 'Copy all',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: empty ? null : _copyTermuxExportCommand,
+                    icon: Icon(
+                      _termuxCopied ? Icons.check : Icons.upload_file_outlined,
+                      size: 16,
+                    ),
+                    color: _termuxCopied
+                        ? const Color(0xFF2ECC71)
+                        : const Color(0xFFF9E2AF),
+                    tooltip: _termuxCopied
+                        ? 'Copied Termux export!'
+                        : 'Copy Termux export',
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(
                       minWidth: 32,
