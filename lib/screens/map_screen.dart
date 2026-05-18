@@ -24,7 +24,7 @@ import '../services/alarm_delivery_service.dart';
 import '../services/permission_service.dart';
 import 'settings_screen.dart';
 import '../services/debug_console.dart';
-import '../widgets/maplibre_new_view.dart';
+import '../widgets/maplibre_view_entry.dart';
 import '../widgets/offline_indicator.dart';
 import '../widgets/scale_bar.dart';
 import '../services/cached_tile_provider.dart';
