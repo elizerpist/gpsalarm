@@ -86,7 +86,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   static const int _compassRenderFallbackStallMs = 80;
   static const double _compassRenderFallbackDelta = 1.5;
   static const double _compassRenderMaxStep = 4.0;
-  static const double _compassRotationRenderGain = 1.0;
+  static const double _compassRotationRenderMinGain = 0.35;
+  static const double _compassRotationRenderMaxGain = 0.62;
   static const double _compassRotationRenderMaxStep = 10.0;
   static const double _compassRotationSensorMinDelta = 0.45;
   static const double _compassRotationSensorImmediateDelta = 1.1;
@@ -179,6 +180,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   DateTime _lastCompassCameraUpdate = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime? _lastCompassRenderTickAt;
   Ticker? _compassRenderTicker;
+  int? _lastCompassEventDtMs;
   DateTime? _lastCompassEventAt;
   double? _lastCompassUsedDelta;
   _CompassTargetPath _compassTargetPath = _CompassTargetPath.pass;
@@ -637,11 +639,26 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     return _compassSmoothingGain;
   }
 
+  double _compassRotationRenderGainFor(int renderIntervalMs) {
+    final targetEventDtMs =
+        _lastCompassEventDtMs ?? _compassRenderInterval.inMilliseconds;
+    if (renderIntervalMs <= 0 || targetEventDtMs <= 0) {
+      return _compassRotationRenderMinGain;
+    }
+
+    return (renderIntervalMs / targetEventDtMs)
+        .clamp(_compassRotationRenderMinGain, _compassRotationRenderMaxGain)
+        .toDouble();
+  }
+
   double _compassRenderGainFor(
     double cameraDelta, {
     required bool rotationResponsive,
+    required int renderIntervalMs,
   }) {
-    if (rotationResponsive) return _compassRotationRenderGain;
+    if (rotationResponsive) {
+      return _compassRotationRenderGainFor(renderIntervalMs);
+    }
 
     final absDelta = cameraDelta.abs();
     if (absDelta >= _compassRenderFastDelta) {
@@ -1977,6 +1994,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     );
     _lastCompassEventAt = null;
     _lastRawCompassHeading = null;
+    _lastCompassEventDtMs = null;
     _lastCompassUsedDelta = null;
     _compassTiltHoldUntil = DateTime.fromMillisecondsSinceEpoch(0);
     _compassTiltRecoveryUntil = DateTime.fromMillisecondsSinceEpoch(0);
@@ -2019,7 +2037,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       'renderFallbackStallMs=$_compassRenderFallbackStallMs '
       'renderFallbackDelta=$_compassRenderFallbackDelta '
       'renderMaxStep=$_compassRenderMaxStep '
-      'rotationRenderGain=$_compassRotationRenderGain '
+      'rotationRenderGain=$_compassRotationRenderMinGain..$_compassRotationRenderMaxGain '
+      'lastEventDt=${_lastCompassEventDtMs ?? -1} '
       'rotationRenderMaxStep=$_compassRotationRenderMaxStep '
       'renderPump=ticker path=ticker-pump '
       'targetGain=$_compassSmoothingGain fastTargetGain=$_compassFastTurnGain '
@@ -2111,6 +2130,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     final seq = ++_compassEventSeq;
     _compassFpsWindowEvents++;
     _recordCompassEventDt(eventDt);
+    if (eventDt != null && eventDt > 0) {
+      _lastCompassEventDtMs = eventDt;
+    }
 
     final rawHeading = event.heading;
     if (rawHeading == null) {
@@ -2238,6 +2260,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
     final renderGain = _compassRenderGainFor(
       cameraDelta,
       rotationResponsive: rotationResponsive,
+      renderIntervalMs: renderIntervalMs,
     );
     final renderMaxStep = _compassRenderMaxStepFor(
       rotationResponsive: rotationResponsive,
@@ -2285,7 +2308,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         'renderStep=${renderStep.toStringAsFixed(1)} '
         'targetLag=${targetLag.toStringAsFixed(1)} '
         'rawCameraLag=${_formatCompassStat(rawCameraLag)} '
-        'renderGain=$renderGain',
+        'renderGain=$renderGain '
+        'targetEventDtMs=${_lastCompassEventDtMs ?? -1}',
       );
     }
     _logCompassFpsIfNeeded(now);

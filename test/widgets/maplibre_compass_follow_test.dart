@@ -984,10 +984,16 @@ void main() {
       expect(view, contains('_compassTargetPath'));
 
       expect(
-        doubleConstant('_compassRotationRenderGain'),
-        equals(1.0),
+        doubleConstant('_compassRotationRenderMinGain'),
+        lessThanOrEqualTo(0.40),
         reason:
-            'Confirmed yaw should not be eased a second time in the render pump; the target path already bounded rotation velocity.',
+            'Confirmed yaw must be spread over render frames instead of snapping each 26Hz target update into one camera frame.',
+      );
+      expect(
+        doubleConstant('_compassRotationRenderMaxGain'),
+        lessThan(1.0),
+        reason:
+            'A gain of 1.0 makes renderStep equal dCamera, producing low cameraHz with many render-small-delta skips in the 11:37 trace.',
       );
       expect(
         doubleConstant('_compassRotationRenderMaxStep'),
@@ -1007,7 +1013,6 @@ void main() {
 
       expect(gainFor, contains('required bool rotationResponsive'));
       expect(gainFor, contains('if (rotationResponsive)'));
-      expect(gainFor, contains('return _compassRotationRenderGain;'));
 
       final pumpStart = view.indexOf('void _pumpCompassCamera');
       final modeStart = view.indexOf('void _set3DMode', pumpStart);
@@ -1026,7 +1031,60 @@ void main() {
         contains('_compassTargetPath == _CompassTargetPath.rotation'),
       );
       expect(pump, contains('rotationResponsive: rotationResponsive'));
+      expect(pump, contains('renderIntervalMs: renderIntervalMs'));
       expect(pump, contains('renderGain='));
+    });
+
+    test('paces confirmed rotation camera updates across render frames', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      final gainStart = view.indexOf('double _compassRotationRenderGainFor(');
+      final renderGainStart = view.indexOf(
+        'double _compassRenderGainFor',
+        gainStart,
+      );
+      expect(gainStart, isNonNegative);
+      expect(renderGainStart, greaterThan(gainStart));
+      final rotationGain = view.substring(gainStart, renderGainStart);
+
+      expect(rotationGain, contains('_lastCompassEventDtMs'));
+      expect(rotationGain, contains('renderIntervalMs / targetEventDtMs'));
+      expect(rotationGain, contains('_compassRotationRenderMinGain'));
+      expect(rotationGain, contains('_compassRotationRenderMaxGain'));
+
+      final renderGainEnd = view.indexOf(
+        'double _compassRenderMaxStepFor',
+        renderGainStart,
+      );
+      expect(renderGainEnd, greaterThan(renderGainStart));
+      final renderGain = view.substring(renderGainStart, renderGainEnd);
+      expect(
+        renderGain,
+        contains('return _compassRotationRenderGainFor(renderIntervalMs);'),
+      );
+
+      final handleStart = view.indexOf('void _handleCompassEvent');
+      final pumpStart = view.indexOf('void _pumpCompassCamera', handleStart);
+      expect(handleStart, isNonNegative);
+      expect(pumpStart, greaterThan(handleStart));
+      final handle = view.substring(handleStart, pumpStart);
+
+      expect(handle, contains('_lastCompassEventDtMs = eventDt;'));
+
+      final pumpEnd = view.indexOf('void _set3DMode', pumpStart);
+      expect(pumpEnd, greaterThan(pumpStart));
+      final pump = view.substring(pumpStart, pumpEnd);
+
+      expect(pump, contains('renderIntervalMs: renderIntervalMs'));
+      expect(pump, contains('targetEventDtMs='));
+      expect(
+        pump,
+        isNot(contains('return _compassRotationRenderGain;')),
+        reason:
+            'The 11:37 trace has renderStep equal to dCamera because the old fixed gain snapped rotation targets in one frame.',
+      );
     });
 
     test('logs compass decision inputs separately from action outputs', () {
