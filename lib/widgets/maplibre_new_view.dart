@@ -101,7 +101,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       260.0;
   static const double _compassRotationSensorProtectedLagTrendSlack = 1.0;
   static const int _compassRotationSensorProtectedLagSeedSamplesRequired = 2;
-  static const double _compassRotationSensorProtectedLagSeedMinRawDelta = 13.5;
+  static const double _compassRotationSensorProtectedLagSeedMinRawDelta = 7.5;
   static const double _compassRotationSensorProtectedLagSeedMaxRateDegPerSec =
       260.0;
   static const int _compassRotationSensorProtectedLagEscapeSamplesRequired = 3;
@@ -113,8 +113,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   static const double _compassRotationSensorProtectedCoastGain = 0.18;
   static const double _compassRotationSensorProtectedCoastMaxOpposingDelta =
       2.5;
-  static const double _compassRotationSensorMaxStep = 4.0;
-  static const double _compassRotationSensorMaxRateDegPerSec = 220.0;
+  static const double _compassRotationSensorMaxStep = 6.0;
+  static const double _compassRotationSensorMaxRateDegPerSec = 360.0;
   static const double _compassRotationSensorGain = 1.0;
   static const double _compassMinCameraDelta = 0.15;
   static const double _compassSpikeClampDelta = 12.0;

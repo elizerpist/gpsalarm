@@ -1897,6 +1897,52 @@ void main() {
       );
     });
 
+    test('keeps protected rotation target close to real sensor turns', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      double doubleConstant(String name) {
+        final match = RegExp(
+          'static const double $name = ([0-9.]+);',
+        ).firstMatch(view);
+        expect(match, isNotNull, reason: '$name should be a double constant.');
+        return double.parse(match!.group(1)!);
+      }
+
+      expect(
+        doubleConstant('_compassRotationSensorProtectedLagSeedMinRawDelta'),
+        lessThanOrEqualTo(9.0),
+        reason:
+            'The 09:28 trace freezes through -9.5 and -12.8 degrees of same-direction lag before rotation resumes.',
+      );
+      expect(
+        doubleConstant('_compassRotationSensorMaxStep'),
+        greaterThanOrEqualTo(5.5),
+        reason:
+            'Real yaw samples in the latest trace move 5-6 degrees per event; a 4 degree cap makes the target fall behind while rendering is already responsive.',
+      );
+      expect(
+        doubleConstant('_compassRotationSensorMaxRateDegPerSec'),
+        greaterThanOrEqualTo(320.0),
+        reason:
+            'At 32-38ms sensor cadence, the rotation-only rate cap must allow those 5-6 degree steps without touching the tilt stabilizer.',
+      );
+
+      final rotationStart = view.indexOf(
+        'double? _followCompassSensorRotation({',
+      );
+      final tiltStart = view.indexOf('double _stabilizeCompassTilt({');
+      expect(rotationStart, isNonNegative);
+      expect(tiltStart, greaterThan(rotationStart));
+
+      final rotation = view.substring(rotationStart, tiltStart);
+      expect(rotation, contains('protectedLagSeedCandidate'));
+      expect(rotation, contains('_compassRotationSensorMaxRateDegPerSec'));
+      expect(rotation, contains('_compassRotationSensorMaxStep'));
+      expect(rotation, isNot(contains('_dampenCompassTiltJitter')));
+    });
+
     test('coasts protected rotation through brief sensor wobble', () {
       final view = File(
         'lib/widgets/maplibre_new_view.dart',
