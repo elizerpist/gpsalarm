@@ -2001,6 +2001,93 @@ void main() {
       expect(rotation, isNot(contains('_dampenCompassTiltJitter')));
     });
 
+    test('uses rolling drift to start slow rotation before raw threshold', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      double doubleConstant(String name) {
+        final match = RegExp(
+          'static const double $name =\\s*([0-9.]+);',
+        ).firstMatch(view);
+        expect(match, isNotNull, reason: '$name should be a double constant.');
+        return double.parse(match!.group(1)!);
+      }
+
+      int intConstant(String name) {
+        final match = RegExp(
+          'static const int $name = ([0-9]+);',
+        ).firstMatch(view);
+        expect(match, isNotNull, reason: '$name should be an int constant.');
+        return int.parse(match!.group(1)!);
+      }
+
+      expect(
+        intConstant('_compassRotationDriftSamplesRequired'),
+        inInclusiveRange(3, 5),
+      );
+      expect(
+        doubleConstant('_compassRotationDriftEnterYaw'),
+        lessThanOrEqualTo(4.0),
+      );
+      expect(
+        doubleConstant('_compassRotationDriftExitYaw'),
+        lessThan(doubleConstant('_compassRotationDriftEnterYaw')),
+      );
+      expect(
+        doubleConstant('_compassRotationDriftMinRateDegPerSec'),
+        lessThanOrEqualTo(10.0),
+      );
+      expect(
+        doubleConstant('_compassRotationDriftMinRawDelta'),
+        lessThanOrEqualTo(1.5),
+      );
+
+      final detectorStart = view.indexOf('bool _recordCompassRotationDrift({');
+      final detectorEnd = view.indexOf(
+        'double _dampenCompassTiltJitter',
+        detectorStart,
+      );
+      expect(detectorStart, isNonNegative);
+      expect(detectorEnd, greaterThan(detectorStart));
+      final detector = view.substring(detectorStart, detectorEnd);
+
+      for (final token in [
+        '_compassRotationDriftYaw',
+        '_compassRotationDriftSamples',
+        'windowYawAbs',
+        'avgWindowRateDegPerSec',
+        '_compassRotationDriftActiveUntil = now.add',
+        '_compassRotationDriftEnterYaw',
+        '_compassRotationDriftExitYaw',
+      ]) {
+        expect(detector, contains(token));
+      }
+      expect(
+        detector,
+        isNot(contains('_compassRotationSensorProtectedMinRawDelta')),
+      );
+
+      final rotationStart = view.indexOf(
+        'double? _followCompassSensorRotation({',
+      );
+      final tiltStart = view.indexOf('double _stabilizeCompassTilt({');
+      expect(rotationStart, isNonNegative);
+      expect(tiltStart, greaterThan(rotationStart));
+      final rotation = view.substring(rotationStart, tiltStart);
+
+      for (final token in [
+        'protectedDriftRotationCandidate',
+        '!protectedDriftRotationCandidate',
+        '? _compassRotationSensorProtectedDriftSamplesRequired',
+        'protectedDriftCandidate=',
+        'driftYaw=',
+        'driftSamples=',
+      ]) {
+        expect(rotation, contains(token));
+      }
+    });
+
     test('uses a separate protected burst gate for fast rotation', () {
       final view = File(
         'lib/widgets/maplibre_new_view.dart',
