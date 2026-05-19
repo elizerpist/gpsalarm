@@ -2571,21 +2571,40 @@ void main() {
           '            _compassRotationSensorLateralLockImmediateMinRateDegPerSec',
         ),
       );
+      final sideLockEscape = rotation.indexOf(
+        'final lateralLockRotationEscapeCandidate',
+      );
+      final immediateEscape = rotation.indexOf(
+        'lateralLockImmediateRotationEscapeCandidate',
+        sideLockEscape,
+      );
+      final burstEscape = rotation.indexOf(
+        '(protectedBurstRotationCandidate',
+        immediateEscape,
+      );
+      expect(sideLockEscape, isNonNegative);
+      expect(immediateEscape, greaterThan(sideLockEscape));
       expect(
-        rotation,
-        contains(
-          'lateralLockImmediateRotationEscapeCandidate ||\n'
-          '        (protectedBurstRotationCandidate',
-        ),
+        burstEscape,
+        greaterThan(immediateEscape),
         reason:
             'A same-direction fast swipe under side-lock should not wait for three protected burst samples; the logs show that delay creates clamp, hold, then a jump.',
       );
+
+      final evidenceStart = rotation.indexOf('final protectedRotationEvidence');
+      final immediateEvidence = rotation.indexOf(
+        'lateralLockImmediateRotationEscapeCandidate',
+        evidenceStart,
+      );
+      final unprotectedEvidence = rotation.indexOf(
+        '!tiltProtectionActive',
+        immediateEvidence,
+      );
+      expect(evidenceStart, isNonNegative);
+      expect(immediateEvidence, greaterThan(evidenceStart));
       expect(
-        rotation,
-        contains(
-          'lateralLockImmediateRotationEscapeCandidate ||\n'
-          '        !tiltProtectionActive',
-        ),
+        unprotectedEvidence,
+        greaterThan(immediateEvidence),
         reason:
             'The immediate escape must also count as protected evidence, otherwise the side-lock gate opens but the protected sample counter still drops the frame.',
       );
@@ -2597,6 +2616,143 @@ void main() {
         ),
         reason:
             'The escaped frame needs the fast sensor cap so a quick swipe follows smoothly instead of inching forward and building more lag.',
+      );
+    });
+
+    test(
+      'continues high-confidence side-lock rotation after the first fast escape',
+      () {
+        final view = File(
+          'lib/widgets/maplibre_new_view.dart',
+        ).readAsStringSync();
+
+        for (final token in [
+          '_compassRotationSensorLateralLockContinueSamplesRequired',
+          '_compassRotationSensorLateralLockContinueMinRawDelta',
+          '_compassRotationSensorLateralLockContinueMinDelta',
+        ]) {
+          expect(view, contains(token));
+        }
+
+        final rotationStart = view.indexOf(
+          'double? _followCompassSensorRotation({',
+        );
+        final tiltStart = view.indexOf('double _stabilizeCompassTilt({');
+        expect(rotationStart, isNonNegative);
+        expect(tiltStart, greaterThan(rotationStart));
+        final rotation = view.substring(rotationStart, tiltStart);
+
+        expect(rotation, contains('lateralLockContinuationRotationCandidate'));
+        expect(rotation, contains('_isCompassRotationIntentActive(now)'));
+        expect(rotation, contains('_compassSensorRotationSamples >='));
+        expect(
+          rotation,
+          contains('_compassRotationSensorLateralLockContinueSamplesRequired'),
+        );
+        expect(
+          rotation,
+          contains(
+            'sensorAbs >= _compassRotationSensorLateralLockContinueMinDelta',
+          ),
+        );
+
+        final immediate = rotation.indexOf(
+          'lateralLockImmediateRotationEscapeCandidate',
+        );
+        final continuation = rotation.indexOf(
+          'lateralLockContinuationRotationCandidate',
+          immediate,
+        );
+        final burst = rotation.indexOf(
+          '(protectedBurstRotationCandidate',
+          continuation,
+        );
+        expect(immediate, isNonNegative);
+        expect(continuation, greaterThan(immediate));
+        expect(
+          burst,
+          greaterThan(continuation),
+          reason:
+              'After seq=164-165 opened high-confidence rotation, seq=166 must stay in rotation even when the burst is no longer growing; otherwise it clamps then opens a severe hold.',
+        );
+        expect(rotation, contains('!lateralLockContinuationRotationCandidate'));
+
+        final fastStepStart = rotation.indexOf('final fastSensorStepCandidate');
+        final fastStepEnd = rotation.indexOf(
+          'final sensorModeMaxStep',
+          fastStepStart,
+        );
+        expect(fastStepStart, isNonNegative);
+        expect(fastStepEnd, greaterThan(fastStepStart));
+        final fastStep = rotation.substring(fastStepStart, fastStepEnd);
+        expect(fastStep, contains('lateralLockContinuationRotationCandidate'));
+      },
+    );
+
+    test('keeps side-lock rotation catch-up alive through brief sensor wobble', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      for (final token in [
+        '_compassRotationSensorLateralLockCatchUpMinRawDelta',
+        '_compassRotationSensorLateralLockCatchUpGain',
+        '_compassRotationSensorLateralLockCatchUpMaxStep',
+      ]) {
+        expect(view, contains(token));
+      }
+
+      final rotationStart = view.indexOf(
+        'double? _followCompassSensorRotation({',
+      );
+      final tiltStart = view.indexOf('double _stabilizeCompassTilt({');
+      expect(rotationStart, isNonNegative);
+      expect(tiltStart, greaterThan(rotationStart));
+      final rotation = view.substring(rotationStart, tiltStart);
+
+      expect(rotation, contains('lateralLockRotationCatchUpCandidate'));
+      expect(rotation, contains('_followCompassLateralLockRotationCatchUp('));
+      expect(
+        rotation,
+        contains('_compassSensorRotationDirection == rawDirection'),
+      );
+      expect(rotation, contains('sensorAbs < _compassRotationSensorMinDelta'));
+      expect(
+        rotation,
+        contains('_compassRotationSensorProtectedCoastMaxOpposingDelta'),
+        reason:
+            'When the sensor briefly slows or wobbles after a confirmed fast side-lock rotation, catch-up should absorb raw lag instead of entering tilt hold.',
+      );
+      final catchUpGate = rotation.indexOf(
+        'lateralLockRotationCatchUpCandidate',
+      );
+      final smallSensorReset = rotation.indexOf(
+        'if (sensorDirection == 0 || sensorAbs < _compassRotationSensorMinDelta)',
+      );
+      expect(catchUpGate, isNonNegative);
+      expect(smallSensorReset, isNonNegative);
+      expect(
+        catchUpGate,
+        lessThan(smallSensorReset),
+        reason:
+            'The catch-up gate must run before tiny sensor wobble resets rotation evidence and falls through to tilt hold.',
+      );
+
+      final catchUpStart = view.indexOf(
+        'double _followCompassLateralLockRotationCatchUp({',
+      );
+      final coastStart = view.indexOf(
+        'double _followCompassProtectedRotationCoast({',
+        catchUpStart,
+      );
+      expect(catchUpStart, isNonNegative);
+      expect(coastStart, greaterThan(catchUpStart));
+      final catchUp = view.substring(catchUpStart, coastStart);
+      expect(catchUp, contains('COMPASS_SENSOR_ROTATION_CATCHUP'));
+      expect(catchUp, contains('_compassRotationSensorLateralLockCatchUpGain'));
+      expect(
+        catchUp,
+        contains('_compassRotationSensorLateralLockCatchUpMaxStep'),
       );
     });
 
