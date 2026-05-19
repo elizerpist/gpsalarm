@@ -2442,6 +2442,172 @@ void main() {
       );
     });
 
+    test('does not build lag escape while tilt side lock is active', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      final followStart = view.indexOf('bool _isCompassLagFollowCandidate({');
+      final followEnd = view.indexOf(
+        'bool _isCompassLagBuildCandidate({',
+        followStart,
+      );
+      expect(followStart, isNonNegative);
+      expect(followEnd, greaterThan(followStart));
+      final lagFollow = view.substring(followStart, followEnd);
+      expect(lagFollow, contains('if (tiltLateralLockActive)'));
+      expect(lagFollow, contains('return false;'));
+
+      final buildStart = view.indexOf('bool _isCompassLagBuildCandidate({');
+      final buildEnd = view.indexOf(
+        'bool _shouldHoldCompassTilt({',
+        buildStart,
+      );
+      expect(buildStart, isNonNegative);
+      expect(buildEnd, greaterThan(buildStart));
+      final lagBuild = view.substring(buildStart, buildEnd);
+
+      expect(lagBuild, contains('required bool tiltQuarantineActive'));
+      expect(lagBuild, contains('required bool tiltLateralLockActive'));
+      expect(
+        lagBuild,
+        contains('if (tiltQuarantineActive || tiltLateralLockActive)'),
+        reason:
+            'Tilt/quarantine frames must not accumulate blockedRotationSamples into a sustained rotation escape.',
+      );
+      expect(lagBuild, contains('return false;'));
+
+      final stabilizerStart = view.indexOf('double _stabilizeCompassTilt({');
+      final recordStart = view.indexOf(
+        'void _recordCompassEventDt',
+        stabilizerStart,
+      );
+      expect(stabilizerStart, isNonNegative);
+      expect(recordStart, greaterThan(stabilizerStart));
+      final stabilizer = view.substring(stabilizerStart, recordStart);
+      expect(
+        stabilizer,
+        contains('tiltQuarantineActive: tiltQuarantineBefore'),
+      );
+      expect(
+        stabilizer,
+        contains('tiltLateralLockActive: tiltLateralLockBefore'),
+      );
+    });
+
+    test('requires stricter rotation escape while tilt side lock is active', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      for (final token in [
+        '_compassRotationSensorLateralLockEscapeSamplesRequired',
+        '_compassRotationSensorLateralLockEscapeMinRawDelta',
+        '_compassRotationSensorLateralLockEscapeMinRateDegPerSec',
+      ]) {
+        expect(view, contains(token));
+      }
+
+      final rotationStart = view.indexOf(
+        'double? _followCompassSensorRotation({',
+      );
+      final tiltStart = view.indexOf('double _stabilizeCompassTilt({');
+      expect(rotationStart, isNonNegative);
+      expect(tiltStart, greaterThan(rotationStart));
+      final rotation = view.substring(rotationStart, tiltStart);
+
+      expect(rotation, contains('lateralLockRotationEscapeCandidate'));
+      expect(
+        rotation,
+        contains(
+          'tiltLateralLockActive && !lateralLockRotationEscapeCandidate',
+        ),
+        reason:
+            'During upward tilt side-lock, low-rate sensor drift must stay isolated from the rotation path.',
+      );
+      expect(rotation, contains('resetSensorRotationEvidence();'));
+      expect(rotation, contains('return null;'));
+      expect(
+        rotation.indexOf('lateralLockRotationEscapeCandidate'),
+        lessThan(rotation.indexOf('if (tiltProtectionActive &&')),
+        reason:
+            'The stricter side-lock escape must gate protected rotation before the generic protected candidates can pass.',
+      );
+    });
+
+    test('keeps protected burst fast step scoped to tilt protection', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      final rotationStart = view.indexOf(
+        'double? _followCompassSensorRotation({',
+      );
+      final tiltStart = view.indexOf('double _stabilizeCompassTilt({');
+      expect(rotationStart, isNonNegative);
+      expect(tiltStart, greaterThan(rotationStart));
+      final rotation = view.substring(rotationStart, tiltStart);
+
+      expect(rotation, contains('activeProtectedBurstRotationCandidate'));
+      expect(
+        rotation,
+        contains('tiltProtectionActive && protectedBurstRotationCandidate'),
+        reason:
+            'An unprotected first burst sample should not inherit the protected fast-step cap and jump by 12+ degrees.',
+      );
+      final fastStepStart = rotation.indexOf('final fastSensorStepCandidate');
+      expect(fastStepStart, isNonNegative);
+      final fastStepEnd = rotation.indexOf(
+        'final sensorModeMaxStep',
+        fastStepStart,
+      );
+      expect(fastStepEnd, greaterThan(fastStepStart));
+      final fastStep = rotation.substring(fastStepStart, fastStepEnd);
+      expect(fastStep, contains('activeProtectedBurstRotationCandidate'));
+      expect(fastStep, contains('unprotectedFastSensorStepCandidate'));
+    });
+
+    test('keeps protected coast small and disabled during tilt side lock', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      expect(view, contains('_compassRotationSensorProtectedCoastMaxStep'));
+
+      final rotationStart = view.indexOf(
+        'double? _followCompassSensorRotation({',
+      );
+      final tiltStart = view.indexOf('double _stabilizeCompassTilt({');
+      expect(rotationStart, isNonNegative);
+      expect(tiltStart, greaterThan(rotationStart));
+      final rotation = view.substring(rotationStart, tiltStart);
+
+      expect(
+        rotation,
+        contains('!tiltLateralLockActive &&'),
+        reason:
+            'A protected coast frame must not move the camera sideways while the tilt side lock is absorbing wobble.',
+      );
+
+      final coastStart = view.indexOf(
+        'double _followCompassProtectedRotationCoast({',
+      );
+      final coastEnd = view.indexOf(
+        'double _stabilizeCompassTilt({',
+        coastStart,
+      );
+      expect(coastStart, isNonNegative);
+      expect(coastEnd, greaterThan(coastStart));
+      final coast = view.substring(coastStart, coastEnd);
+      expect(coast, contains('_compassRotationSensorProtectedCoastMaxStep'));
+      expect(
+        coast,
+        isNot(contains('_compassRotationSensorMaxStep,')),
+        reason:
+            'Coast should have a smaller cap than direct sensor follow so it cannot create a 6 degree raw-lag jump from wobble.',
+      );
+    });
+
     test('resets sensor rotation evidence when compass follow starts', () {
       final view = File(
         'lib/widgets/maplibre_new_view.dart',
