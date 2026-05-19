@@ -2233,6 +2233,52 @@ void main() {
       expect(follow, contains('targetGain=\${targetGain.toStringAsFixed(2)}'));
     });
 
+    test('uses a wider isolated sensor step only for fast rotation', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      double doubleConstant(String name) {
+        final match = RegExp(
+          'static const double $name =\\s*([0-9.]+);',
+        ).firstMatch(view);
+        expect(match, isNotNull, reason: '$name should be a double constant.');
+        return double.parse(match!.group(1)!);
+      }
+
+      expect(
+        doubleConstant('_compassRotationSensorFastMaxStep'),
+        greaterThanOrEqualTo(12.0),
+        reason:
+            'The 08:19 fast-turn trace has 20-30 degree sensor deltas while the target is capped at 6 degrees per sample, building 70-80 degrees of raw lag.',
+      );
+      expect(
+        doubleConstant('_compassRotationSensorFastMaxRateDegPerSec'),
+        greaterThanOrEqualTo(600.0),
+        reason:
+            'Fast rotation should be capped by the isolated rotation path, not by the conservative 360 deg/s tilt-safe cap.',
+      );
+
+      final rotationStart = view.indexOf(
+        'double? _followCompassSensorRotation({',
+      );
+      final tiltStart = view.indexOf('double _stabilizeCompassTilt({');
+      expect(rotationStart, isNonNegative);
+      expect(tiltStart, greaterThan(rotationStart));
+
+      final rotation = view.substring(rotationStart, tiltStart);
+      expect(rotation, contains('fastSensorStepCandidate'));
+      expect(rotation, contains('sensorModeMaxStep'));
+      expect(rotation, contains('sensorModeMaxRateDegPerSec'));
+      expect(rotation, contains('sensorModeMaxStep='));
+      expect(
+        rotation,
+        isNot(contains('_dampenCompassTiltJitter')),
+        reason:
+            'The wider cap must stay in the isolated rotation path so tilt damping remains unchanged.',
+      );
+    });
+
     test('coasts protected rotation through brief sensor wobble', () {
       final view = File(
         'lib/widgets/maplibre_new_view.dart',

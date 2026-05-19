@@ -132,6 +132,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   static const double _compassRotationSensorProtectedCoastMaxOpposingDelta =
       2.5;
   static const double _compassRotationSensorMaxStep = 6.0;
+  static const double _compassRotationSensorFastMaxStep = 14.0;
+  static const double _compassRotationSensorFastMaxRateDegPerSec = 720.0;
+  static const double _compassRotationSensorFastStepMinRawDelta = 8.0;
+  static const double _compassRotationSensorFastStepMinDelta = 6.0;
+  static const double _compassRotationSensorFastStepMinRateDegPerSec = 150.0;
   static const double _compassRotationSensorMaxRateDegPerSec = 360.0;
   static const double _compassRotationSensorGain = 1.0;
   static const double _compassMinCameraDelta = 0.15;
@@ -1416,13 +1421,26 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       return null;
     }
 
+    final unprotectedFastSensorStepCandidate =
+        !tiltProtectionActive &&
+        rawDelta.sign == sensorDelta.sign &&
+        rawAbs >= _compassRotationSensorFastStepMinRawDelta &&
+        sensorAbs >= _compassRotationSensorFastStepMinDelta &&
+        turnRateDegPerSec.abs() >=
+            _compassRotationSensorFastStepMinRateDegPerSec &&
+        _compassSensorRotationSamples >= _compassRotationSensorSamplesRequired;
+    final fastSensorStepCandidate =
+        protectedBurstRotationCandidate || unprotectedFastSensorStepCandidate;
+    final sensorModeMaxStep = fastSensorStepCandidate
+        ? _compassRotationSensorFastMaxStep
+        : _compassRotationSensorMaxStep;
+    final sensorModeMaxRateDegPerSec = fastSensorStepCandidate
+        ? _compassRotationSensorFastMaxRateDegPerSec
+        : _compassRotationSensorMaxRateDegPerSec;
     final dtSeconds = eventDt / 1000.0;
     final maxStep = math.max(
       _compassRotationSensorMinDelta,
-      math.min(
-        _compassRotationSensorMaxRateDegPerSec * dtSeconds,
-        _compassRotationSensorMaxStep,
-      ),
+      math.min(sensorModeMaxRateDegPerSec * dtSeconds, sensorModeMaxStep),
     );
     final followedDelta = (sensorDelta * _compassRotationSensorGain)
         .clamp(-maxStep, maxStep)
@@ -1452,6 +1470,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       'protectedBurstCandidate=$protectedBurstRotationCandidate '
       'protectedDriftCandidate=$protectedDriftRotationCandidate '
       'driftYaw=${_compassRotationDriftYaw.toStringAsFixed(1)} '
+      'fastSensorStepCandidate=$fastSensorStepCandidate '
+      'sensorModeMaxStep=${sensorModeMaxStep.toStringAsFixed(1)} '
+      'sensorModeMaxRate=${sensorModeMaxRateDegPerSec.toStringAsFixed(1)} '
       'driftSamples=$_compassRotationDriftSamples '
       'driftRate=${_compassRotationDriftRateDegPerSec.toStringAsFixed(1)} '
       'protectedLagEscapeCandidate=$protectedLagEscapeCandidate '
