@@ -2279,6 +2279,120 @@ void main() {
       );
     });
 
+    test('rejects single-sample high-rate sensor spikes', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      expect(view, contains('_compassRotationSensorSingleSpikeMinDelta'));
+      expect(
+        view,
+        contains('_compassRotationSensorSingleSpikeMinRateDegPerSec'),
+      );
+
+      final rotationStart = view.indexOf(
+        'double? _followCompassSensorRotation({',
+      );
+      final tiltStart = view.indexOf('double _stabilizeCompassTilt({');
+      expect(rotationStart, isNonNegative);
+      expect(tiltStart, greaterThan(rotationStart));
+      final rotation = view.substring(rotationStart, tiltStart);
+
+      expect(rotation, contains('unprotectedSingleSampleSpike'));
+      expect(
+        rotation,
+        contains(
+          '_compassSensorRotationSamples < _compassRotationSensorSamplesRequired',
+        ),
+        reason:
+            'A first high-rate sample should not become rotation until a second same-direction sample confirms it.',
+      );
+      expect(rotation, contains('_compassSensorRotationLastRawAbs = rawAbs;'));
+      expect(
+        rotation.indexOf('unprotectedSingleSampleSpike'),
+        lessThan(rotation.indexOf('final sensorRotationConfirmed')),
+        reason:
+            'The spike guard must run before immediate sensor-delta confirmation can accept the jump.',
+      );
+      expect(
+        rotation,
+        isNot(contains('_dampenCompassTiltJitter')),
+        reason: 'The fast-spike guard belongs to the isolated rotation gate.',
+      );
+    });
+
+    test('keeps post-tilt lateral wobble locked out of rotation', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      expect(view, contains('_compassTiltLateralLockUntil'));
+      expect(view, contains('_compassTiltLateralLockDuration'));
+      expect(view, contains('_compassTiltLateralLockDelta'));
+      expect(view, contains('_isCompassTiltLateralLockActive'));
+      expect(view, contains('_isCompassTiltLateralLockJitter'));
+      expect(view, contains("return 'tilt-lateral-lock-jitter';"));
+
+      final protectionStart = view.indexOf(
+        'bool _isCompassTiltProtectionActive(DateTime now)',
+      );
+      final protectionEnd = view.indexOf(
+        'bool _isCompassRotationIntent({',
+        protectionStart,
+      );
+      expect(protectionStart, isNonNegative);
+      expect(protectionEnd, greaterThan(protectionStart));
+      final protection = view.substring(protectionStart, protectionEnd);
+      expect(protection, contains('_isCompassTiltLateralLockActive(now)'));
+
+      final wrapperStart = view.indexOf('double _stabilizeCompassHeading({');
+      final rotationStart = view.indexOf(
+        'double? _followCompassSensorRotation({',
+        wrapperStart,
+      );
+      expect(wrapperStart, isNonNegative);
+      expect(rotationStart, greaterThan(wrapperStart));
+      final wrapper = view.substring(wrapperStart, rotationStart);
+      expect(wrapper, contains('tiltLateralLockActive'));
+      expect(wrapper, contains('tiltLateralLockActive: tiltLateralLockActive'));
+
+      final stabilizerStart = view.indexOf('double _stabilizeCompassTilt({');
+      final recordStart = view.indexOf(
+        'void _recordCompassEventDt',
+        stabilizerStart,
+      );
+      expect(stabilizerStart, isNonNegative);
+      expect(recordStart, greaterThan(stabilizerStart));
+      final stabilizer = view.substring(stabilizerStart, recordStart);
+
+      expect(
+        stabilizer,
+        contains(
+          '_compassTiltLateralLockUntil = now.add(_compassTiltLateralLockDuration)',
+        ),
+        reason:
+            'Tilt quarantine should leave a short side-motion lock after release so upward tilt wobble cannot pass raw heading.',
+      );
+      expect(stabilizer, contains('tiltLateralLockActive'));
+      expect(stabilizer, contains('tiltLateralLockActive='));
+      expect(
+        stabilizer,
+        contains('tiltLateralLockActive: tiltLateralLockActive'),
+      );
+
+      final start = view.indexOf('void _startCompassFollow() {');
+      final end = view.indexOf('final events = FlutterCompass.events;', start);
+      expect(start, isNonNegative);
+      expect(end, greaterThan(start));
+      final startFollow = view.substring(start, end);
+      expect(
+        startFollow,
+        contains(
+          '_compassTiltLateralLockUntil = DateTime.fromMillisecondsSinceEpoch(0);',
+        ),
+      );
+    });
+
     test('coasts protected rotation through brief sensor wobble', () {
       final view = File(
         'lib/widgets/maplibre_new_view.dart',
