@@ -169,6 +169,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   static const double _compassRotationIntentRateDegPerSec = 220.0;
   static const int _compassRotationIntentSamples = 3;
   static const int _compassBlockedRotationEscapeSamples = 3;
+  static const double _compassRotationLagBuildMinDelta = 8.0;
   static const double _compassRotationFollowGain = 0.58;
   static const double _compassRotationFollowMaxRateDegPerSec = 320.0;
   static const double _compassRotationFollowMaxStep = 10.0;
@@ -792,6 +793,22 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         !holdReleaseOk &&
         rawDelta.abs() >= _compassRotationIntentDelta &&
         cameraLagBefore.abs() >= _compassSpikeClampLagDelta;
+  }
+
+  bool _isCompassLagBuildCandidate({
+    required double rawDelta,
+    required double cameraLagBefore,
+    required bool holdReleaseOk,
+  }) {
+    final rawDirection = rawDelta == 0 ? 0 : rawDelta.sign.toInt();
+    final cameraLagDirection = cameraLagBefore == 0
+        ? 0
+        : cameraLagBefore.sign.toInt();
+    return !holdReleaseOk &&
+        rawDirection != 0 &&
+        rawDirection == cameraLagDirection &&
+        rawDelta.abs() >= _compassRotationLagBuildMinDelta &&
+        cameraLagBefore.abs() >= _compassRotationLagBuildMinDelta;
   }
 
   bool _shouldHoldCompassTilt({
@@ -1536,15 +1553,20 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
           eventDt: eventDt,
         ) &&
         (!tiltQuarantineBefore || rawDelta.abs() > _compassTiltQuarantineDelta);
-    final lagFollowCandidate = _isCompassLagFollowCandidate(
+    final immediateLagFollowCandidate = _isCompassLagFollowCandidate(
       rawDelta: rawDelta,
       cameraLagBefore: cameraLagBefore,
       holdReleaseOk: holdReleaseOk,
       tiltQuarantineActive: tiltQuarantineBefore,
     );
-    final rotationEvidence = rotationIntent || lagFollowCandidate;
+    final lagBuildCandidate = _isCompassLagBuildCandidate(
+      rawDelta: rawDelta,
+      cameraLagBefore: cameraLagBefore,
+      holdReleaseOk: holdReleaseOk,
+    );
     final blockedRotationDirection = rawDelta == 0 ? 0 : rawDelta.sign.toInt();
-    final blockedRotationCandidate = lagFollowCandidate;
+    final blockedRotationCandidate =
+        immediateLagFollowCandidate || lagBuildCandidate;
     if (blockedRotationCandidate && blockedRotationDirection != 0) {
       if (_compassBlockedRotationDirection == blockedRotationDirection) {
         _compassBlockedRotationSamples++;
@@ -1558,6 +1580,9 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
 
     final sustainedRotationEscape =
         _compassBlockedRotationSamples >= _compassBlockedRotationEscapeSamples;
+    final lagFollowCandidate =
+        immediateLagFollowCandidate || sustainedRotationEscape;
+    final rotationEvidence = rotationIntent || lagFollowCandidate;
     if (sustainedRotationEscape && tiltRecoveryActive) {
       _compassTiltRecoveryUntil = DateTime.fromMillisecondsSinceEpoch(0);
       tiltRecoveryActive = false;
@@ -1788,6 +1813,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         'tiltQuarantineActive=$tiltQuarantineActive '
         'rotationIntent=$rotationIntent '
         'lagFollowCandidate=$lagFollowCandidate '
+        'immediateLagFollowCandidate=$immediateLagFollowCandidate '
+        'lagBuildCandidate=$lagBuildCandidate '
         'rotationEvidence=$rotationEvidence '
         'rotationGraceActive=$rotationGraceActive '
         'releaseRotationGrace=$releaseRotationGrace '
@@ -1845,6 +1872,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         'tiltQuarantineActive=$tiltQuarantineActive '
         'rotationIntent=$rotationIntent '
         'lagFollowCandidate=$lagFollowCandidate '
+        'immediateLagFollowCandidate=$immediateLagFollowCandidate '
+        'lagBuildCandidate=$lagBuildCandidate '
         'rotationIntentConfirmed=$rotationIntentConfirmed '
         'tiltBurstBlocksRotation=$tiltBurstBlocksRotation '
         'sustainedRotationEscape=$sustainedRotationEscape '

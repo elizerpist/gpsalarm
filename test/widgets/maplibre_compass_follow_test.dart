@@ -1432,9 +1432,60 @@ void main() {
       expect(stabilizer, contains('rotationIntent || lagFollowCandidate'));
       expect(
         stabilizer,
-        contains('blockedRotationCandidate = lagFollowCandidate'),
+        contains('immediateLagFollowCandidate || lagBuildCandidate'),
         reason:
-            'The latest rotation log froze with sensorDelta near zero but 30-70 degrees of target/camera lag; persistent lag must enter rotation-follow instead of waiting for sensor rate.',
+            'The latest rotation log froze with sensorDelta near zero but persistent target/camera lag; blocked lag evidence must build before immediate lag-follow is confirmed.',
+      );
+    });
+
+    test('escapes tilt burst on sustained sub-threshold rotation lag', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      double constant(String name) {
+        final match = RegExp(
+          'static const double $name =\\s*([0-9.]+);',
+        ).firstMatch(view);
+        expect(match, isNotNull, reason: '$name should be a double constant.');
+        return double.parse(match!.group(1)!);
+      }
+
+      expect(
+        constant('_compassRotationLagBuildMinDelta'),
+        lessThanOrEqualTo(8.0),
+        reason:
+            'The latest trace freezes at rawDelta 8-11 degrees for about a second, below the 18 degree immediate lag-follow threshold.',
+      );
+      expect(view, contains('_isCompassLagBuildCandidate'));
+
+      final stabilizerStart = view.indexOf('double _stabilizeCompassHeading({');
+      final recordStart = view.indexOf(
+        'void _recordCompassEventDt',
+        stabilizerStart,
+      );
+      expect(stabilizerStart, isNonNegative);
+      expect(recordStart, greaterThan(stabilizerStart));
+      final stabilizer = view.substring(stabilizerStart, recordStart);
+
+      for (final token in [
+        'immediateLagFollowCandidate',
+        'lagBuildCandidate',
+        'blockedRotationCandidate =',
+        'immediateLagFollowCandidate || lagBuildCandidate',
+        'final lagFollowCandidate =',
+        'immediateLagFollowCandidate || sustainedRotationEscape',
+        'rotationIntent || lagFollowCandidate',
+        'lagBuildCandidate=',
+      ]) {
+        expect(stabilizer, contains(token));
+      }
+
+      expect(
+        stabilizer,
+        isNot(contains('blockedRotationCandidate = lagFollowCandidate;')),
+        reason:
+            'Blocked rotation evidence must build before the old immediate lag-follow threshold is reached.',
       );
     });
 
