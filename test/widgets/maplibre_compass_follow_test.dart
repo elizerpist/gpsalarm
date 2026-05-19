@@ -2535,6 +2535,71 @@ void main() {
       );
     });
 
+    test('allows immediate high-confidence rotation escape during tilt side lock', () {
+      final view = File(
+        'lib/widgets/maplibre_new_view.dart',
+      ).readAsStringSync();
+
+      for (final token in [
+        '_compassRotationSensorLateralLockImmediateMinRawDelta',
+        '_compassRotationSensorLateralLockImmediateMinDelta',
+        '_compassRotationSensorLateralLockImmediateMinRateDegPerSec',
+      ]) {
+        expect(view, contains(token));
+      }
+
+      final rotationStart = view.indexOf(
+        'double? _followCompassSensorRotation({',
+      );
+      final tiltStart = view.indexOf('double _stabilizeCompassTilt({');
+      expect(rotationStart, isNonNegative);
+      expect(tiltStart, greaterThan(rotationStart));
+      final rotation = view.substring(rotationStart, tiltStart);
+
+      expect(rotation, contains('lateralLockImmediateRotationEscapeCandidate'));
+      expect(rotation, contains('rawDelta.sign == sensorDelta.sign'));
+      expect(
+        rotation,
+        contains(
+          'sensorAbs >= _compassRotationSensorLateralLockImmediateMinDelta',
+        ),
+      );
+      expect(
+        rotation,
+        contains(
+          'turnRateDegPerSec.abs() >=\n'
+          '            _compassRotationSensorLateralLockImmediateMinRateDegPerSec',
+        ),
+      );
+      expect(
+        rotation,
+        contains(
+          'lateralLockImmediateRotationEscapeCandidate ||\n'
+          '        (protectedBurstRotationCandidate',
+        ),
+        reason:
+            'A same-direction fast swipe under side-lock should not wait for three protected burst samples; the logs show that delay creates clamp, hold, then a jump.',
+      );
+      expect(
+        rotation,
+        contains(
+          'lateralLockImmediateRotationEscapeCandidate ||\n'
+          '        !tiltProtectionActive',
+        ),
+        reason:
+            'The immediate escape must also count as protected evidence, otherwise the side-lock gate opens but the protected sample counter still drops the frame.',
+      );
+      expect(
+        rotation,
+        contains(
+          'activeProtectedBurstRotationCandidate ||\n'
+          '        lateralLockImmediateRotationEscapeCandidate ||',
+        ),
+        reason:
+            'The escaped frame needs the fast sensor cap so a quick swipe follows smoothly instead of inching forward and building more lag.',
+      );
+    });
+
     test('keeps protected burst fast step scoped to tilt protection', () {
       final view = File(
         'lib/widgets/maplibre_new_view.dart',

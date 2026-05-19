@@ -136,6 +136,11 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
   static const double _compassRotationSensorLateralLockEscapeMinRawDelta = 32.0;
   static const double _compassRotationSensorLateralLockEscapeMinRateDegPerSec =
       220.0;
+  static const double _compassRotationSensorLateralLockImmediateMinRawDelta =
+      18.0;
+  static const double _compassRotationSensorLateralLockImmediateMinDelta = 18.0;
+  static const double
+  _compassRotationSensorLateralLockImmediateMinRateDegPerSec = 500.0;
   static const double _compassRotationSensorMaxStep = 6.0;
   static const double _compassRotationSensorFastMaxStep = 14.0;
   static const double _compassRotationSensorFastMaxRateDegPerSec = 720.0;
@@ -1448,8 +1453,16 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
             _compassRotationSensorProtectedLagEscapeMaxRateDegPerSec;
     final activeProtectedBurstRotationCandidate =
         tiltProtectionActive && protectedBurstRotationCandidate;
+    final lateralLockImmediateRotationEscapeCandidate =
+        tiltLateralLockActive &&
+        rawDelta.sign == sensorDelta.sign &&
+        rawAbs >= _compassRotationSensorLateralLockImmediateMinRawDelta &&
+        sensorAbs >= _compassRotationSensorLateralLockImmediateMinDelta &&
+        turnRateDegPerSec.abs() >=
+            _compassRotationSensorLateralLockImmediateMinRateDegPerSec;
     final lateralLockRotationEscapeCandidate =
         !tiltLateralLockActive ||
+        lateralLockImmediateRotationEscapeCandidate ||
         (protectedBurstRotationCandidate &&
             _compassSensorRotationSamples >=
                 _compassRotationSensorLateralLockEscapeSamplesRequired &&
@@ -1464,6 +1477,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         !protectedRotationCandidate &&
         !protectedFastRotationCandidate &&
         !protectedBurstRotationCandidate &&
+        !lateralLockImmediateRotationEscapeCandidate &&
         !protectedLagSeedCandidate &&
         !protectedDriftRotationCandidate &&
         !protectedLagEscapeCandidate) {
@@ -1482,6 +1496,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         ? _compassRotationSensorProtectedLagEscapeSamplesRequired
         : _compassRotationSensorProtectedSamplesRequired;
     final protectedRotationEvidence =
+        lateralLockImmediateRotationEscapeCandidate ||
         !tiltProtectionActive ||
         _compassSensorRotationSamples >= protectedRotationSamplesRequired;
     if (!protectedRotationEvidence) {
@@ -1530,6 +1545,7 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
         _compassSensorRotationSamples >= _compassRotationSensorSamplesRequired;
     final fastSensorStepCandidate =
         activeProtectedBurstRotationCandidate ||
+        lateralLockImmediateRotationEscapeCandidate ||
         unprotectedFastSensorStepCandidate;
     final sensorModeMaxStep = fastSensorStepCandidate
         ? _compassRotationSensorFastMaxStep
@@ -1570,6 +1586,8 @@ class _MaplibreNewViewState extends State<MaplibreNewView>
       'protectedLagSeedCandidate=$protectedLagSeedCandidate '
       'protectedBurstCandidate=$protectedBurstRotationCandidate '
       'activeProtectedBurstCandidate=$activeProtectedBurstRotationCandidate '
+      'lateralLockImmediateEscapeCandidate='
+      '$lateralLockImmediateRotationEscapeCandidate '
       'lateralLockEscapeCandidate=$lateralLockRotationEscapeCandidate '
       'protectedDriftCandidate=$protectedDriftRotationCandidate '
       'driftYaw=${_compassRotationDriftYaw.toStringAsFixed(1)} '
